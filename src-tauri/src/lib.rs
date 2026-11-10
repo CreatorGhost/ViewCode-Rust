@@ -698,6 +698,13 @@ async fn add_project(state: State<'_, AppState>, path: String) -> Result<Project
     skill_manager::projects_changed();
     project
 }
+/// Sets or clears (null) a project's colour, and tells every window.
+#[tauri::command]
+async fn set_project_color(app: tauri::AppHandle, state: State<'_, AppState>, project_id: String, color: Option<String>) -> Result<storage::Project> {
+    let project = state.store.lock().map_err(|e| e.to_string())?.set_project_color(&project_id, color.as_deref())?;
+    let _ = app.emit("project-changed", &project);
+    Ok(project)
+}
 #[tauri::command]
 async fn remove_project(state: State<'_, AppState>, project_id: String) -> Result<()> {
     let agents = state.agents.lock().map_err(|e| e.to_string())?;
@@ -4421,6 +4428,7 @@ pub fn run() {
                 list_projects,
                 add_project,
                 remove_project,
+                set_project_color,
                 relink_project,
                 list_sessions,
                 pin_session,

@@ -31,7 +31,13 @@ pub struct Project {
     pub path: String,
     /// When the project was added, as an increasing number (its rowid): the sidebar's Added sort.
     pub added_order: i64,
+    /// The user's colour for the project (`PROJECT_COLORS`); None until they choose one.
+    pub color: Option<String>,
 }
+
+/// The colours a project can take: the rail tile, folder badge and composer glow use it.
+/// The names are ViewCode's, so its projects import with their colours.
+pub const PROJECT_COLORS: [&str; 18] = ["gray", "red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal", "cyan", "sky", "blue", "indigo", "violet", "purple", "fuchsia", "pink", "rose"];
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContextUsage {
@@ -161,7 +167,7 @@ pub struct Store {
 type Result<T> = std::result::Result<T, String>;
 /// The newest `PRAGMA user_version`. Every migration step below must run for any
 /// database older than this, so the guard reads this constant, never a literal.
-pub const SCHEMA_VERSION: i64 = 37;
+pub const SCHEMA_VERSION: i64 = 38;
 
 const SIDEBAR_ORDER: &str = "pinned DESC,sidebar_order IS NULL,sidebar_order,COALESCE(MAX(last_response_at,last_prompt_at),last_response_at,last_prompt_at,created_at) DESC,id";
 
@@ -627,6 +633,14 @@ impl Store {
                 migration.execute_batch(crate::review::store::SCHEMA).map_err(|e| e.to_string())?;
                 migration.execute_batch("PRAGMA user_version=37;").map_err(|e| e.to_string())?;
             }
+            if version < 38 {
+                // Project colours: the user's colour for a project, one of `PROJECT_COLORS`.
+                let exists: bool = migration.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('projects') WHERE name='color')", [], |r| r.get(0)).map_err(|e| e.to_string())?;
+                if !exists {
+                    migration.execute_batch("ALTER TABLE projects ADD COLUMN color TEXT;").map_err(|e| e.to_string())?;
+                }
+                migration.execute_batch("PRAGMA user_version=38;").map_err(|e| e.to_string())?;
+            }
             migration.commit().map_err(|e| e.to_string())?;
         }
         let recovery = db.transaction().map_err(|e| e.to_string())?;
@@ -708,7 +722,8 @@ impl Store {
     }
 
     fn migrate_legacy_worktrees(db: &Connection) -> Result<()> {
-        let projects = Self::read_projects(db)?;
+        // Runs inside an early migration step, before later steps add columns to `projects`.
+        let projects = Self::read_projects_with(db, "NULL")?;
         let registered: Vec<_> = projects
             .iter()
             .map(|project| PathBuf::from(&project.path))
@@ -746,8 +761,11 @@ impl Store {
         Self::read_projects(&self.db)
     }
     fn read_projects(db: &Connection) -> Result<Vec<Project>> {
+        Self::read_projects_with(db, "color")
+    }
+    fn read_projects_with(db: &Connection, color: &str) -> Result<Vec<Project>> {
         let mut stmt = db
-            .prepare("SELECT id,name,path,rowid FROM projects ORDER BY name COLLATE NOCASE")
+            .prepare(&format!("SELECT id,name,path,rowid,{color} FROM projects ORDER BY name COLLATE NOCASE"))
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map([], |r| {
@@ -756,6 +774,7 @@ impl Store {
                     name: r.get(1)?,
                     path: r.get(2)?,
                     added_order: r.get(3)?,
+                    color: r.get(4)?,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -782,7 +801,7 @@ impl Store {
             .map_err(|e| e.to_string())?;
         self.db
             .query_row(
-                "SELECT id,name,path,rowid FROM projects WHERE path=?1",
+                "SELECT id,name,path,rowid,color FROM projects WHERE path=?1",
                 [path_str],
                 |r| {
                     Ok(Project {
@@ -790,15 +809,27 @@ impl Store {
                         name: r.get(1)?,
                         path: r.get(2)?,
                         added_order: r.get(3)?,
+                        color: r.get(4)?,
                     })
                 },
             )
             .map_err(|e| e.to_string())
     }
+    /// Sets a project's colour, or clears it with None.
+    pub fn set_project_color(&self, project_id: &str, color: Option<&str>) -> Result<Project> {
+        if color.is_some_and(|color| !PROJECT_COLORS.contains(&color)) {
+            return Err("Unknown project colour.".into());
+        }
+        let changed = self.db.execute("UPDATE projects SET color=?2 WHERE id=?1", params![project_id, color]).map_err(|e| e.to_string())?;
+        if changed == 0 {
+            return Err("Project not found.".into());
+        }
+        self.project(project_id)
+    }
     pub fn project(&self, project_id: &str) -> Result<Project> {
         self.db
             .query_row(
-                "SELECT id,name,path,rowid FROM projects WHERE id=?1",
+                "SELECT id,name,path,rowid,color FROM projects WHERE id=?1",
                 [project_id],
                 |r| {
                     Ok(Project {
@@ -806,6 +837,7 @@ impl Store {
                         name: r.get(1)?,
                         path: r.get(2)?,
                         added_order: r.get(3)?,
+                        color: r.get(4)?,
                     })
                 },
             )
@@ -2122,6 +2154,44 @@ mod sidebar_tests;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn project_colours_are_set_cleared_listed_and_bounded_to_the_known_names() {
+        let store = super::Store::open(std::path::Path::new(":memory:")).unwrap();
+        let project = store.add_project(&std::env::temp_dir()).unwrap();
+        assert_eq!(project.color, None, "a new project has no colour until the user picks one");
+        for color in super::PROJECT_COLORS {
+            assert_eq!(store.set_project_color(&project.id, Some(color)).unwrap().color.as_deref(), Some(color));
+        }
+        assert_eq!(store.projects().unwrap()[0].color.as_deref(), Some("rose"));
+        assert_eq!(store.project(&project.id).unwrap().color.as_deref(), Some("rose"));
+        for bad in ["", "Rose", "#ff0000", "rose; DROP TABLE projects"] {
+            assert_eq!(store.set_project_color(&project.id, Some(bad)).unwrap_err(), "Unknown project colour.");
+        }
+        assert_eq!(store.project(&project.id).unwrap().color.as_deref(), Some("rose"), "a refused colour changes nothing");
+        assert_eq!(store.set_project_color("missing", Some("sky")).unwrap_err(), "Project not found.");
+        assert_eq!(store.set_project_color(&project.id, None).unwrap().color, None);
+        assert_eq!(serde_json::to_value(store.set_project_color(&project.id, Some("sky")).unwrap()).unwrap()["color"], "sky");
+    }
+
+    #[test]
+    fn project_colour_migration_adds_the_column_to_an_older_database() {
+        let path = std::env::temp_dir().join(format!("pandacode-colour-{}.sqlite", uuid::Uuid::new_v4().simple()));
+        let project_id = {
+            let store = super::Store::open(&path).unwrap();
+            let project = store.add_project(&std::env::temp_dir()).unwrap();
+            store.db.execute_batch("ALTER TABLE projects DROP COLUMN color; PRAGMA user_version=37;").unwrap();
+            project.id
+        };
+        let store = super::Store::open(&path).unwrap();
+        assert_eq!(store.db.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0)).unwrap(), super::SCHEMA_VERSION);
+        assert_eq!(store.project(&project_id).unwrap().color, None);
+        assert_eq!(store.set_project_color(&project_id, Some("teal")).unwrap().color.as_deref(), Some("teal"));
+        drop(store);
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
+        }
+    }
+
     use super::*;
     fn empty_session() -> (Store, Session) {
         let store = Store::open(Path::new(":memory:")).unwrap();

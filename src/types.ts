@@ -1,7 +1,9 @@
 export type ProviderId = 'claude' | 'codex' | 'kimi' | 'opencode' | 'glm' | 'antigravity' | 'grok' | 'mimo' | 'pi' | 'deepseek' | 'commandcode' | 'cline' | 'kilo' | 'omp' | 'github-copilot' | 'muse' | 'devin' | 'zcode' | 'hermes';
 export type Mode = 'ask' | 'auto' | 'review' | 'plan' | 'full';
 export type TaskStage = 'pending' | 'in_progress' | 'review' | 'completed';
-export interface Project { id: string; name: string; path: string; /** Increases with each project added (the native rowid); orders Projects: Added. */ addedOrder?: number; }
+export interface Project { id: string; name: string; path: string; /** Increases with each project added (the native rowid); orders Projects: Added. */ addedOrder?: number; /** The user's colour for the project, or null until they choose one. */ color?: ProjectColor | null; }
+/** The colours a project can take (`storage::PROJECT_COLORS`). */
+export type ProjectColor = 'gray' | 'red' | 'orange' | 'amber' | 'yellow' | 'lime' | 'green' | 'emerald' | 'teal' | 'cyan' | 'sky' | 'blue' | 'indigo' | 'violet' | 'purple' | 'fuchsia' | 'pink' | 'rose';
 export interface ContextUsage { usedTokens: number; contextWindow: number | null; }
 /** Token totals for one task, summed from the harness's own local session logs. */
 export interface TaskTokenUsage { input: number; cacheRead: number; cacheWrite: number; output: number; firstUsed: number | null; lastUsed: number | null; }
