@@ -180,27 +180,28 @@ test.describe('action dock', () => {
   test('one shared pill slides between hovered items and fades out on leave', async ({ page }) => {
     await open(page);
     const pill = page.locator('.action-dock-indicator');
-    const at = () => pill.evaluate(node => { const box = node.getBoundingClientRect(); return { top: Math.round(box.top), opacity: getComputedStyle(node).opacity }; });
+    // The dock is a row, so the pill travels sideways.
+    const at = () => pill.evaluate(node => { const box = node.getBoundingClientRect(); return { left: Math.round(box.left), opacity: getComputedStyle(node).opacity }; });
     await expect(pill).toHaveCount(1);
     expect((await at()).opacity).toBe('0');
     await page.locator('#terminal-toggle').hover();
     const terminal = await rect(page, '#terminal-toggle');
-    await expect.poll(async () => (await at()).top).toBe(Math.round(terminal.top));
+    await expect.poll(async () => (await at()).left).toBe(Math.round(terminal.left));
     await expect.poll(async () => (await at()).opacity).toBe('1');
     // Moving on slides the same pill (it passes through the space between), never a second fill.
     await page.locator('#task-menu-trigger').hover();
     const between = await at();
     const menu = await rect(page, '#task-menu-trigger');
     expect(between.opacity).not.toBe('0');
-    expect(between.top).toBeLessThan(Math.round(menu.top));
-    await expect.poll(async () => (await at()).top).toBe(Math.round(menu.top));
+    expect(between.left).toBeLessThan(Math.round(menu.left));
+    await expect.poll(async () => (await at()).left).toBe(Math.round(menu.left));
     expect(await page.locator('#terminal-toggle').evaluate(node => getComputedStyle(node, '::after').content)).toBe('none');
     // Keyboard focus moves it too; leaving the dock fades it out.
     await page.mouse.move(10, 10);
     await expect.poll(async () => (await at()).opacity).toBe('0');
     await page.locator('#inspector-toggle').focus();
     await page.keyboard.press('ArrowDown');
-    await expect.poll(async () => (await at()).top).toBe(Math.round(terminal.top));
+    await expect.poll(async () => (await at()).left).toBe(Math.round(terminal.left));
   });
 
   test('the tooltip waits on hover, then follows instantly, resizing to each label', async ({ page }) => {
@@ -220,7 +221,7 @@ test.describe('action dock', () => {
     expect(delay).toBeGreaterThanOrEqual(340);
     expect(delay).toBeLessThan(600);
     const short = (await rect(page, '.action-dock-tip')).width;
-    expect((await rect(page, '.action-dock-tip')).right).toBeLessThanOrEqual((await rect(page, '#action-dock')).left);
+    expect((await rect(page, '.action-dock-tip')).top).toBeGreaterThanOrEqual((await rect(page, '#action-dock')).bottom);
     expect(await tip.evaluate(node => getComputedStyle(node).backdropFilter)).toContain('blur');
     // Warm: the next item shows at once and the bubble widens for its longer label.
     await page.locator('#inspector-toggle').hover();
@@ -502,7 +503,7 @@ test.describe('action dock', () => {
       await expect(agents(page)).toBeVisible();
     });
 
-    test('hover opens the panel left of the dock, which stays while the pointer is on it and closes after it leaves', async ({ page }) => {
+    test('hover opens the panel under the dock\'s row, which stays while the pointer is on it and closes after it leaves', async ({ page }) => {
       await open(page);
       await subagent(page, 'a', 'running');
       await agents(page).hover();
@@ -510,9 +511,8 @@ test.describe('action dock', () => {
       await expect(agents(page)).toHaveAttribute('aria-expanded', 'true');
       // Hovering never steals focus from the prompt.
       await expect(subagents(page).locator(':focus')).toHaveCount(0);
-      const panel = await rect(page, '#agents-flyout'), dock = await rect(page, '#action-dock'), item = await rect(page, '#agents-toggle');
-      expect(panel.right).toBeLessThanOrEqual(dock.left);
-      expect(Math.abs(panel.top - item.top)).toBeLessThanOrEqual(2);
+      const panel = await rect(page, '#agents-flyout'), dock = await rect(page, '#action-dock');
+      expect(panel.top).toBeGreaterThanOrEqual(dock.bottom);
       // Across the gap and onto the panel: it stays.
       await page.mouse.move(panel.right - 30, panel.top + 20, { steps: 6 });
       await page.waitForTimeout(500);

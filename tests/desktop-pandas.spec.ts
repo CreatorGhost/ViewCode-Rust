@@ -176,7 +176,7 @@ test.describe('desktop pandas', () => {
     await open(page);
     await expect.poll(() => page.locator('.sidebar').evaluate(node => node.getBoundingClientRect().width), { timeout: 15_000 }).toBe(58);
     await expect(brand(page)).toBeHidden();
-    await expect(page.locator('.sidebar-bottom > button')).toHaveCount(5);
+    await expect(page.locator('.sidebar-bottom > button')).toHaveCount(7);
   });
 
   // Each shape must render where its own SVG attributes put it: page CSS (a fill-box transform
@@ -267,11 +267,14 @@ test.describe('desktop pandas', () => {
       await expect.poll(() => sidebar.evaluate(node => node.getBoundingClientRect().width)).toBe(width);
       const footer = page.locator('.sidebar-bottom');
       const buttons = footer.locator(':scope > button');
-      await expect(buttons).toHaveCount(5);
+      // Help, Usage, Pull requests, Remote access, Settings, the star and the theme.
+      await expect(buttons).toHaveCount(7);
       await expect(buttons.first()).toHaveAccessibleName('Help & support');
       await expect(footer.locator('[data-action="settings"] + button')).toHaveAccessibleName('Star PandaCode on GitHub');
       await expect(footer.locator('.star-panda + button')).toHaveAttribute('id', 'theme-toggle');
-      const bounds = (await sidebar.boundingBox())!;
+      // The footer is the foot of the project rail; in the 58px icon rail it returns to the sidebar.
+      const bounds = (await (width === 58 ? sidebar : page.locator('#project-rail')).boundingBox())!;
+      expect(await footer.evaluate(node => node.parentElement!.id)).toBe(width === 58 ? 'workspace-sidebar' : 'project-rail');
       const boxes = [];
       for (const button of await buttons.all()) {
         await expect(button).toBeVisible();

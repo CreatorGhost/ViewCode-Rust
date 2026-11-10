@@ -72,12 +72,15 @@ export function createThreadFind(host: Host) {
     const header = document.querySelector<HTMLElement>('.main-pane>.workspace-header');
     if (!header || !shown(header)) return undefined;
     const dock = header.querySelector<HTMLElement>('#action-dock');
-    if ((dock && getComputedStyle(dock).position !== 'absolute') || shown(header.querySelector('#breadcrumb'))) return undefined;
+    // The dock is a row in the header: the bar takes the room between the thread's title and the row, if there is any
+    // (never in the narrow layout, where there is none to spare).
+    const row = dock && getComputedStyle(dock).position !== 'absolute' ? dock : null;
+    if ((row && matchMedia('(max-width: 650px)').matches) || shown(header.querySelector('#breadcrumb :is(.bot-crumb,.channel-back)'))) return undefined;
     const box = header.getBoundingClientRect(), half = width / 2, gap = 8;
     // The leading box stretches across the row; only its visible items count.
     const leading = [...header.querySelectorAll<HTMLElement>('.header-leading>*')].filter(shown).map(item => item.getBoundingClientRect().right);
     const min = (leading.length ? Math.max(...leading) : box.left) + gap + half;
-    const widgets = [...header.querySelectorAll<HTMLElement>('.header-actions>*')].filter(shown).map(widget => widget.getBoundingClientRect().left);
+    const widgets = [...header.querySelectorAll<HTMLElement>('.header-actions>*'), ...(row ? [row] : [])].filter(shown).map(widget => widget.getBoundingClientRect().left);
     const max = (widgets.length ? Math.min(...widgets) : box.right) - gap - half;
     if (min > max) return undefined;
     const pane_ = pane.getBoundingClientRect();

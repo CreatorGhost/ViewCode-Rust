@@ -134,8 +134,8 @@ test('Team\'s tip clears the prompt at 620px wide', async ({ page }) => {
   await page.goto('/');
   await page.locator('#team-trigger').hover();
   const bubble = (await page.locator('.tip-bubble').boundingBox())!, input = (await page.locator('#prompt').boundingBox())!;
-  // Above the tray it may overlap the input's lower edge, but the prompt's first line stays readable.
-  expect(bubble.y).toBeGreaterThan(input.y + 30);
+  // The controls sit right under the prompt, so their tips open below them and never cover what is typed.
+  expect(bubble.y).toBeGreaterThan(input.y + input.height);
 });
 
 test('computer, Local, worktree, Team and Terminal use different glyphs', async ({ page }) => {

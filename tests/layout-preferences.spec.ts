@@ -529,7 +529,8 @@ test('layout preferences keep the left sidebar button clear of Mac controls and 
     await expect.poll(() => sidebarWidth(page)).toBe(width);
     const button = (await toggle.boundingBox())!;
     const sidebar = (await page.locator('.sidebar').boundingBox())!;
-    expect(button.x - sidebar.x).toBeGreaterThanOrEqual(104);
+    // The traffic lights sit over the project rail and the sidebar's first 48px; the button clears them from the window's edge.
+    expect(button.x).toBeGreaterThanOrEqual(104);
     // The narrowest sidebar keeps its panda; wider sidebars show the whole wordmark.
     const name = page.locator('.brand-name .desktop-brand-word');
     if (width === 190) await expect(name).toBeHidden();
