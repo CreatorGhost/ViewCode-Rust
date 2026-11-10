@@ -2,6 +2,8 @@ import { decodeHandoff, historicalProvider } from './provider-handoff';
 import { ACCOUNT_SWITCH_PREFIX, accountSwitchDetail } from './account-switch-note';
 import { bindThreadReordering, syncRovingFocus, threadGroupRows } from './thread-order';
 import { PROJECT_LIMIT, readCollapsed, shownTasks } from './sidebar-tree';
+import { railProjectsHtml, railUsageHtml } from './project-rail';
+import { USAGE_PEEK_EVENT } from './usage-peek';
 import { COLLAPSED_SECTIONS_KEY, COMPLETED_OPEN_KEY, UNREVIEWED_KEY, readOpen, sectionOf, sidebarSections, type HeldSection } from './sidebar-sections';
 import { PER_PROJECT, PROJECT_ORDER_KEY, SORT_KEY, compareManual, matchesFilter, readProjectOrder, readSort, taskComparator, type SidebarSort } from './sidebar-sort';
 import './styles.css';
@@ -33,6 +35,7 @@ import './redesign/inspector.css';
 import './redesign/settings.css';
 import './redesign/board.css';
 import './redesign/bots.css';
+import './viewcode-shell.css';
 import './voice-dictation.css';
 import { mountActionDock, mountAgents, snapDockDuring } from './action-dock';
 import { setDocumentView } from './document-viewer';
@@ -509,15 +512,15 @@ const ACTIVITY_WINDOW = 24 * 60 * 60 * 1000;
 const SORT_ICON = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16m-3-3 3 3 3-3M17 20V4m-3 3 3-3 3 3"/></svg>';
 const $app = document.querySelector<HTMLDivElement>('#app')!;
 $app.innerHTML = `<div class="workspace" data-tauri-drag-region>
+  <nav id="project-rail" class="project-rail" aria-label="Projects and shortcuts" data-tauri-drag-region><div id="rail-projects" class="rail-projects" role="group" aria-label="Projects"></div><div id="rail-usage" class="rail-usage" role="group" aria-label="Usage by agent"></div></nav>
   <aside id="workspace-sidebar" class="sidebar" aria-label="Projects and tasks">
     <div class="brand" data-tauri-drag-region><button type="button" class="brand-name" aria-label="Replay PandaCode animation" data-tauri-drag-region="false">PandaCode</button>${button('view-menu', 'Workspace view: Conversation', 'thread', 'view-menu', 'id="view-menu" aria-haspopup="menu" aria-expanded="false"')}</div>
-    <div class="sidebar-actions"><button class="new-task-button" data-action="new-task">${icon('plus')}<span>New task</span><kbd>${shortcut('N')}</kbd></button><button class="new-chat-button" data-action="new-chat" title="New chat (no project)">${icon('chat')}<span>New chat</span></button><button class="search-trigger" data-action="search">${icon('search')}<span>Search</span><kbd>${shortcut('K')}</kbd></button></div>
+    <div class="sidebar-actions"><button class="new-task-button" data-action="new-task">${icon('edit')}<span>New thread</span><kbd>${shortcut('N')}</kbd></button><button class="new-chat-button" data-action="new-chat" title="New chat (no project)">${icon('chat')}<span>New chat</span></button><button class="search-trigger" data-action="search">${icon('search')}<span>Search</span><kbd>${shortcut('K')}</kbd></button></div>
     <div class="sidebar-projects"><button id="project-filter" class="project-filter" data-action="filter-projects" aria-label="Filter projects" aria-haspopup="dialog" aria-expanded="false"><span data-filter-label>All projects</span>${icon('down')}</button><button id="sidebar-sort" class="icon-button sidebar-sort" data-action="sidebar-sort" aria-label="Sort and view" title="Sort and view" aria-haspopup="menu" aria-expanded="false">${SORT_ICON}</button>${button('import-conversations', 'Import conversations', 'download', 'import-trigger')}${button('add-project', 'Open project', 'plus')}</div>
     <div class="sidebar-search">${icon('search')}<input id="sidebar-filter" type="search" aria-label="Filter tasks" placeholder="Filter tasks" autocomplete="off" spellcheck="false" maxlength="200" aria-keyshortcuts="/"><button type="button" class="sidebar-search-clear" data-action="clear-sidebar-filter" tabindex="-1" aria-label="Clear filter" title="Clear filter">${icon('close')}</button></div>
     <div class="navigation-frame"><div id="navigation" class="navigation"></div></div>
     <section id="sidebar-bots-panel" class="bots-panel" aria-label="Bots"></section>
-    <div id="sidebar-bots" class="sidebar-bots"></div>
-    <div class="sidebar-bottom">${button('support', 'Help & support', 'help', 'support-button', 'id="support-button"')}${button('agent-usage', 'Agent usage', 'activity', '', 'id="agent-usage-button"')}<button data-action="settings" title="Settings (${shortcut(',')})" aria-label="Settings">${icon('settings')}</button>${starPanda()}<button data-action="toggle-theme" id="theme-toggle" aria-label="Dark mode" aria-pressed="false"></button></div>
+    <div class="sidebar-bottom"><div id="sidebar-bots" class="sidebar-bots"></div>${button('support', 'Help & support', 'help', 'support-button', 'id="support-button"')}${button('agent-usage', 'Agent usage', 'activity', '', 'id="agent-usage-button"')}<button data-action="settings" title="Settings (${shortcut(',')})" aria-label="Settings">${icon('settings')}</button>${button('rail-github', 'Pull requests and issues', 'pull')}<button data-action="settings-page" data-id="remote" title="Remote access" aria-label="Remote access">${icon('phone')}</button>${starPanda()}<button data-action="toggle-theme" id="theme-toggle" aria-label="Dark mode" aria-pressed="false"></button></div>
   </aside>
   <main class="main-pane">
     <header class="workspace-header" data-tauri-drag-region="deep"><div class="header-leading" data-tauri-drag-region>${button('toggle-sidebar', 'Hide sidebar', 'sidebar', 'sidebar-toggle', 'id="sidebar-toggle" aria-controls="workspace-sidebar" aria-expanded="true" aria-keyshortcuts="Meta+B Control+B"')}<span id="view-divider" class="header-divider" aria-hidden="true" hidden></span><div id="breadcrumb" class="breadcrumb" data-tauri-drag-region></div></div><div class="header-actions">${preview ? '<span class="preview-status">Browser preview · sample data</span>' : ''}</div><div id="agents-dock-host"></div><div id="action-dock" class="action-dock" role="toolbar" aria-label="Workspace actions" aria-orientation="vertical" data-tauri-drag-region="false"><div class="action-dock-group" data-group="panels">${button('toggle-inspector', 'Toggle inspector', 'panel', 'active', 'id="inspector-toggle" aria-keyshortcuts="Meta+Shift+B Control+Shift+B"', `Toggle inspector (${shortcut('B', true)})`)}${button('terminal', 'Toggle terminal', 'terminal', '', 'id="terminal-toggle" aria-controls="terminal-drawer" aria-expanded="false" aria-keyshortcuts="Meta+J Control+J"', `Toggle terminal (${shortcut('J')})`)}${button('browser', 'Open browser', 'globe', '', 'id="browser-toggle"')}${button('moodboards', 'Project moodboards', 'images')}<button type="button" id="agents-toggle" class="agents-toggle" aria-label="Agents" aria-haspopup="dialog" aria-expanded="false" aria-controls="agents-flyout" data-dock-notip hidden>${icon('team')}<b class="dock-badge" aria-hidden="true" hidden></b></button></div><div class="action-dock-group" data-group="actions"><button type="button" class="header-run" id="run-project-button" data-action="run-project" aria-label="Run project" title="Run pandacode-run.sh" hidden>${icon('play')}<span>Run</span></button>${button('deploy', 'Deploy', 'upload', '', 'id="deploy-button" aria-haspopup="dialog"')}${button('task-menu', 'Task actions', 'more', '', 'id="task-menu-trigger" aria-haspopup="dialog" aria-expanded="false"')}</div><div class="action-dock-group" data-group="status"><button type="button" id="update-status" class="update-status" hidden>${icon('refresh')}<span>Restart to update</span></button></div></div><div id="agents-flyout" class="agents-flyout" data-tauri-drag-region="false" hidden><div id="subagents-host" class="subagents-host" hidden></div><div id="lineage-host" class="lineage-host"></div></div></header>
@@ -1504,8 +1507,34 @@ function taskSignal(s: Session, now: number): { status: string; statusLabel: str
   const word = status === 'attention' ? answer ? 'Answer' : 'Approval' : status === 'failed' ? statusLabel : status === 'limited' ? (limitReset(s.limitedUntil, now) ? `Limited · ${limitReset(s.limitedUntil, now)}` : 'Limited') : '';
   return { status, statusLabel, word };
 }
+/** The rail's project tiles and usage rings. A redraw only happens when the markup changed, and keeps focus on the same tile. */
+function renderRail(): void {
+  const paint = (host: HTMLElement, html: string) => {
+    if (showsHtml(host, html)) return;
+    // An open project list keeps its anchor: replacing the "+N" tile would cancel the menu.
+    if (host.querySelector('[aria-expanded="true"]') || pendingMenuOpen && host.contains(pendingMenuOpen.anchor)) return;
+    const focused = host.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
+    const key = focused?.dataset.id ? `[data-id="${CSS.escape(focused.dataset.id)}"]` : focused?.dataset.provider ? `[data-provider="${CSS.escape(focused.dataset.provider)}"]` : focused ? `[data-action="${CSS.escape(focused.dataset.action ?? '')}"]` : '';
+    host.innerHTML = html;
+    if (key) host.querySelector<HTMLElement>(key)?.focus({ preventScroll: true });
+  };
+  paint($('#rail-projects'), railProjectsHtml(userProjects(), state.projectFilter, session()?.projectId ?? state.projectId));
+  paint($('#rail-usage'), railUsageHtml(state.providers, shortProvider));
+}
+window.addEventListener(USAGE_PEEK_EVENT, () => renderRail());
+/** The shell's icon buttons live at the rail's foot; at ≤650px the sidebar is the icon rail and takes them back. */
+const railCompact = matchMedia('(max-width: 650px)');
+function placeSidebarBottom(): void {
+  const bottom = $('.sidebar-bottom'), host = railCompact.matches ? $('.sidebar') : $('#project-rail');
+  if (bottom.parentElement === host) return;
+  const focused = bottom.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
+  host.append(bottom);
+  focused?.focus({ preventScroll: true });
+}
+railCompact.addEventListener('change', placeSidebarBottom);
 function renderNavigation(): void {
   queueMicrotask(() => tiles.refresh());
+  renderRail();
   // Preserve the native drag source while agent updates arrive in the background.
   if (sidebarDragging) return;
   const now = Date.now();
@@ -1555,7 +1584,7 @@ function renderNavigation(): void {
     const unread = seen.has(s.id) && s.id !== state.sessionId;
     const checkout = s.worktreePath ? s.worktreePath.split(/[\\/]/).filter(Boolean).pop() ?? p?.name ?? 'Project' : p?.name ?? 'Project';
     const link = s.pullRequest ?? s.issue;
-    const linkMark = link ? `<span class="task-link ${link.kind === 'pull' ? 'pull' : 'issue'}" title="${escape(`${link.kind === 'pull' ? 'Pull request' : 'Issue'} #${link.number}: ${link.title}`)}">#${link.number}</span>` : '';
+    const linkMark = link ? `<span class="task-link ${link.kind === 'pull' ? 'pull' : 'issue'}"${link.kind === 'pull' && link.state === 'closed' || /fail/i.test(link.state) ? ' data-attention' : ''} title="${escape(`${link.kind === 'pull' ? 'Pull request' : 'Issue'} #${link.number}: ${link.title}`)}">#${link.number}</span>` : '';
     // Worktree tasks show their branch; the worktree mark keeps its accessible name either way.
     const worktreeMark = (s.worktreePath ? `<span class="task-worktree" role="img" aria-label="Worktree" title="${escape(s.worktreePath)}">${icon('worktree')}</span>` : '')
       + (s.cloud ? `<span class="task-cloud" role="img" aria-label="Runs on ${escape(s.cloud.label)}" title="Runs on a ${escape(s.cloud.label)} cloud machine">${cloudIcon()}</span>` : '')
@@ -1605,7 +1634,7 @@ function renderNavigation(): void {
   const pinned = visible.filter(s => s.pinned).sort(compareManual);
   // "Show N more" / "Show less" under a capped list; `key` is a project id, "chats" or "all".
   const moreButton = (key: string, total: number, shown: number, expanded: boolean, limit: number) => !filtering && (total > shown || expanded && total > limit)
-    ? `<button class="folder-more" data-action="toggle-folder-more" data-project="${escape(key)}" tabindex="-1">${expanded ? 'Show less' : `Show ${total - shown} more`}</button>` : '';
+    ? `<button class="folder-more" data-action="toggle-folder-more" data-project="${escape(key)}" tabindex="-1">${expanded ? 'Show less' : `${total - shown} more`}</button>` : '';
   const capped = (key: string, tasks: Session[], limit: number) => {
     const expanded = state.expandedFolders.has(key);
     const rows = filtering ? tasks : shownTasks(tasks, expanded, state.sessionId, limit);
@@ -1698,8 +1727,11 @@ function renderHeader(): void {
   // A chat has no project: no project bar, deploy or run script.
   document.body.classList.toggle('chat-thread', chat);
   $('.conversation-pane').classList.toggle('bot-thread', Boolean(bot));
-  const crumb = bot ? botCrumb(bot) : chat ? `${icon('chat')}<span>Chat</span>` : p && !fresh ? `${icon('folder')}<button data-action="select-project" data-id="${escape(p.id)}">${escape(p.name)}</button>` : '';
+  const crumb = bot ? botCrumb(bot) : chat ? `${icon('chat')}<span>Chat</span>` : fresh ? '<span class="crumb-title">New thread</span>' : p ? `${icon('folder')}<button data-action="select-project" data-id="${escape(p.id)}">${escape(p.name)}</button>${session() ? `<span class="crumb-sep" aria-hidden="true">/</span><span class="crumb-title">${escape(session()!.title)}</span>` : ''}` : '';
   if (!showsHtml($('#breadcrumb'), crumb)) $('#breadcrumb').innerHTML = crumb;
+  // The New thread page names its agent and branch; both can change while it shows.
+  const welcome = document.querySelector<HTMLElement>('#transcript > .new-task-welcome:not(.chat-welcome)');
+  if (welcome && fresh && !bot && !chat && !welcome.querySelector('[aria-expanded="true"]') && !(pendingMenuOpen && welcome.contains(pendingMenuOpen.anchor)) && !showsHtml(welcome, newThreadWelcomeHtml(session()!), true)) welcome.outerHTML = newThreadWelcomeHtml(session()!);
   const s = session(), bar = document.querySelector<HTMLElement>('#composer-area .composer-context');
   if (s && bar) {
     const markup = contextBarHtml(s, fresh);
@@ -1722,8 +1754,14 @@ function contextBarHtml(s: Session, fresh: boolean): string {
   });
   return template.innerHTML;
 }
+/** The New thread page: who builds (the thread's agent, in the accent), then where (project / branch). */
+function newThreadWelcomeHtml(s: Session): string {
+  const name = project()?.name ?? 'this project', agent = shortProvider(s.provider);
+  const branch = s.worktreeBranch || (s.worktreePath || s.remoteDevice ? '' : state.git?.isRepo ? state.git.branch : '');
+  return `<div class="new-task-welcome"><span class="new-task-mark" aria-hidden="true">${icon('bamboo')}</span><h1>What should <span class="new-task-agent">${escape(agent)}</span> build?</h1><p class="new-task-where">${icon('folder')}<button id="welcome-project" class="welcome-project" data-action="change-task-project" aria-label="Change task project" aria-haspopup="dialog" aria-expanded="false" title="${escape(project()?.path)}" ${s.worktreePath ? 'disabled' : ''}>${escape(name)}</button>${branch ? `<span class="new-task-sep" aria-hidden="true">/</span><span class="new-task-branch" title="Branch">${icon('branch')}<span>${escape(branch)}</span></span>` : ''}</p></div>`;
+}
 /** What the empty prompt invites: a task, or a message to the bot whose thread this is. */
-function composerPlaceholder(): string { const bot = botForThread(); return bot ? `Message ${escape(bot.name)}…` : chatTask(session()) ? 'Ask anything…' : newTaskView() ? 'Describe a task…' : 'Ask for follow-up changes…'; }
+function composerPlaceholder(): string { const bot = botForThread(); return bot ? `Message ${escape(bot.name)}…` : chatTask(session()) ? 'Ask anything…' : newTaskView() ? 'Ask for changes, send follow-ups, or attach images' : 'Ask for follow-up changes…'; }
 /** A bot thread's header: who you're talking to, where the thread comes from, and its settings. */
 function botCrumb(bot: import('./bots').Bot): string {
   const s = session();
@@ -1930,8 +1968,7 @@ function renderTranscript(preservePosition = false): void {
     return;
   }
   if (newTaskView() && !bot) {
-    const name = project()?.name ?? 'this project';
-    transcript.innerHTML = `<div class="new-task-welcome"><span class="new-task-mark" aria-hidden="true">${icon('bamboo')}</span><h1 aria-label="What should we build in ${escape(name)}?">What should we build in <button id="welcome-project" class="welcome-project" data-action="change-task-project" aria-label="Change task project" aria-haspopup="dialog" aria-expanded="false" title="${escape(project()?.path)}" ${s.worktreePath ? 'disabled' : ''}>${escape(name)}</button>?</h1></div><div id="stream-region"></div>`;
+    transcript.innerHTML = `${newThreadWelcomeHtml(s)}<div id="stream-region"></div>`;
     return;
   }
   const grouped = groupTurns(visibleMessages());
@@ -3040,6 +3077,10 @@ function renderSidebarVisibility(): void {
   const sidebar = $('.sidebar'), toggle = $('#sidebar-toggle');
   const toggleFocused = document.activeElement === toggle;
   if (sidebar.hidden !== (board || collapsed)) sidebar.hidden = board || collapsed;
+  // The rail goes with the sidebar.
+  const rail = $('#project-rail');
+  if (rail.hidden !== sidebar.hidden) rail.hidden = sidebar.hidden;
+  placeSidebarBottom();
   const toggleHost = collapsed ? $('.header-leading') : $('.brand');
   if (toggle.parentElement !== toggleHost) {
     toggleHost.prepend(toggle);
@@ -7022,7 +7063,15 @@ async function action(name: string, element: HTMLElement): Promise<void> {
     case 'model': await showModel(element, actionTask(element)); break;
     case 'change-task-project': await showProjectPicker(element); break;
     case 'mode': await showMode(element, actionTask(element)); break;
-    case 'filter-projects': await showProjectFilter(element); break;
+    case 'filter-projects': case 'rail-projects-more': await showProjectFilter(element); break;
+    // A tile scopes the list to its project; the chosen tile again shows every project.
+    case 'rail-project': {
+      const id = element.dataset.id!;
+      if (state.projectFilter === id) { setProjectFilter(''); renderNavigation(); }
+      else { setProjectFilter(id); await selectProject(id); }
+      break;
+    }
+    case 'rail-github': if (githubEnabled()) setWorkspaceView('github'); else await showSettings('github'); break;
     case 'default-provider': await showDefaultProvider(element); break;
     case 'default-model': await showDefaultModel(element); break;
     case 'close-dialog': closeModal(); break;
