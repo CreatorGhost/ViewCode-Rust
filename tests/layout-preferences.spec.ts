@@ -328,8 +328,9 @@ test('layout preferences keep controls readable at 160 percent in wide and narro
     const header = await page.locator('.workspace-header').boundingBox();
     expect(actions).not.toBeNull();
     expect(header).not.toBeNull();
-    // The project name no longer shows at the top; the dock floats below the header or sits in its row.
-    await expect(page.locator('.breadcrumb')).toBeHidden();
+    // The project name no longer shows at the top, only the thread's title; the dock sits in the header's row.
+    await expect(page.locator('.breadcrumb [data-action="select-project"]')).toBeHidden();
+    await expect(page.locator('.breadcrumb .crumb-title')).toBeVisible();
     expect(actions!.x + actions!.width).toBeLessThanOrEqual(header!.x + header!.width + .5);
     expect(actions!.x + actions!.width).toBeLessThanOrEqual(width + .5);
     const projectLabel = page.locator('.breadcrumb > button');
@@ -409,7 +410,7 @@ test('layout preferences collapse the sidebar, reclaim its width, and restore bo
   await expect(toggle).toBeFocused();
   expect(await toggleNode!.evaluate(node => node === document.querySelector('#sidebar-toggle'))).toBe(true);
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await expect.poll(async () => (await page.locator('.main-pane').boundingBox())!.width).toBeCloseTo(mainBefore.width + 350, 0); // the collapsed pane runs full-bleed to the left edge
+  await expect.poll(async () => (await page.locator('.main-pane').boundingBox())!.width).toBeCloseTo(mainBefore.width + 350 + 56, 0); // the collapsed pane runs full-bleed to the left edge: the sidebar's 350px and the rail's 56px
   expect(await page.evaluate(() => localStorage.getItem('pandacode.sidebarCollapsed'))).toBe('true');
   expect(await storedWidth(page)).toBe(chosenWidth);
   await page.reload({ waitUntil: 'domcontentloaded' });
@@ -531,10 +532,9 @@ test('layout preferences keep the left sidebar button clear of Mac controls and 
     const sidebar = (await page.locator('.sidebar').boundingBox())!;
     // The traffic lights sit over the project rail and the sidebar's first 48px; the button clears them from the window's edge.
     expect(button.x).toBeGreaterThanOrEqual(104);
-    // The narrowest sidebar keeps its panda; wider sidebars show the whole wordmark.
+    // The project rail takes the traffic lights' first 56px, so even the narrowest sidebar has room for the whole wordmark.
     const name = page.locator('.brand-name .desktop-brand-word');
-    if (width === 190) await expect(name).toBeHidden();
-    else {
+    {
       await expect(name).toBeVisible();
       const brand = (await name.boundingBox())!;
       expect(button.x + button.width).toBeLessThanOrEqual(brand.x);

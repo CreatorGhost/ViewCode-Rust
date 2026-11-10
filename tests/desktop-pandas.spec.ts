@@ -162,7 +162,8 @@ test.describe('desktop pandas', () => {
         for (const r of parts) {
           expect(r.y).toBeGreaterThanOrEqual(0);
           expect(r.bottom).toBeLessThanOrEqual(55);
-          expect(r.x).toBeGreaterThanOrEqual(m.sidebar!.x + m.gutter);
+          // The traffic lights sit over the project rail and the sidebar's start: the gutter runs from the window's edge.
+          expect(r.x).toBeGreaterThanOrEqual(Math.max(m.sidebar!.x, m.gutter));
           expect(r.right).toBeLessThanOrEqual(m.menu!.x);
           if (m.toggle) expect(r.right <= m.toggle.x || r.x >= m.toggle.right, 'clears the sidebar toggle').toBe(true);
         }

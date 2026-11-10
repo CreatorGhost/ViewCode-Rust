@@ -351,15 +351,16 @@ test.describe('action dock', () => {
     const box = await rect(page, '#inspector-toggle');
     await page.mouse.move(box.left + box.width / 2, box.top + box.height / 2);
     await expect(tip).toHaveText(/^Toggle inspector/);
-    // The update prompt appears: the dock springs taller and re-centres, so another item passes under the pointer.
+    // The update prompt appears: the row springs wider from its right end, so the items slide left under the pointer.
     await page.locator('#update-status').evaluate(node => { (node as HTMLElement).hidden = false; });
     await expect.poll(() => dockAnimations(page)).toBe(0);
     await page.waitForTimeout(450);
     const under = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('#action-dock button')?.id ?? '', { x: box.left + box.width / 2, y: box.top + box.height / 2 });
     expect(under).not.toBe('inspector-toggle');
     await expect(tip).toBeHidden();
-    // Real movement over the new item opens its label as usual.
-    await page.mouse.move(box.left + box.width / 2 + 1, box.top + box.height / 2);
+    // Real movement onto an item opens its label as usual (what slid under the pointer may be the prompt itself, which names itself).
+    const next = await rect(page, '#terminal-toggle');
+    await page.mouse.move(next.left + next.width / 2, next.top + next.height / 2, { steps: 3 });
     await expect(tip).toBeVisible();
   });
 

@@ -137,6 +137,8 @@ html .breadcrumb:has(>.crumb-title){display:flex!important}
   /* As at ≤650px (action-dock.css): with the title and the row in the header, the transcript starts below it. */
   html .workspace:not(.board-view,.github-view) .conversation-pane:not(.new-task-page,.channel-thread):not(:has(>:is(.task-details-heading,.jev-activity):not([hidden]))){--header-under:0px;--header-fade-under:0px;--transcript-top:12px}
 }
+/* Find in thread with no room left in the header: its bar floats over the pane's top (thread-find.ts), and the first row rests below it. */
+html .workspace:not(.board-view,.github-view) .conversation-pane.find-docked:not(.new-task-page,.channel-thread):not(:has(>:is(.task-details-heading,.jev-activity):not([hidden]))){--transcript-top:54px}
 
 /* ---------- New thread page: headline, where it runs, then the composer, centred together ---------- */
 .conversation-pane.new-task-page{justify-content:center}

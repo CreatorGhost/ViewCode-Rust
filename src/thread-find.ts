@@ -96,6 +96,10 @@ export function createThreadFind(host: Host) {
     const slot = headerSlot(pane, bar.offsetWidth || FIND_BAR_WIDTH);
     bar.style.setProperty('--find-left', `${slot ? Math.floor(slot.center) : Math.round(rect.left + rect.width / 2)}px`); // floor: the 8px clearance never rounds away
     bar.style.setProperty('--find-top', `${Math.round(slot?.top ?? rect.top + 10)}px`);
+    // With no room in the header the bar sits over the pane's top; the thread's first row then rests below it
+    // (`.find-docked` in viewcode-shell.css), so a match at the very top is never under the bar.
+    document.querySelectorAll('.conversation-pane.find-docked').forEach(docked => { if (docked !== pane || slot || bar!.hidden) docked.classList.remove('find-docked'); });
+    if (!slot && !bar.hidden && pane.matches('.conversation-pane')) pane.classList.add('find-docked');
   };
   const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(place) : undefined;
 
@@ -192,6 +196,7 @@ export function createThreadFind(host: Host) {
     window.removeEventListener('resize', place);
     cancelAnimationFrame(frame); frame = 0;
     highlights?.delete(ALL); highlights?.delete(CURRENT);
+    document.querySelectorAll('.conversation-pane.find-docked').forEach(docked => docked.classList.remove('find-docked'));
     bar?.remove(); bar = undefined; input = undefined; count = undefined; ranges = []; current = -1;
     host.restoreFocus();
   }
