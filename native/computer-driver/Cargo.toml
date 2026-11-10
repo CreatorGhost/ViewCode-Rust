@@ -1,0 +1,25 @@
+[package]
+name = "viewcode-computer-driver"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "MIT"
+publish = false
+
+# agent-desktop (Apache-2.0) is pinned to one reviewed revision. Bump `rev` on
+# purpose, in its own change, and update the notice in
+# third-party-licenses.config.json if its licence ever changes.
+[dependencies]
+agent-desktop-core = { git = "https://github.com/vercel-labs/agent-desktop", rev = "ab7dfb218cddc1594aa1d87a5bfcd0ac76da2276" }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+agent-desktop-macos = { git = "https://github.com/vercel-labs/agent-desktop", rev = "ab7dfb218cddc1594aa1d87a5bfcd0ac76da2276" }
+libc = "0.2"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+panic = "abort"
+strip = true
