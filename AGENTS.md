@@ -39,6 +39,7 @@ Rules an agent needs before writing any code. Detailed subsystem notes are in [d
 Area → key files → detail (read it before touching the area).
 
 - Design system, inset shell: `src/design-system.css`, `src/inset-shell.css`, `src/palette*.ts` → [ref](docs/agent-reference.md#design-system-and-shell).
+- ViewCode shell (project rail, usage rings, thread column, header row, New thread page, one-card composer): `src/viewcode-shell.css`, `src/project-rail.ts`, `src/usage-peek.ts` → [ref](docs/agent-reference.md#design-system-and-shell).
 - Thread sky, scenes: `src/sky-window.ts`, `src/sky-math.ts`, `src/scenes/` → [ref](docs/agent-reference.md#thread-window-and-scenes).
 - Motion: `src/motion.ts`, `src/popover-motion.ts`, `src/trace-motion.ts` → [ref](docs/agent-reference.md#motion).
 - Action dock, Agents flyout: `src/action-dock.ts`, `src/team-progress.ts` → [ref](docs/agent-reference.md#action-dock-and-agents).

@@ -61,9 +61,10 @@ Exercise protocol parsers and request serialization, storage restart, path trave
 ## New-task project selection
 
 The new-task page follows the supplied layout in PandaCode's selected theme:
-a small provider mark above a centered “What should we build in …?” heading and a
-composer anchored at the bottom. The heading's project name and the composer context
-row open the same searchable, keyboard-accessible project picker. Project paths
+a centered “What should <agent> build?” heading (the agent's name in the accent), a
+project / branch line under it and the composer below, all centred together. The
+line's project name and the composer context row open the same searchable,
+keyboard-accessible project picker. Project paths
 distinguish duplicate names; the current project has a checkmark. The picker loads
 on demand, renders at most 100 matching rows, and closes when its task changes.
 
