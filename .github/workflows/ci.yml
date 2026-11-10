@@ -61,6 +61,24 @@ jobs:
       - if: ${{ !cancelled() }}
         run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
+  computer-driver:
+    # The computer-use helper (native/computer-driver) is its own crate: its rules sit behind a
+    # `Desktop` trait, so they are tested on Linux although it only drives macOS.
+    name: Computer driver tests
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: native/computer-driver
+      - run: cargo test --locked --manifest-path native/computer-driver/Cargo.toml
+      - if: ${{ !cancelled() }}
+        run: cargo clippy --locked --manifest-path native/computer-driver/Cargo.toml --all-targets -- -D warnings
+
   router:
     # x86_64 Linux builds without ONNX Runtime (see `panda_onnx` in src-tauri/build.rs), so Panda Router's
     # ONNX parity tests run here, on a target that links it.
