@@ -2,6 +2,18 @@
 
 PandaCode includes code and data from the following third-party works.
 
+## agent-desktop (computer driver)
+
+- Source: https://github.com/vercel-labs/agent-desktop, commit `ab7dfb218cddc1594aa1d87a5bfcd0ac76da2276` (crates `agent-desktop-core` and `agent-desktop-macos`)
+- Licence: Apache License 2.0, Copyright (c) the agent-desktop authors (Vercel Labs). The full text is at https://www.apache.org/licenses/LICENSE-2.0
+- Used in: `native/computer-driver`, the helper that reads and controls macOS windows for computer use. It is linked as a pinned git dependency, unmodified.
+
+## ViewCode computer driver
+
+- Source: https://github.com/CreatorGhost/ViewCode (`native/computer-driver`)
+- Licence: MIT, by the author of this fork
+- Used in: `native/computer-driver`, copied unchanged.
+
 ## @handy-computer/models 0.2.3
 
 - Source: https://github.com/handy-computer/models (npm `@handy-computer/models@0.2.3`, commit `2d77f8810ee9539a90328a4c59b420326b225d39`)
