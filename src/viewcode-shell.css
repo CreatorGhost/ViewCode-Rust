@@ -201,7 +201,9 @@ html .composer:has(#prompt:placeholder-shown):not(:has(#attachments>*)) .compose
   .workspace>.sidebar .task-link{box-shadow:inset 0 0 0 1px var(--border)}
 }
 @media(forced-colors:active){
-  .rail-tile{background:ButtonFace;color:ButtonText;box-shadow:inset 0 0 0 1px ButtonText}
+  .rail-tile{background:ButtonFace;color:ButtonText;box-shadow:none;outline:1px solid ButtonText;outline-offset:-1px}
+  .rail-tile:focus-visible{outline:2px solid Highlight;outline-offset:2px}
+  html .workspace:not(.board-view,.github-view) .action-dock{border:0;background:none}
   .rail-tile[aria-pressed=true]{background:Highlight;color:HighlightText;forced-color-adjust:none}
   .rail-tile::before{background:CanvasText}
   .rail-ring-track{stroke:GrayText}
