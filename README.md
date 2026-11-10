@@ -1,5 +1,9 @@
 # PandaCode
 
+> **This is a fork of PandaCode.** The original project lives at
+> <https://github.com/aicodeking/pandacode>. This fork ports ViewCode onto
+> PandaCode's Tauri and Rust base.
+
 A small, native desktop workspace for coding agents. PandaCode runs the coding
 CLIs you already use — **Claude Code, Codex, Kimi Code, OpenCode, GLM Coding
 Plan and Xiaomi MiMo** (through Claude Code), **GitHub Copilot CLI, Antigravity,

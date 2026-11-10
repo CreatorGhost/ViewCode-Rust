@@ -10,7 +10,12 @@ export const PROJECT_LINKS = {
   license: 'https://github.com/aicodeking/pandacode/blob/main/LICENSE',
   /** The browser preview's fallback; the app opens its bundled copy (tauri.conf.json resources). */
   notices: 'https://github.com/aicodeking/pandacode/blob/main/THIRD_PARTY_NOTICES.md',
+  /** The project this app is forked from. The PandaCode License requires the notice and this link. */
+  upstream: 'https://github.com/aicodeking/pandacode',
 } as const;
+
+/** The exact statement the PandaCode License requires a fork to show its users. */
+export const FORK_NOTICE = 'This is a fork of PandaCode';
 
 const link = (label: string, url: string) =>
   `<button type="button" class="secondary-button" data-action="open-url" data-url="${url}">${label}${icon('forward')}</button>`;
@@ -19,6 +24,7 @@ const link = (label: string, url: string) =>
 export function aboutSettingsHtml(): string {
   return `<div class="settings-group settings-about" aria-labelledby="settings-about-heading">
     <div class="setting-row"><div><strong id="settings-about-heading">About PandaCode</strong><small class="settings-about-version">Version …</small></div></div>
+    <div class="setting-row settings-fork-notice"><div><strong>${FORK_NOTICE}</strong><small>Built on the open source PandaCode project.</small></div><div class="settings-row-actions">${link('PandaCode', PROJECT_LINKS.upstream)}</div></div>
     <div class="setting-row"><div><strong>License</strong><small>Open source (MIT-based). No account, no telemetry.</small></div><div class="settings-row-actions">${link('PandaCode License', PROJECT_LINKS.license)}<button type="button" class="secondary-button" data-about-notices>Third-party notices${icon('forward')}</button></div></div>
     <div class="setting-row settings-updates"><div><strong>Updates</strong><small class="settings-update-status" aria-live="polite">Checks GitHub Releases automatically.</small></div><div class="settings-row-actions"><button type="button" class="secondary-button settings-update-action" hidden></button>${link('Releases', PROJECT_LINKS.releases)}</div></div>
     <div class="setting-row settings-updates-auto"><div><strong>Update mode</strong><small>Automatic restarts when no agent is working; Notify me asks first.</small></div><select class="settings-select" data-update-mode aria-label="Update mode"><option value="automatic">Automatic</option><option value="notify">Notify me</option><option value="off">Off</option></select></div>

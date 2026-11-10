@@ -39,3 +39,16 @@ test('updates come only from signed GitHub Releases, and nothing reads license k
   const build = await readFile(join(root, 'src-tauri', 'build.rs'), 'utf8');
   assert.ok(!/PUBLIC_KEY/.test(build));
 });
+
+test('the fork notice the PandaCode License requires is in the README and on the About screen', async () => {
+  const notice = 'This is a fork of PandaCode';
+  const upstream = 'https://github.com/aicodeking/pandacode';
+  const readme = await readFile(join(root, 'README.md'), 'utf8');
+  const top = readme.split('\n').slice(0, 12).join('\n');
+  assert.ok(top.includes(notice), 'the README states the fork near its top');
+  assert.ok(top.includes(upstream), 'the README links to PandaCode beside the statement');
+  const about = await readFile(join(root, 'src', 'about-settings.ts'), 'utf8');
+  assert.match(about, new RegExp(`FORK_NOTICE = '${notice}'`));
+  assert.match(about, /upstream: 'https:\/\/github\.com\/aicodeking\/pandacode'/);
+  assert.match(about, /settings-fork-notice[^\n]*\$\{FORK_NOTICE\}[^\n]*PROJECT_LINKS\.upstream/, 'the About group shows the statement with the link');
+});
