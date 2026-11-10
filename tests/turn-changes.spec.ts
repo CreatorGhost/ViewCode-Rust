@@ -78,8 +78,8 @@ test.describe('turn changes', () => {
       await page.getByRole('button', { name: 'Add to pending', exact: true }).click();
       await page.getByRole('region', { name: 'Task details', exact: true }).getByRole('button', { name: 'Start task', exact: true }).click();
     } else {
-      await page.getByRole('button', { name: 'New task ⌘ N', exact: true }).click();
-      await expect(page.getByRole('heading', { name: /^What should we build in/ })).toBeVisible();
+      await page.getByRole('button', { name: 'New thread ⌘ N', exact: true }).click();
+      await expect(page.getByRole('heading', { name: /^What should .+ build\?$/ })).toBeVisible();
       await expect(page.locator('#prompt')).toBeEnabled();
       await page.locator('#prompt').fill('Sample change with a saved diff'); await page.locator('#prompt').press('Enter');
     }

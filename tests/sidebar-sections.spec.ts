@@ -15,7 +15,7 @@ async function open(page: Page): Promise<void> {
   await expect(page.locator('.task-item.selected')).toHaveCount(1);
 }
 /** Finished is capped per section; lift the cap to reach every row. */
-const showAllFinished = (page: Page) => section(page, 'review').getByRole('button', { name: /^Show \d+ more$/ }).click();
+const showAllFinished = (page: Page) => section(page, 'review').getByRole('button', { name: /^\d+ more$/ }).click();
 
 test.describe('sidebar sections', () => {
   test('lists pinned, then work that needs you, finished work and chats, each under a heading with a count', async ({ page }) => {
@@ -54,9 +54,9 @@ test.describe('sidebar sections', () => {
     // Its text starts where the section's heading does.
     const textLeft = (node: Element) => { const range = document.createRange(); range.selectNodeContents(node); return range.getBoundingClientRect().left; };
     const headingLeft = await section(page, 'review').locator('.group-heading').evaluate(textLeft);
-    const moreLeft = await section(page, 'review').getByRole('button', { name: 'Show 15 more', exact: true }).evaluate(textLeft);
+    const moreLeft = await section(page, 'review').getByRole('button', { name: '15 more', exact: true }).evaluate(textLeft);
     expect(Math.abs(moreLeft - headingLeft)).toBeLessThan(1);
-    await section(page, 'review').getByRole('button', { name: 'Show 15 more', exact: true }).click();
+    await section(page, 'review').getByRole('button', { name: '15 more', exact: true }).click();
     await expect(section(page, 'review').locator('.task-item')).toHaveCount(18);
     await section(page, 'review').getByRole('button', { name: 'Show less', exact: true }).click();
     await expect(section(page, 'review').locator('.task-item')).toHaveCount(3);
@@ -439,7 +439,8 @@ test('every row keeps one indicator node: a state change fades and moves nothing
     for (const result of results) {
       expect(result.place).toEqual(results[0].place);
       expect(result.slot).toBe('6px');
-      expect(result.dot === clear).toBe(result.state !== 'unread');
+      // A card's plain indicator is clear; a one-line row leads with it, so a row with no state keeps a quiet dot.
+      expect(result.dot === clear).toBe(selector.includes(':not') ? result.state !== 'unread' : !['unread', ''].includes(result.state));
       if (result.state === 'limited' && selector.includes(':not')) expect(result.ring).not.toContain(`${clear} 0px 0px 0px 2px inset`);
       else expect(result.mark === clear).toBe(result.state === 'unread' || result.state === '');
     }
@@ -447,13 +448,14 @@ test('every row keeps one indicator node: a state change fades and moves nothing
   }
 });
 
-test('rows sit on the section card with no inner panel, and the open thread is an inset card with a shadow', async ({ page }) => {
+test('rows sit straight in their section with no inner panel, and the open thread is a quiet filled row', async ({ page }) => {
   await page.goto('/?sections');
   const row = page.locator('#navigation .task-item.selected').first();
   await expect(row).toBeVisible();
   const list = page.locator('#navigation .task-group:not(.completed-group) > .task-list').first();
   expect(await list.evaluate(el => { const style = getComputedStyle(el); return [style.borderTopWidth, style.backgroundColor, style.boxShadow]; })).toEqual(['0px', 'rgba(0, 0, 0, 0)', 'none']);
-  const shadow = await row.evaluate(el => getComputedStyle(el).boxShadow);
-  expect(shadow).toContain('inset');
-  expect(shadow.split(/,\s*(?![^(]*\))/).length).toBeGreaterThan(1);
+  // Sections carry no card either, and the open row is a fill with no edge or shadow.
+  const group = page.locator('#navigation .task-group:not(.completed-group)').first();
+  expect(await group.evaluate(el => { const style = getComputedStyle(el); return [style.borderTopWidth, style.backgroundColor, style.boxShadow]; })).toEqual(['0px', 'rgba(0, 0, 0, 0)', 'none']);
+  expect(await row.evaluate(el => { const style = getComputedStyle(el); return [style.boxShadow, style.backgroundColor !== 'rgba(0, 0, 0, 0)']; })).toEqual(['none', true]);
 });

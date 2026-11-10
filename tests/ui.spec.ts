@@ -66,7 +66,7 @@ async function disableWallpapers(page: Page): Promise<void> {
   await expect(page.locator('.workspace-wallpaper img')).toHaveCount(0);
   await closeSettings(page);
 }
-const newTaskHeading = (page: Page) => page.getByRole('heading', { name: /^What should we build in/ });
+const newTaskHeading = (page: Page) => page.getByRole('heading', { name: /^What should .+ build\?$/ });
 const taskProjectPicker = (page: Page) => page.getByRole('dialog', { name: 'Choose project', exact: true });
 const toolByName = (page: Page, name: string) => page.locator(`details.tool-activity[data-tool-name="${name}"]`)
   .or(page.locator('details.tool-activity:not([data-tool-name])').filter({ has: page.locator('summary').filter({ hasText: name }) }));
@@ -207,8 +207,8 @@ test('Arabic composer lines and streaming replies keep their direction after res
     await route.fulfill({ response, body: previewBody(body) });
   });
   await page.reload();
-  await page.getByRole('button', { name: 'New task ⌘ N', exact: true }).click();
-  await expect(page.getByRole('heading', { name: /^What should we build in/ })).toBeVisible();
+  await page.getByRole('button', { name: 'New thread ⌘ N', exact: true }).click();
+  await expect(page.getByRole('heading', { name: /^What should .+ build\?$/ })).toBeVisible();
   const draft = 'مرحبا بالعالم!\nHello, world!\nمرحبا (PandaCode)؟\n<img src=x onerror="window.__owned=1">';
   await prompt(page).fill(draft);
   await expect(prompt(page)).toHaveAttribute('dir', 'auto');
@@ -1133,7 +1133,7 @@ test('finds and selects projects beyond the first hundred filter options', async
   await expect(selected).toBeFocused();
   await page.keyboard.press('Escape');
   await page.locator('.new-task-button').click();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in Fixture project 119?');
+  await expect(page.locator('#welcome-project')).toHaveText('Fixture project 119');
   await expect(openTaskProject(page)).toHaveText('Fixture project 119');
 });
 
@@ -2593,7 +2593,7 @@ test('opens a new conversation in the active project without listing it', async 
   await page.locator('.new-task-button').click();
   await expect(page.getByRole('dialog')).not.toBeVisible();
   await expect(newTaskHeading(page)).toBeVisible();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+  await expect(page.locator('#welcome-project')).toHaveText('orbit');
   await expect(prompt(page)).toBeFocused();
   await expect(prompt(page)).toHaveValue('');
   await expect(page.locator('.user-message,.agent-message')).toHaveCount(0);
@@ -2652,7 +2652,7 @@ test('changes the empty task project while keeping its draft, harness, model, an
   await picker.getByRole('searchbox', { name: 'Search projects', exact: true }).fill('panda');
   await picker.getByRole('option', { name: /^pandacode — / }).click();
   await expect(picker).toHaveCount(0);
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in pandacode?');
+  await expect(page.locator('#welcome-project')).toHaveText('pandacode');
   await expect(prompt(page)).toHaveAttribute('data-session-id', sessionId!);
   await expect(openTaskProject(page)).toHaveText('pandacode');
   await expect(page.locator('#welcome-project')).toHaveText('pandacode');
@@ -2666,7 +2666,7 @@ test('changes the empty task project while keeping its draft, harness, model, an
   await page.reload();
   expect(await page.evaluate(() => localStorage.getItem('pandacode.project'))).toBe('project-2');
   await page.locator('.new-task-button').click();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in pandacode?');
+  await expect(page.locator('#welcome-project')).toHaveText('pandacode');
 });
 
 test('searches task projects by keyboard and cancels or reselects without changing the task', async ({ page }) => {
@@ -2686,7 +2686,7 @@ test('searches task projects by keyboard and cancels or reselects without changi
   await search.press('Escape');
   await expect(picker).toHaveCount(0);
   await expect(trigger).toBeFocused();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+  await expect(page.locator('#welcome-project')).toHaveText('orbit');
   await expect(prompt(page)).toHaveValue('A draft that stays with this empty task');
   await trigger.click();
   await search.fill('/Users/you/Projects/orbit');
@@ -2694,13 +2694,13 @@ test('searches task projects by keyboard and cancels or reselects without changi
   await search.press('Enter');
   await expect(picker).toHaveCount(0);
   await expect(prompt(page)).toHaveAttribute('data-session-id', sessionId!);
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+  await expect(page.locator('#welcome-project')).toHaveText('orbit');
   await expect(prompt(page)).toHaveValue('A draft that stays with this empty task');
   await trigger.click();
   await search.fill('panda');
   await search.press('Enter');
   await expect(picker).toHaveCount(0);
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in pandacode?');
+  await expect(page.locator('#welcome-project')).toHaveText('pandacode');
   await expect(prompt(page)).toHaveAttribute('data-session-id', sessionId!);
   await expect(prompt(page)).toHaveValue('A draft that stays with this empty task');
 });
@@ -2724,7 +2724,7 @@ test('opens a new folder from the task project picker without discarding its dra
   await dialog.getByRole('textbox', { name: 'Project folder', exact: true }).fill('/tmp/new-task-folder');
   await dialog.getByRole('button', { name: 'Open project', exact: true }).click();
   await expect(dialog).not.toBeVisible();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in new-task-folder?');
+  await expect(page.locator('#welcome-project')).toHaveText('new-task-folder');
   await expect(prompt(page)).toHaveAttribute('data-session-id', sessionId!);
   await expect(openTaskProject(page)).toHaveText('new-task-folder');
   await expect(page.locator('#welcome-project')).toHaveText('new-task-folder');
@@ -2747,7 +2747,7 @@ test('applies a delayed project switch after leaving and reselecting the same em
   });
   await page.reload();
   await page.locator('.new-task-button').click();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+  await expect(page.locator('#welcome-project')).toHaveText('orbit');
   const sessionId = await draftTaskId(page);
   await prompt(page).fill('Retain this draft when I return before the project write finishes');
   await page.evaluate(() => { (window as any).__pandacodeDelayConfigure = true; });
@@ -2767,7 +2767,7 @@ test('applies a delayed project switch after leaving and reselecting the same em
   await page.locator('.new-task-button').click();
   await expect(prompt(page)).toHaveAttribute('data-session-id', sessionId!);
   await expect(prompt(page)).toHaveValue('Retain this draft when I return before the project write finishes');
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in pandacode?');
+  await expect(page.locator('#welcome-project')).toHaveText('pandacode');
   await expect(prompt(page)).toHaveAttribute('data-session-id', sessionId!);
   await expect(openTaskProject(page)).toHaveText('pandacode');
   await expect(page.locator('#welcome-project')).toHaveText('pandacode');
@@ -2795,7 +2795,7 @@ for (const delayedCommand of ['add_project', 'list_projects']) {
     });
     await page.reload();
     await page.locator('.new-task-button').click();
-    await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+    await expect(page.locator('#welcome-project')).toHaveText('orbit');
     const sessionId = await draftTaskId(page);
     await prompt(page).fill('Keep this task and draft after canceling its folder request');
     await page.getByRole('button', { name: 'Change task project', exact: true }).first().click();
@@ -2822,7 +2822,7 @@ for (const delayedCommand of ['add_project', 'list_projects']) {
     await closeSettings(page);
     await expect(prompt(page)).toHaveAttribute('data-session-id', sessionId!);
     await expect(openTaskProject(page)).toHaveText('orbit');
-    await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+    await expect(page.locator('#welcome-project')).toHaveText('orbit');
     await expect(prompt(page)).toHaveValue('Keep this task and draft after canceling its folder request');
   });
 }
@@ -2883,7 +2883,7 @@ test('restores the last active project and creates new conversations there', asy
   await expect(projectFilter(page)).toHaveText('pandacode');
   await page.locator('.new-task-button').click();
   await expect(newTaskHeading(page)).toBeVisible();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in pandacode?');
+  await expect(page.locator('#welcome-project')).toHaveText('pandacode');
   await expect(prompt(page)).toBeFocused();
 });
 
@@ -3153,7 +3153,7 @@ test('creates a worktree task under its original project with an icon and fresh 
   await expect.poll(() => savedPermission(page)).toBe('full');
   await prompt(page).fill('Keep this draft in the original checkout');
   await submitWorktree(page, 'codex/worktree-task');
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+  await expect(page.locator('#welcome-project')).toHaveText('orbit');
   const selected = page.locator('.task-item.selected');
   const taskId = await selected.getAttribute('data-id');
   expect(taskId).not.toBe('session-1');
@@ -3177,7 +3177,7 @@ test('creates a worktree task under its original project with an icon and fresh 
   await expect(page.locator('.task-item.selected .task-worktree')).toBeVisible();
   await expect(page.locator('.composer-local')).toHaveText('Worktree');
   await page.locator('.new-task-button').click();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+  await expect(page.locator('#welcome-project')).toHaveText('orbit');
   await expect(page.locator('.task-item.selected .task-worktree')).toHaveCount(0);
   await expect(page.locator('.composer-local')).toHaveText('Local');
   await expect(page.locator('#welcome-project')).toBeEnabled();

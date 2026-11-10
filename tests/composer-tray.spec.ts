@@ -6,13 +6,15 @@ const saver = (page: Page) => page.locator('.composer-saver-button');
 const iconColor = (page: Page) => mode(page).locator('.icon').first().evaluate(el => getComputedStyle(el).color);
 const popped = (page: Page) => page.evaluate(() => (window as unknown as { trayLog: TrayLog }).trayLog.popped);
 
-test('mode, Team, Saver and checkout are icons whose labels stay in the DOM', async ({ page }) => {
+test('the mode shows its name; Team, Saver and checkout are icons whose labels stay in the DOM', async ({ page }) => {
   await page.goto('/');
   await expect(tray(page)).toBeVisible();
   for (const [locator, text] of [[mode(page), 'Standard'], [saver(page), 'Saver'], [tray(page).locator('.composer-local'), 'Local']] as const) {
     await expect(locator).toContainText(text);
     await expect(locator.locator('.sr-only')).toHaveText(text);
-    expect((await locator.boundingBox())!.width).toBeLessThan(44);
+    // The permission mode reads as a word beside its icon; the rest stay icon-sized.
+    if (text === 'Standard') expect((await locator.locator('.sr-only').boundingBox())!.width).toBeGreaterThan(30);
+    else expect((await locator.boundingBox())!.width).toBeLessThan(44);
   }
   await expect(mode(page)).toHaveAttribute('data-tip', /^Standard:/);
   await expect(mode(page)).toHaveAccessibleName('Mode: Standard');
@@ -79,17 +81,22 @@ test('Saver on takes its tone and fill, and off goes back to neutral', async ({ 
   await expect.poll(() => saver(page).evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(off);
 });
 
-for (const width of [1200, 829, 640, 520, 420]) test(`the tray fits a ${width}px composer on one row`, async ({ page }) => {
+for (const width of [1200, 829, 640, 520, 420]) test(`the controls fit one row and the context another in a ${width}px composer`, async ({ page }) => {
   await page.goto('/');
   await page.locator('#navigation .task-item', { hasText: 'Add keyboard shortcuts' }).click();
   await expect(tray(page).locator('.link-chip')).toBeVisible();
   await page.locator('#composer-area').evaluate((el, width) => { el.style.width = `${width}px`; el.style.maxWidth = `${width}px`; }, width);
   await page.waitForTimeout(100);
-  const fit = await tray(page).evaluate(el => {
-    const edge = el.getBoundingClientRect().right, items = [...el.querySelectorAll<HTMLElement>('button,.composer-local,.composer-computer,.branch-chip,.link-chip')].filter(item => item.offsetWidth);
-    return { overflow: el.scrollWidth - el.clientWidth, past: items.filter(item => item.getBoundingClientRect().right > edge + 1).length, tops: new Set(items.map(item => Math.round(item.getBoundingClientRect().top + item.offsetHeight / 2))).size };
+  // The card is one wrapping row (the tray and its groups are `display: contents`): attach, mode, Team, Saver,
+  // Council, model, mic and Send share a line, and where it runs (computer, folder, branch, PR) is the line below.
+  const fit = await page.locator('#composer').evaluate(form => {
+    const edge = form.getBoundingClientRect().right;
+    const shown = (selector: string) => [...form.querySelectorAll<HTMLElement>(selector)].filter(item => item.offsetWidth);
+    const lines = (items: HTMLElement[]) => new Set(items.map(item => Math.round(item.getBoundingClientRect().top + item.offsetHeight / 2))).size;
+    const controls = shown('.composer-actions>*,.composer-tools>*'), context = shown('.composer-context>*');
+    return { overflow: form.scrollWidth - form.clientWidth, past: [...controls, ...context].filter(item => item.getBoundingClientRect().right > edge + 1).length, controls: lines(controls), context: lines(context) };
   });
-  expect(fit).toEqual({ overflow: 0, past: 0, tops: 1 });
+  expect(fit).toEqual({ overflow: 0, past: 0, controls: 1, context: 1 });
   // The composer sits inside #composer-area's 30px side padding; plain Local hides at composer ≤460px by design.
   await expect(tray(page).locator('.composer-local')).toBeVisible({ visible: width - 60 > 460 });
 });

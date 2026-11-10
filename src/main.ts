@@ -7067,6 +7067,7 @@ async function action(name: string, element: HTMLElement): Promise<void> {
     // A tile scopes the list to its project; the chosen tile again shows every project.
     case 'rail-project': {
       const id = element.dataset.id!;
+      if (sidebarView === 'bots') setSidebarView('tasks');
       if (state.projectFilter === id) { setProjectFilter(''); renderNavigation(); }
       else { setProjectFilter(id); await selectProject(id); }
       break;

@@ -57,7 +57,7 @@ test('a switch crossfades, first paint does not, and no thread shows the sky', a
   expect(await sky<number>(page, 'fades')).toBe(before + 1);
   await expect(layer(page)).toHaveAttribute('data-thread-scene', b[1]);
   // The new-task page has no thread: the sky.
-  await page.getByRole('button', { name: /^New task/ }).click();
+  await page.getByRole('button', { name: /^New thread/ }).click();
   await expect(page.locator('.new-task-welcome h1')).toBeVisible();
   await expect(layer(page)).toHaveAttribute('data-thread-scene', 'sky');
 });
@@ -68,7 +68,7 @@ test('?scene= pins one scene for every thread and the new-task page', async ({ p
   const scenes = await scenesByThread(page);
   expect(new Set(scenes.values())).toEqual(new Set(['aurora']));
   expect(await sky<number>(page, 'fades')).toBe(0);
-  await page.getByRole('button', { name: /^New task/ }).click();
+  await page.getByRole('button', { name: /^New thread/ }).click();
   await expect(page.locator('.new-task-welcome h1')).toBeVisible();
   await expect(layer(page)).toHaveAttribute('data-thread-scene', 'aurora');
 });

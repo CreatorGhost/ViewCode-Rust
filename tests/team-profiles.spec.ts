@@ -47,7 +47,7 @@ async function newConversation(page: Page): Promise<string> {
   await page.locator('.new-task-button').click();
   if (previous) await expect(page.locator('#prompt')).not.toHaveAttribute('data-session-id', previous);
   // A New task draft opens without a sidebar row until its first prompt.
-  await expect(page.getByRole('heading', { name: /^What should we build in/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^What should .+ build\?$/ })).toBeVisible();
   return (await currentId(page))!;
 }
 

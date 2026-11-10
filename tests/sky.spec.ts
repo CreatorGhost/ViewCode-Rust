@@ -256,7 +256,7 @@ for (const scene of SCENE_IDS) for (const theme of ['light', 'dark'] as const) {
   }
   for (const time of ['06:30', '12:00', '18:40', '23:00']) test(`the new-task heading clears 4.5:1 over ${over} at ${time} in ${theme}`, async ({ page }) => {
     await open(page, time, theme, scene);
-    await page.getByRole('button', { name: /^New task/ }).click();
+    await page.getByRole('button', { name: /^New thread/ }).click();
     await expect(page.locator('.new-task-welcome h1')).toBeVisible();
     await page.waitForTimeout(400);
     await expect(page.locator('.new-task-welcome')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');

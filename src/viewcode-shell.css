@@ -124,7 +124,7 @@ html[data-theme] .workspace[data-wallpaper]>.sidebar .task-row:has(>.task-item.s
 .workspace>.sidebar .folder-more:hover{color:var(--text)}
 
 /* ---------- Main pane header: the title, then the dock as a row of small icons ---------- */
-.breadcrumb>.crumb-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-weight:var(--weight-medium)}
+.breadcrumb>.crumb-title,.breadcrumb>.crumb-title:last-child{max-width:none;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-weight:var(--weight-medium)}
 /* The project crumb stays hidden as before (styles.css); only the thread's title shows. */
 html .breadcrumb:has(>.crumb-title){display:flex!important}
 .breadcrumb:has(>.crumb-title)>:not(.crumb-title){display:none}
@@ -134,6 +134,8 @@ html .breadcrumb:has(>.crumb-title){display:flex!important}
   .workspace:not(.board-view,.github-view) .action-dock-group+.action-dock-group::before{width:1px;height:18px;margin:0 6px}
   html .workspace:not(.board-view,.github-view) .action-dock button,.workspace:not(.board-view,.github-view) .action-dock-indicator{border-radius:var(--ds-radius-control)}
   html .workspace:not(.board-view,.github-view) .action-dock{outline:0}
+  /* As at ≤650px (action-dock.css): with the title and the row in the header, the transcript starts below it. */
+  html .workspace:not(.board-view,.github-view) .conversation-pane:not(.new-task-page,.channel-thread):not(:has(>:is(.task-details-heading,.jev-activity):not([hidden]))){--header-under:0px;--header-fade-under:0px;--transcript-top:12px}
 }
 
 /* ---------- New thread page: headline, where it runs, then the composer, centred together ---------- */
@@ -161,13 +163,14 @@ html .workspace .new-task-page .composer-area{max-width:648px}
 .conversation-pane .composer-area .composer>.composer-tray,
 .conversation-pane .composer-area .composer .composer-actions,
 .conversation-pane .composer-area .composer>.composer-tray>.composer-tools{display:contents}
-.conversation-pane .composer-area .composer .composer-input>textarea{flex:0 0 100%;min-height:52px;padding:10px 8px 8px}
+.conversation-pane .composer-area .composer .composer-input>textarea{flex:0 0 100%;min-height:64px;padding:10px 8px 8px}
 /* The row: attach and the permission mode lead; the model, the mic and Send close it. */
 .conversation-pane .composer-area .composer .composer-actions>*,
 .conversation-pane .composer-area .composer .composer-tools>*{flex:none;order:5}
 .conversation-pane .composer-area .composer .composer-actions>[data-action=attach]{order:1;width:32px;height:32px}
 .conversation-pane .composer-area .composer .composer-tools>.mode-picker{order:2}
-.conversation-pane .composer-area .composer .composer-tools>.model-picker{order:6;flex:0 1 auto;min-width:0;margin-left:auto}
+/* A wrapping row wraps before it shrinks, so the model's width is capped to what the row has left (the composer is a size container) and its name truncates instead. */
+.conversation-pane .composer-area .composer .composer-tools>.model-picker{order:6;flex:0 1 auto;min-width:0;max-width:max(44px,calc(100cqw - 480px));margin-left:auto}
 .conversation-pane .composer-area .composer .composer-actions>.composer-pill{order:9;margin-left:6px}
 .conversation-pane .composer-area .composer .composer-actions>:not([data-action=attach],.composer-pill){order:8}
 /* Where it runs (computer, folder, branch, linked PR) is a quiet last row of the card. */
@@ -178,6 +181,13 @@ html .workspace .new-task-page .composer-area{max-width:648px}
 /* The mode says its name, and both pickers show they open a menu. */
 .conversation-pane .composer-tray .mode-picker>.sr-only{position:static;width:auto;height:auto;margin:0;overflow:visible;clip-path:none}
 .conversation-pane .composer-tray :is(.model-picker,.mode-picker)>.icon:last-child{display:block;--icon-size:12px;color:var(--faint)}
+/* A narrow composer keeps the row whole: the mode goes back to its icon and the chevrons go. */
+@container composer (max-width:560px){
+  .conversation-pane .composer-tray .mode-picker>.sr-only{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%)}
+  .conversation-pane .composer-tray :is(.model-picker,.mode-picker)>.icon:last-child{display:none}
+  .conversation-pane .composer-area .composer .composer-tools>.model-picker{max-width:max(44px,calc(100cqw - 350px))}
+  .conversation-pane .composer-area .composer .composer-actions>.composer-pill{margin-left:2px}
+}
 /* Send: a round light button. */
 .conversation-pane .composer-area .composer .composer-pill{min-width:32px;height:32px;border-radius:50%;background:var(--ds-primary-bg);box-shadow:none}
 html[data-theme=dark] .conversation-pane .composer-area .composer .composer-pill{background:var(--ds-primary-bg)}
@@ -203,7 +213,7 @@ html .composer:has(#prompt:placeholder-shown):not(:has(#attachments>*)) .compose
 @media(forced-colors:active){
   .rail-tile{background:ButtonFace;color:ButtonText;box-shadow:none;outline:1px solid ButtonText;outline-offset:-1px}
   .rail-tile:focus-visible{outline:2px solid Highlight;outline-offset:2px}
-  html .workspace:not(.board-view,.github-view) .action-dock{border:0;background:none}
+  @media(min-width:651px){html .workspace:not(.board-view,.github-view) .action-dock{border:0;background:none}}
   .rail-tile[aria-pressed=true]{background:Highlight;color:HighlightText;forced-color-adjust:none}
   .rail-tile::before{background:CanvasText}
   .rail-ring-track{stroke:GrayText}

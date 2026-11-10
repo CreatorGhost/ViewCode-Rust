@@ -49,7 +49,7 @@ test.describe('thread header overlay', () => {
   }
 
   for (const width of [1200, 900, 620]) {
-    test(`the transcript scrolls under the bare header with no fade at ${width}px`, async ({ page }) => {
+    test(`the transcript starts below the bare header with no fade at ${width}px`, async ({ page }) => {
       await openThread(page, width);
       const header = page.locator('.workspace-header');
       // No top bar: the header paints nothing and the transcript has no top fade.
@@ -58,7 +58,9 @@ test.describe('thread header overlay', () => {
       expect(style.band).toBe('none');
       expect(style.fill).toBe('rgba(0, 0, 0, 0)');
       expect(style.mask).toBe('none');
-      await expect(page.locator('#breadcrumb')).toBeHidden();
+      // The header names the thread; the project crumb stays hidden.
+      await expect(page.locator('#breadcrumb .crumb-title')).toHaveText('Make search feel instant');
+      await expect(page.locator('#breadcrumb [data-action="select-project"]')).toBeHidden();
 
       const transcript = page.locator('#transcript');
       const top = (await box(page, '#transcript')).top;
@@ -72,9 +74,9 @@ test.describe('thread header overlay', () => {
       expect(main.top).toBe(inset);
       const headerBox = await box(page, '.workspace-header');
       expect(headerBox.top + headerBox.height / 2).toBeCloseTo(55 / 2, 0);
-      // At ≤650px the action dock is a row in the header, so the transcript starts below it (action-dock.css
-      // `--header-under: 0`) and nothing scrolls behind the row's icons.
-      const row = width <= 650, under = row ? 0 : headerBox.height;
+      // The action dock is a row in the header at every width, so the transcript starts below it
+      // (`--header-under: 0` in action-dock.css and viewcode-shell.css) and nothing scrolls behind the title or the row's icons.
+      const row = true, under = 0;
       expect(Math.abs(top - (row ? headerBox.top + headerBox.height : main.top))).toBeLessThanOrEqual(1);
       // At rest the first row sits just below the header, so nothing clickable lies under its drag band.
       const padding = await transcript.evaluate(node => ({ top: parseFloat(getComputedStyle(node).paddingTop), scroll: parseFloat(getComputedStyle(node).scrollPaddingTop) }));
@@ -114,10 +116,9 @@ test.describe('thread header overlay', () => {
     await agents.click();
     const flyout = page.locator('#agents-flyout');
     await expect(flyout.getByRole('dialog', { name: 'Workers', exact: true })).toBeVisible();
-    // The panel opens left of the dock, beside the Agents item, and never covers the dock.
-    const panel = await box(page, '#agents-flyout'), dock = await box(page, '#action-dock'), item = await box(page, '#agents-toggle');
-    expect(panel.right).toBeLessThanOrEqual(dock.left);
-    expect(Math.abs(panel.top - item.top)).toBeLessThanOrEqual(2);
+    // The panel opens under the header's row, below the Agents item, and never covers the dock.
+    const panel = await box(page, '#agents-flyout'), dock = await box(page, '#action-dock');
+    expect(panel.top).toBeGreaterThanOrEqual(dock.bottom);
     expect(panel.bottom).toBeLessThanOrEqual(520);
   });
 
