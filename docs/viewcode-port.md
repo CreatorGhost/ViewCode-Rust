@@ -20,10 +20,11 @@ docs. Update a row in the pull request that changes it.
 | `cargo test --locked --lib` | 2594 pass, 16 fail, 97 ignored (Linux container) |
 | `cargo clippy --all-targets -- -D warnings` | pass |
 
-The 16 Rust failures come from the container the baseline ran in, not from the code:
-no OpenSSH client (2 `cloud::ssh` tests), no IPv6 (1 `run_script` test), and running as
-root, which ignores the file permissions 13 `skill_manager` and `integrations` tests rely
-on. GitHub Actions is the reference for these.
+The Rust failures come from the container the baseline ran in, not from the code: no
+OpenSSH client (2 `cloud::ssh` tests), no IPv6 (1 `run_script` test), running as root,
+which ignores the file permissions 12 `skill_manager` tests rely on, and one
+`integrations` process-reaping test that depends on timing (it passes on some runs).
+GitHub Actions is the reference for these.
 
 ## Parity
 
