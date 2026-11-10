@@ -64,6 +64,7 @@ mod providers;
 mod session_titles;
 mod slash_commands;
 mod recipes;
+mod review;
 mod schedules;
 mod storage;
 mod subagent_state;
@@ -2365,6 +2366,7 @@ async fn launch_operation_admitted(
         let host = agent_tools::with_jev(host, app.clone(), session_id.clone(), stopped.clone());
         let host = bots::tools::with_bot(host, app.clone(), session_id.clone(), stopped.clone());
         let host = schedules::tools::with_schedules(host, app.clone(), session_id.clone(), stopped.clone());
+        let host = review::tools::with_review(host, app.clone(), session_id.clone(), stopped.clone());
         let host = simulator::tools::with_simulator_for(host, app.clone(), session_id.clone(), stopped.clone());
         let host = vm::tools::with_vm(host, app.clone(), session_id.clone(), stopped.clone());
         let host = remote::orchestrate::with_machines(host, app.clone(), session_id.clone(), stopped.clone(), team.is_some());
@@ -4344,6 +4346,12 @@ pub fn run() {
                 bots::schedule::bot_schedule_set_enabled,
                 bots::schedule::bot_schedule_delete,
                 bots::schedule::bot_run_schedule_now,
+                review::review_state,
+                review::review_rate_finding,
+                review::review_skill,
+                review::review_edit_skill,
+                review::review_learn_skill,
+                review::review_start_local,
                 schedules::schedules_list,
                 schedules::schedule_create,
                 schedules::schedule_update,
