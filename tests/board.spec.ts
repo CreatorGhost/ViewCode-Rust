@@ -335,7 +335,7 @@ test('the sidebar view menu switches views, marks the current one and stays reac
   await page.goto('/');
   await page.locator('#navigation .task-item').first().waitFor();
   const trigger = page.getByRole('button', { name: 'Workspace view: Conversation', exact: true });
-  await expect(page.locator('.sidebar .brand')).toContainText('PandaCode');
+  await expect(page.locator('.sidebar .brand .brand-name')).toHaveCount(0);
   await expect(page.locator('.sidebar .brand #view-menu')).toBeVisible();
   await expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
   await expect(page.locator('.workspace-header .view-switch')).toHaveCount(0);

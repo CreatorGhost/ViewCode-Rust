@@ -66,7 +66,6 @@ import { botAvatarHtml } from './bot-avatars';
 import * as botThread from './bot-thread';
 import type { Activity as BotActivity, FailoverAsk } from './bots';
 import { mountExternalLinks } from './external-links';
-import { mountDesktopBrand } from './brand-mark';
 import { starPanda } from './star-panda';
 import { bindMessageActions, messageActionsHtml } from './message-actions';
 import { providerLogo } from './provider-logos';
@@ -514,7 +513,7 @@ const $app = document.querySelector<HTMLDivElement>('#app')!;
 $app.innerHTML = `<div class="workspace" data-tauri-drag-region>
   <nav id="project-rail" class="project-rail" aria-label="Projects and shortcuts" data-tauri-drag-region><div id="rail-projects" class="rail-projects" role="group" aria-label="Projects"></div><div id="rail-usage" class="rail-usage" role="group" aria-label="Usage by agent"></div></nav>
   <aside id="workspace-sidebar" class="sidebar" aria-label="Projects and tasks">
-    <div class="brand" data-tauri-drag-region><button type="button" class="brand-name" aria-label="Replay PandaCode animation" data-tauri-drag-region="false">PandaCode</button>${button('view-menu', 'Workspace view: Conversation', 'thread', 'view-menu', 'id="view-menu" aria-haspopup="menu" aria-expanded="false"')}</div>
+    <div class="brand" data-tauri-drag-region>${button('view-menu', 'Workspace view: Conversation', 'thread', 'view-menu', 'id="view-menu" aria-haspopup="menu" aria-expanded="false"')}</div>
     <div class="sidebar-actions"><button class="new-task-button" data-action="new-task">${icon('edit')}<span>New thread</span><kbd>${shortcut('N')}</kbd></button><button class="search-trigger" data-action="search">${icon('search')}<span>Search</span><kbd>${shortcut('K')}</kbd></button></div>
     <div class="sidebar-projects"><button id="project-filter" class="project-filter" data-action="filter-projects" aria-label="Filter projects" aria-haspopup="dialog" aria-expanded="false"><span data-filter-label>All projects</span>${icon('down')}</button><button id="sidebar-sort" class="icon-button sidebar-sort" data-action="sidebar-sort" aria-label="Sort and view" title="Sort and view" aria-haspopup="menu" aria-expanded="false">${SORT_ICON}</button>${button('import-conversations', 'Import conversations', 'download', 'import-trigger')}${button('add-project', 'Open project', 'plus')}</div>
     <div class="navigation-frame"><div id="navigation" class="navigation"></div></div>
@@ -529,7 +528,6 @@ $app.innerHTML = `<div class="workspace" data-tauri-drag-region>
   <section id="settings-page" aria-label="Settings" hidden></section>
   <aside id="inspector" class="inspector" aria-label="Project inspector"><div class="inspector-strip"><nav class="inspector-tabs" role="tablist" aria-label="Panel views"><div class="inspector-tab file-panel-tab" data-view="file" hidden><button class="inspector-tab-button" role="tab" aria-selected="false" tabindex="-1" data-action="tab-open-files" aria-label="Open files" title="Open files">${icon('file')}<span class="inspector-tab-label">Open files</span></button>${button('close-inspector-tab', 'Close open files', 'close', 'inspector-tab-close', 'data-view="file" tabindex="-1"')}</div>${INSPECTOR_AVAILABLE.map(view => `<div class="inspector-tab" data-view="${view}" hidden><button class="inspector-tab-button" role="tab" aria-selected="false" tabindex="-1" data-action="${INSPECTOR_ACTIONS[view]}" aria-label="${INSPECTOR_TITLES[view]}" title="${escape(INSPECTOR_TIPS[view] ?? INSPECTOR_TITLES[view])}">${icon(INSPECTOR_ICONS[view])}<span class="inspector-tab-label">${INSPECTOR_TITLES[view]}</span>${view === 'changes' ? '<span id="changes-count" class="inspector-tab-count"></span>' : ''}</button>${button('close-inspector-tab', `Close ${INSPECTOR_TITLES[view]}`, 'close', 'inspector-tab-close', `data-view="${view}" tabindex="-1"`)}</div>`).join('')}${button('inspector-add-tab', 'Open a view', 'plus', 'inspector-tab-add', 'aria-haspopup="dialog"')}</nav><h2 id="inspector-title" class="sr-only">${INSPECTOR_TITLES[inspectorTabs.selected]}</h2><div class="inspector-strip-actions">${button('refresh-inspector', 'Refresh project', 'refresh', '', 'id="inspector-refresh"')}${button('toggle-inspector', 'Hide inspector', 'panel', 'inspector-hide')}</div></div><div id="inspector-content" class="inspector-content"></div><section id="browser-panel" class="browser-panel" aria-label="Browser" hidden></section><section id="simulator-panel" class="simulator-panel" aria-label="Simulators" hidden></section><section id="vm-panel" class="vm-panel" aria-label="Virtual machines" hidden></section><section id="design-panel" class="design-panel" aria-label="Design" hidden></section><section id="file-panel" class="file-panel" aria-label="Open files" hidden><div id="file-tabs" class="file-tabs" role="tablist" aria-label="Open files" hidden></div><section id="file-view" class="file-view" role="tabpanel" aria-label="Open file" hidden></section></section></aside>
 </div><div id="toast" class="toast" role="status" hidden></div><dialog id="dialog"></dialog>`;
-mountDesktopBrand($('.brand-name'));
 // Design-system gallery (src/redesign/gallery.ts): browser preview only, with `?ds`.
 if (preview && new URLSearchParams(location.search).has('ds')) void import('./redesign/gallery').then(gallery => gallery.mountGallery());
 mountAgentsDock(document.querySelector<HTMLElement>('#agents-dock-host')!, { openTask: id => run((async () => { await reloadSessions(); await selectSession(id, true); })()) });
@@ -1629,6 +1627,8 @@ function renderNavigation(): void {
   const completedSection = completedRows.length
     ? `<section class="task-group sidebar-section more-group" data-thread-group="completed" aria-label="Settled tasks"><div id="completed-tasks" class="task-list">${completedRows.map(s => row(s)).join('') + (completedMore ? `<button class="folder-more" data-action="completed-more" tabindex="-1">Show ${Math.min(COMPLETED_PAGE, completedMore)} more</button>` : '')}</div></section>` : '';
   const foldRow = folded ? `<button class="folder-more more-fold" data-action="toggle-completed" tabindex="-1" aria-expanded="${completedOpen}">${completedOpen ? 'Show less' : `${folded} more`}</button>` : '';
+  // Finished has no heading: after Pinned and Active the threads just continue, down to the fold.
+  const reviewGroup = sections.review.length ? `<section class="task-group sidebar-section review-group" data-thread-group="review" aria-label="Finished tasks"><div id="review-tasks" class="task-list">${reviewRows.map(s => row(s, !single, manual)).join('')}</div></section>` : '';
   const sectioned = sections.active.length + sections.review.length + sections.completed.length;
   // Pinned keeps the order you gave it, whatever the task sort.
   const pinned = visible.filter(s => s.pinned).sort(compareManual);
@@ -1668,7 +1668,7 @@ function renderNavigation(): void {
   // Morph rather than replace: unchanged rows keep their nodes, so nothing flickers.
   // Rows sit one level deeper than before (.task-row around .task-item), so morph one level deeper.
   morph(nav, !userProjects().length && !chats.length && !pinned.length && !sectioned ? (projectsListed ? '<div class="sidebar-empty">Open a project to get started.</div>' : '')
-    : `${pinnedGroup}${section('active', 'Active', 'Active tasks', sections.active.length, () => sections.active.map(s => row(s, !single)).join(''))}${section('review', 'Finished', 'Finished tasks', sections.review.length, () => reviewRows.map(s => row(s, !single, manual)).join(''))}${chatGroup}${tasksGroup}${projectList}${completedSection}${foldRow}`, 6);
+    : `${pinnedGroup}${section('active', 'Active', 'Active tasks', sections.active.length, () => sections.active.map(s => row(s, !single)).join(''))}${reviewGroup}${chatGroup}${tasksGroup}${projectList}${completedSection}${foldRow}`, 6);
   if (retainedRow) {
     const replacement = nav.querySelector<HTMLElement>(`.task-item[data-id="${CSS.escape(retainedRow.dataset.id!)}"]`);
     if (replacement) {

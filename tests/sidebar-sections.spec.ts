@@ -29,7 +29,9 @@ test.describe('sidebar sections', () => {
     // Latest start first: running, approval, the failed run, then the usage limit.
     expect(await ids(page, 'active')).toEqual(['sections-running', 'sections-approval', 'sections-failed', 'sections-limited']);
     // Everything not running or settled is Finished, newest first.
-    await expect(review.locator('.section-heading')).toHaveText('Finished18');
+    // Finished has no heading or count: after Active the threads just continue.
+    await expect(review.locator('.section-heading')).toHaveCount(0);
+    await expect(page.locator('#navigation').getByText('Finished', { exact: true })).toHaveCount(0);
     expect(await ids(page, 'review')).toEqual(expect.arrayContaining(['sections-review-1', 'sections-review-2', 'sections-chat', 'session-2']));
     await expect(row(page, 'sections-approval').locator('.task-indicator')).toHaveAttribute('aria-label', 'Needs approval');
     await expect(row(page, 'sections-approval').locator('.task-status')).toHaveText('Approval');
@@ -58,9 +60,9 @@ test.describe('sidebar sections', () => {
     // 15 Finished rows past the cap and 12 settled threads.
     await expect(toggle(page)).toHaveText('27 more');
     await expect(section(page, 'review').locator('.folder-more')).toHaveCount(0);
-    // Its text starts where the section's heading does.
+    // Its text starts where the headings do.
     const textLeft = (node: Element) => { const range = document.createRange(); range.selectNodeContents(node); return range.getBoundingClientRect().left; };
-    const headingLeft = await section(page, 'review').locator('.group-heading').evaluate(textLeft);
+    const headingLeft = await section(page, 'active').locator('.group-heading').evaluate(node => { const range = document.createRange(); range.selectNodeContents(node.firstChild!); return range.getBoundingClientRect().left; });
     expect(Math.abs(await toggle(page).evaluate(textLeft) - headingLeft)).toBeLessThan(1);
     await toggle(page).click();
     await expect(section(page, 'review').locator('.task-item')).toHaveCount(18);
@@ -79,20 +81,28 @@ test.describe('sidebar sections', () => {
     await expect(long).toHaveAttribute('title', /pandacode\/sidebar-redesign-compact-rows/);
   });
 
-  test('Active and Finished fold from their headings and stay folded after reload', async ({ page }) => {
+  test('Active folds from its heading (click, or ← and →) and stays folded after reload; Finished has nothing to fold', async ({ page }) => {
+    // A fold of Finished saved by an older build is ignored: it has no heading to open it again.
+    await page.addInitScript(() => { if (localStorage.getItem('pandacode.sidebar.collapsedSections') === null) localStorage.setItem('pandacode.sidebar.collapsedSections', JSON.stringify(['review'])); });
     await open(page);
-    const heading = section(page, 'review').locator('.section-heading');
+    await expect(section(page, 'review').locator('.task-item')).toHaveCount(6);
+    await expect(section(page, 'review').locator('.section-fold')).toHaveCount(0);
+    const heading = section(page, 'active').locator('.section-heading');
     await expect(heading).toHaveAttribute('aria-expanded', 'true');
     await expect(heading.locator('.section-rule')).toHaveCount(1);
     await heading.click();
     await expect(heading).toHaveAttribute('aria-expanded', 'false');
-    await expect(section(page, 'review').locator('.task-item')).toHaveCount(0);
-    await expect(heading).toHaveText('Finished18');
+    await expect(section(page, 'active').locator('.task-item')).toHaveCount(0);
+    await expect(heading).toHaveText('Active4');
     await page.reload();
     await expect(heading).toHaveAttribute('aria-expanded', 'false');
-    await expect(section(page, 'active').locator('.task-item')).toHaveCount(4);
-    await heading.click();
     await expect(section(page, 'review').locator('.task-item')).toHaveCount(6);
+    await heading.focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(heading).toHaveAttribute('aria-expanded', 'true');
+    await expect(section(page, 'active').locator('.task-item')).toHaveCount(4);
+    await page.keyboard.press('ArrowLeft');
+    await expect(heading).toHaveAttribute('aria-expanded', 'false');
   });
   test('All projects draws no folders and no Settled group: Pinned, Active, Finished, then the fold', async ({ page }) => {
     await open(page);
@@ -163,7 +173,7 @@ test.describe('sidebar sections', () => {
     await row(page, 'sections-review-1').hover();
     await action(page, 'Settle: Fix the flaky filter test').click();
     await expect(section(page, 'completed').locator('.task-item').first()).toHaveAttribute('data-id', 'sections-review-1');
-    await expect(section(page, 'review').locator('.section-count')).toHaveText('17');
+    await expect(section(page, 'review').locator('.task-item')).toHaveCount(17);
     await expect(pager(page, 3)).toBeVisible();
     await page.locator('#toast').getByRole('button', { name: 'Undo', exact: true }).click();
     await expect(section(page, 'completed').locator('[data-id="sections-review-1"]')).toHaveCount(0);
@@ -192,7 +202,7 @@ test.describe('sidebar sections', () => {
     expect((await row(page, 'sections-done-2').boundingBox())!.y).toBeCloseTo(before!.y, 0);
     // Opening another thread lets it move to Finished.
     await row(page, 'session-2').click();
-    await expect(section(page, 'review').locator('.section-count')).toHaveText('19');
+    await expect(section(page, 'review').locator('.task-item')).toHaveCount(19);
     expect(await ids(page, 'completed')).not.toContain('sections-done-2');
   });
 
@@ -230,7 +240,8 @@ test.describe('sidebar sections', () => {
     await confirm.getByRole('button', { name: 'Delete task', exact: true }).click();
     await expect(confirm).toBeHidden();
     await expect(row(page, 'sections-review-1')).toHaveCount(0);
-    await expect(section(page, 'review').locator('.section-count')).toHaveText('17');
+    // One fewer behind the fold: 11 Finished rows past the cap and 12 settled.
+    await expect(toggle(page)).toHaveText('23 more');
   });
 
   test('the sidebar has no filter box: Search covers it, and / is an ordinary key', async ({ page }) => {

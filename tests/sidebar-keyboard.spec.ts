@@ -16,7 +16,7 @@ async function open(page: Page): Promise<void> {
   await expect(row(page, 'session-1')).toHaveAttribute('aria-current', 'page');
 }
 
-test('the list is a single Tab stop and arrow keys move between rows and headings', async ({ page }) => {
+test('the list is a single Tab stop and arrow keys move between rows', async ({ page }) => {
   await open(page);
   expect(await tabStops(page)).toEqual(['session-1']);
   await row(page, 'session-1').focus();
@@ -24,14 +24,11 @@ test('the list is a single Tab stop and arrow keys move between rows and heading
   await expect(row(page, 'session-2')).toBeFocused();
   expect(await tabStops(page)).toEqual(['session-2']);
   await page.keyboard.press('ArrowUp');
+  await expect(row(page, 'session-1')).toBeFocused();
+  // Finished has no heading: the first row is the first stop (tests/sidebar-sections.spec.ts folds Active with ← and →).
+  await expect(page.locator('#navigation .section-fold')).toHaveCount(0);
   await page.keyboard.press('ArrowUp');
-  const heading = page.locator('.section-fold[data-section="review"]');
-  await expect(heading).toBeFocused();
-  // ← closes the section, → opens it again; the closed state is remembered.
-  await page.keyboard.press('ArrowLeft');
-  await expect(heading).toHaveAttribute('aria-expanded', 'false');
-  await page.keyboard.press('ArrowRight');
-  await expect(heading).toHaveAttribute('aria-expanded', 'true');
+  await expect(row(page, 'session-1')).toBeFocused();
   await page.keyboard.press('End');
   await expect(row(page, 'session-4')).toBeFocused();
   await page.keyboard.press('Enter');

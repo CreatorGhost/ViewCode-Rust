@@ -264,7 +264,9 @@ test('identifies sample data and renders the desktop workspace without runtime e
   page.on('pageerror', error => errors.push(error.message));
   await page.reload();
   await expect(page).toHaveTitle('PandaCode');
-  await expect(page.locator('.brand')).toHaveText('PandaCode');
+  // The sidebar header holds only its controls: no wordmark.
+  await expect(page.locator('.sidebar>.brand')).toHaveText('');
+  await expect(page.locator('.sidebar>.brand .brand-name')).toHaveCount(0);
   await expect(page.getByText('Browser preview · sample data', { exact: true })).toBeVisible();
   await expect(page.locator('.task-item.selected .task-title')).toHaveText('Make search feel instant');
   await expect(page.locator('#task-heading')).toHaveCount(0);
@@ -489,9 +491,9 @@ test('defaults to dark mode and remembers explicit light and dark preferences af
   await expect(toggle).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   await expect(page.locator('html')).toHaveCSS('color-scheme', 'light');
-  // Wallpapers are off by default: the main pane is a clear window onto the sky.
-  await expect(page.locator('.workspace')).toHaveAttribute('data-scene', 'sky');
-  await expect(page.locator('.main-pane')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  // Wallpapers and live scenes are off by default: the main pane is a plain panel with nothing behind it.
+  await expect(page.locator('.workspace')).not.toHaveAttribute('data-scene');
+  await expect(page.locator('.main-pane')).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   expect(await page.evaluate(() => localStorage.getItem('pandacode.theme'))).toBe('light');
   await toggle.focus();
   await page.keyboard.press('Space');
@@ -2391,8 +2393,8 @@ test('saved user prompts keep old threads active until their own 24 hour boundar
   await expect(taskRow(page, 'session-4', 'inactive')).toBeVisible();
 });
 
-test('lists pending tasks of every project in Finished, which folds and stays folded', async ({ page }) => {
-  // Only Active, Finished and Settled exist: pending samples are listed under Finished too.
+test('lists pending tasks of every project with no heading, and nothing folds them away', async ({ page }) => {
+  // Pending samples are finished work like any other: listed after Active, with no heading.
   await page.route('**/src/preview.ts*', async route => {
     const response = await route.fetch();
     await route.fulfill({ response, body: (await response.text()).replace(/const providers\s*=/, `for (const s of sessions) s.taskStage = 'pending';\n$&`) });
@@ -2404,13 +2406,12 @@ test('lists pending tasks of every project in Finished, which folds and stays fo
   await expect(activeRows(page).locator('.task-title')).toHaveText(['Make search feel instant']);
   // The row names its project, visibly once the sidebar is wide enough and always for assistive technology.
   await expect(taskRow(page, 'session-4').locator('.task-project')).toHaveText('pandacode');
-  const toggle = tasks.getByRole('button', { name: /^Finished/ });
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  await toggle.click();
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(tasks.locator('.task-item')).toHaveCount(0);
+  await expect(tasks.getByRole('button', { name: /^Finished/ })).toHaveCount(0);
+  await expect(tasks.locator('.section-heading')).toHaveCount(0);
+  // A fold saved by an older build cannot hide them: there is no heading to open them again.
+  await page.evaluate(() => localStorage.setItem('pandacode.sidebar.collapsedSections', JSON.stringify(['review'])));
   await page.reload();
-  await expect(page.getByRole('region', { name: 'Finished tasks', exact: true }).getByRole('button', { name: /^Finished/ })).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByRole('region', { name: 'Finished tasks', exact: true }).locator('.task-item')).toHaveCount(4);
 });
 
 test('moves a task to inactive automatically at the 24 hour response boundary', async ({ page }) => {
