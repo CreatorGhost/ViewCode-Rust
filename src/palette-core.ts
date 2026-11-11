@@ -99,6 +99,23 @@ export function accentTokens(source: Rgb, mode: 'light' | 'dark'): Tokens {
   };
 }
 
+/** The 18 colours a project can take (`ProjectColor` in types.ts, `storage::PROJECT_COLORS`), as OKLCH hue and chroma:
+ * the hues of ViewCode's project colours. Lightness is not stored: `projectTones` sets it per base. */
+export const PROJECT_HUES = {
+  gray: { h: 264, c: 0.03 }, red: { h: 25, c: 0.2 }, orange: { h: 48, c: 0.19 }, amber: { h: 70, c: 0.17 }, yellow: { h: 88, c: 0.17 }, lime: { h: 131, c: 0.2 },
+  green: { h: 150, c: 0.2 }, emerald: { h: 163, c: 0.16 }, teal: { h: 183, c: 0.13 }, cyan: { h: 215, c: 0.13 }, sky: { h: 237, c: 0.15 }, blue: { h: 260, c: 0.19 },
+  indigo: { h: 277, c: 0.2 }, violet: { h: 293, c: 0.21 }, purple: { h: 304, c: 0.22 }, fuchsia: { h: 322, c: 0.24 }, pink: { h: 354, c: 0.21 }, rose: { h: 16, c: 0.21 },
+};
+export const PROJECT_COLORS = Object.keys(PROJECT_HUES);
+export const PROJECT_TOKENS = PROJECT_COLORS.map(name => `--project-${name}`);
+/** One tone per project colour (`--project-<name>`), for what wears a project's colour (the composer glow). The lightness
+ * is held to a band that reads on the base, as ViewCode clamps it, so a glow is never lost on the page: light enough on
+ * dark, deep enough on light (tests/palette.test.mjs holds each to 3:1 on every default surface and recorded theme). */
+export function projectTones(mode: 'light' | 'dark'): Tokens {
+  const l = mode === 'dark' ? 0.74 : 0.55;
+  return Object.fromEntries(Object.entries(PROJECT_HUES).map(([name, { h, c }]) => [`--project-${name}`, toHex(oklch(l, c, h))]));
+}
+
 /** The accent a fresh profile starts with, and what the scene accent falls back to while no wallpaper or scene shows:
  * the teal of ViewCode's default look ("Obsidian"), per base. `accentTokens` derives every accent token from it. */
 export const DEFAULT_ACCENT = { dark: '#2dd4bf', light: '#0f8577' };
