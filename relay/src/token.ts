@@ -39,8 +39,8 @@ function hmacKey(secret: string): Promise<CryptoKey> {
   return key;
 }
 
-export async function signToken(secret: string, acct: string, dev: string, nowSeconds: number, gen?: number): Promise<string> {
-  const claims: TokenClaims = { acct, dev, iat: nowSeconds, exp: nowSeconds + TOKEN_TTL_SECONDS, ...(gen === undefined ? {} : { gen }) };
+export async function signToken(secret: string, acct: string, dev: string, nowSeconds: number, gen?: number, ttlSeconds: number = TOKEN_TTL_SECONDS): Promise<string> {
+  const claims: TokenClaims = { acct, dev, iat: nowSeconds, exp: nowSeconds + ttlSeconds, ...(gen === undefined ? {} : { gen }) };
   const payload = b64url(enc.encode(JSON.stringify(claims)));
   const sig = await crypto.subtle.sign("HMAC", await hmacKey(secret), enc.encode(payload));
   return `${payload}.${b64url(new Uint8Array(sig))}`;

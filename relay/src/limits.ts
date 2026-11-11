@@ -5,6 +5,9 @@ export const RATE_LIMITED_PARSE_CHARS = 4096;
 export const RATE_PER_SEC = 20;
 export const RATE_BURST = 100;
 export const TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
+/** Self-hosted deployments (Quick connect): a paired device's credential lasts this long from the
+ * moment it paired, as a ViewCode session does. Using or refreshing it never extends it; the phone pairs again. */
+export const SELF_DEVICE_TTL_SECONDS = 30 * 24 * 60 * 60;
 export const MAX_NAME_CHARS = 64;
 export const MAX_PLATFORM_CHARS = 32;
 export const MAX_REF_CHARS = 64;

@@ -20,7 +20,28 @@ fn setting(name: &str, built: Option<&'static str>) -> Option<String> {
     std::env::var(name).ok().or(built.map(str::to_owned)).map(|v| v.trim().to_owned()).filter(|v| !v.is_empty())
 }
 
+/// The relay on the user's own Cloudflare account while Quick connect is on
+/// (`crate::quick_connect`). It replaces the build's shared relay for this process; there
+/// is one socket, so only one relay is in use at a time.
+static SELF_RELAY: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+
+/// The build for a relay of the user's own: an HTTPS address and no GitHub app.
+pub(crate) fn self_build(url: &str) -> Option<Build> {
+    parse_build(Some(url.to_owned()), Some(String::new()))
+}
+
+pub(crate) fn set_self_relay(url: Option<String>) {
+    *SELF_RELAY.write().unwrap_or_else(|poisoned| poisoned.into_inner()) = url.and_then(|url| self_build(&url)).map(|build| build.relay);
+}
+
+pub(crate) fn self_relay_active() -> bool {
+    SELF_RELAY.read().unwrap_or_else(|poisoned| poisoned.into_inner()).is_some()
+}
+
 pub(crate) fn build() -> Option<Build> {
+    if let Some(relay) = SELF_RELAY.read().unwrap_or_else(|poisoned| poisoned.into_inner()).clone() {
+        return Some(Build { relay, client_id: String::new() });
+    }
     parse_build(setting("PANDACODE_RELAY_URL", option_env!("PANDACODE_RELAY_URL")), setting("PANDACODE_GITHUB_CLIENT_ID", option_env!("PANDACODE_GITHUB_CLIENT_ID")))
 }
 

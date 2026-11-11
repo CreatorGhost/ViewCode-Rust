@@ -14,6 +14,10 @@ export interface Env {
   APNS_TOPIC?: string;
   FCM_SERVICE_ACCOUNT?: string;
   FCM_PROJECT_ID?: string;
+  /** "self" on a self-hosted deployment (Quick connect, relay/src/self.ts): the host secret
+   * replaces GitHub sign-in, and the GitHub, session-secret and limiter bindings are absent. */
+  RELAY_MODE?: string;
+  HOST_SECRET?: string;
 }
 
 export const json = (body: unknown, status = 200) =>

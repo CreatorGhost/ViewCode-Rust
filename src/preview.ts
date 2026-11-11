@@ -24,6 +24,7 @@ import { previewCapabilities } from './preview-capabilities';
 import { recipesCommand } from './preview-recipes';
 import { openCodePreviewKey, openCodePreviewModels, previewOpenCodeChoices, previewOpenCodeSelection } from './preview-opencode';
 const turnChanges = createPreviewTurnChanges();
+let quickConnect: ReturnType<typeof import('./preview-quick-connect').createPreviewQuickConnect> | undefined;
 const now = Date.now();
 const sampleReadme = '<div align="center">\n\n<img src="docs/banner.png" alt="Orbit banner" width="100%" onerror="alert(1)"/>\n\n[![Build](https://img.shields.io/badge/build-passing-green)](https://example.com/ci)\n\n<script>alert(1)</script>\n\n<a href="https://example.com/x" download class="toast">Get</a>\n\n</div>\n\n# Orbit\n\nA tiny search index for the browser preview.\n\n## Usage\n\n- Build the index with `createSearchIndex`.\n- Call `search(query)`.\n\n> Results are case-insensitive.\n';
 const sampleSource = '// Browser preview — sample source\nexport function createSearchIndex(items) {\n  return {\n    search(query) {\n      return items.filter(item =>\n        item.title.toLowerCase().includes(query.toLowerCase())\n      );\n    }\n  };\n}\n';
@@ -1480,6 +1481,14 @@ export async function invoke<T>(command: string, args: Record<string, any>): Pro
     invoke, emit,
     addProject: name => { const p = { id: crypto.randomUUID(), name, path: `/Users/you/PandaCode Bots/${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` }; projects.push(p); return p; },
   });
+  if (command.startsWith('quick_connect_')) {
+    const w = window as any;
+    // `__quickConnect` steers the mock; `__quickConnectPair(name?)` plays the phone scanning the link.
+    const mock = quickConnect ??= (await import('./preview-quick-connect')).createPreviewQuickConnect(emit, () => (w.__quickConnect ??= {}));
+    w.__quickConnectPair ??= mock.pair;
+    w.__quickConnectCalls = (w.__quickConnect ??= {}).calls ??= [];
+    return mock.invoke(command, args) as T;
+  }
   if (command === 'remote_device_grants' || command === 'remote_set_device_grant' || command.startsWith('remote_pair_')) return (await import('./preview-grants')).previewGrants(command, args) as T;
   if (command === 'remote_diagnostics' || command === 'remote_diagnostics_export') return (await import('./preview-diagnostics')).previewDiagnostics(command, args) as T;
   if (command === 'list_files' && (window as any).__filesFail) {

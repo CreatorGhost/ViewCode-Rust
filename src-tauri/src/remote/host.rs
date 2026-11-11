@@ -4299,7 +4299,7 @@ mod tests {
         let mut inner = super::super::Inner {
             devices: vec![super::super::Device {
                 id: "viewer".into(), name: "Phone".into(), platform: "iOS".into(), public_key: "current-key".into(),
-                host: false, online: true, last_seen: Value::Null,
+                host: false, online: true, last_seen: Value::Null, expires_at: Value::Null,
             }],
             ..Default::default()
         };
@@ -4311,7 +4311,7 @@ mod tests {
     #[test]
     fn access_is_checked_when_a_request_runs() {
         let mut inner = super::super::Inner {
-            devices: vec![super::super::Device { id: "viewer".into(), name: String::new(), platform: String::new(), public_key: "k".into(), host: false, online: true, last_seen: Value::Null }],
+            devices: vec![super::super::Device { id: "viewer".into(), name: String::new(), platform: String::new(), public_key: "k".into(), host: false, online: true, last_seen: Value::Null, expires_at: Value::Null }],
             ..Default::default()
         };
         let now = 1_000_000_000;
@@ -4475,7 +4475,7 @@ mod tests {
     #[test]
     fn team_updates_and_run_ends_are_journaled_and_replayed() {
         let mut inner = super::super::Inner {
-            devices: vec![super::super::Device { id: "viewer".into(), name: String::new(), platform: String::new(), public_key: "k".into(), host: false, online: true, last_seen: Value::Null }],
+            devices: vec![super::super::Device { id: "viewer".into(), name: String::new(), platform: String::new(), public_key: "k".into(), host: false, online: true, last_seen: Value::Null, expires_at: Value::Null }],
             outbox: Some(tokio::sync::mpsc::channel(1).0),
             ..Default::default()
         };
@@ -4502,7 +4502,7 @@ mod tests {
     #[test]
     fn a_large_subagent_snapshot_never_evicts_the_viewers_events() {
         let mut inner = super::super::Inner {
-            devices: vec![super::super::Device { id: "viewer".into(), name: String::new(), platform: String::new(), public_key: "k".into(), host: false, online: true, last_seen: Value::Null }],
+            devices: vec![super::super::Device { id: "viewer".into(), name: String::new(), platform: String::new(), public_key: "k".into(), host: false, online: true, last_seen: Value::Null, expires_at: Value::Null }],
             outbox: Some(tokio::sync::mpsc::channel(1).0),
             ..Default::default()
         };
@@ -4600,7 +4600,7 @@ mod tests {
     fn unfollowed_tasks_forget_their_team_rows() {
         let now = Instant::now();
         let mut inner = super::super::Inner {
-            devices: vec![super::super::Device { id: "phone".into(), name: String::new(), platform: String::new(), public_key: "k".into(), host: false, online: true, last_seen: Value::Null }],
+            devices: vec![super::super::Device { id: "phone".into(), name: String::new(), platform: String::new(), public_key: "k".into(), host: false, online: true, last_seen: Value::Null, expires_at: Value::Null }],
             ..Default::default()
         };
         inner.settings.host_enabled = true;
