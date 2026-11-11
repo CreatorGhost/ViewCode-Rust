@@ -3,7 +3,7 @@ import './thread-order.css';
 export { compareManual as compareThreadOrder } from './sidebar-sort';
 
 /** Everything in the list that takes focus: rows, folder and section headings, "Show more". */
-const STOPS = '.task-item, .folder-heading, .section-toggle, .section-fold, .folder-more';
+const STOPS = '.task-item, .folder-heading, .section-fold, .folder-more';
 function stops(nav: HTMLElement): HTMLElement[] {
   return [...nav.querySelectorAll<HTMLElement>(STOPS)].filter(item => !item.closest('[hidden]') && item.getClientRects().length > 0);
 }
@@ -140,8 +140,8 @@ export function bindThreadReordering(nav: HTMLElement, options: {
         return;
       }
     }
-    // → opens and ← closes a folder or section from its heading.
-    if ((event.key === 'ArrowRight' || event.key === 'ArrowLeft') && target.matches('.folder-heading, .section-toggle, .section-fold')) {
+    // → opens and ← closes a folder or section from its heading, and the fold that ends the list.
+    if ((event.key === 'ArrowRight' || event.key === 'ArrowLeft') && target.matches('.folder-heading, .section-fold, .more-fold')) {
       if ((target.getAttribute('aria-expanded') === 'true') !== (event.key === 'ArrowRight')) { event.preventDefault(); target.click(); }
       return;
     }

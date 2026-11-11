@@ -2,10 +2,13 @@ import { expect, test, type Page } from '@playwright/test';
 
 // ?sections adds preview threads for every section: running, waiting for approval, a failed run
 // and a usage limit (Active); two unseen finished turns (Finished); a pinned task; a chat; a long
-// worktree title with a PR; enough project tasks for "Show more"; and twelve settled tasks.
+// worktree title with a PR; enough project tasks to pass the cap; and twelve settled tasks.
+// The list ends in one fold: Finished rows past the cap and every settled thread wait behind "N more".
 const section = (page: Page, name: string) => page.locator(`#navigation [data-thread-group="${name}"]`);
 const row = (page: Page, id: string) => page.locator(`#navigation .task-item[data-id="${id}"]`);
-const toggle = (page: Page) => page.getByRole('button', { name: /^Settled/ });
+/** The fold that ends the list: "N more" closed, "Show less" open. */
+const toggle = (page: Page) => page.locator('#navigation > .more-fold');
+const pager = (page: Page, count: number) => section(page, 'completed').getByRole('button', { name: `Show ${count} more`, exact: true });
 const action = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
 const menu = (page: Page) => page.getByRole('dialog', { name: 'Task actions', exact: true });
 const ids = (page: Page, name: string) => section(page, name).locator('.task-item').evaluateAll(rows => rows.map(r => (r as HTMLElement).dataset.id));
@@ -14,8 +17,8 @@ async function open(page: Page): Promise<void> {
   await page.goto('/?sections');
   await expect(page.locator('.task-item.selected')).toHaveCount(1);
 }
-/** Finished is capped per section; lift the cap to reach every row. */
-const showAllFinished = (page: Page) => section(page, 'review').getByRole('button', { name: /^\d+ more$/ }).click();
+/** Finished is capped per section; opening the fold lists every row. */
+const showAllFinished = (page: Page) => toggle(page).click();
 
 test.describe('sidebar sections', () => {
   test('lists pinned, then work that needs you, finished work and chats, each under a heading with a count', async ({ page }) => {
@@ -25,7 +28,7 @@ test.describe('sidebar sections', () => {
     await expect(active.locator('.section-heading')).toHaveText('Active4');
     // Latest start first: running, approval, the failed run, then the usage limit.
     expect(await ids(page, 'active')).toEqual(['sections-running', 'sections-approval', 'sections-failed', 'sections-limited']);
-    // Only Active, Finished and Settled: everything not running or settled is Finished, newest first.
+    // Everything not running or settled is Finished, newest first.
     await expect(review.locator('.section-heading')).toHaveText('Finished18');
     expect(await ids(page, 'review')).toEqual(expect.arrayContaining(['sections-review-1', 'sections-review-2', 'sections-chat', 'session-2']));
     await expect(row(page, 'sections-approval').locator('.task-indicator')).toHaveAttribute('aria-label', 'Needs approval');
@@ -47,18 +50,22 @@ test.describe('sidebar sections', () => {
     for (const id of ['sections-running', 'sections-review-1', 'session-1', 'sections-chat']) await expect(row(page, id)).toHaveCount(1);
   });
 
-  test('Finished follows the per-section cap with Show more; Pinned is never capped', async ({ page }) => {
+
+  test('Finished follows the per-section cap; the rest wait behind the fold with the settled threads; Pinned is never capped', async ({ page }) => {
     await page.addInitScript(() => localStorage.setItem('pandacode.sidebar.sort', JSON.stringify({ perProject: 3 })));
     await open(page);
     await expect(section(page, 'review').locator('.task-item')).toHaveCount(3);
+    // 15 Finished rows past the cap and 12 settled threads.
+    await expect(toggle(page)).toHaveText('27 more');
+    await expect(section(page, 'review').locator('.folder-more')).toHaveCount(0);
     // Its text starts where the section's heading does.
     const textLeft = (node: Element) => { const range = document.createRange(); range.selectNodeContents(node); return range.getBoundingClientRect().left; };
     const headingLeft = await section(page, 'review').locator('.group-heading').evaluate(textLeft);
-    const moreLeft = await section(page, 'review').getByRole('button', { name: '15 more', exact: true }).evaluate(textLeft);
-    expect(Math.abs(moreLeft - headingLeft)).toBeLessThan(1);
-    await section(page, 'review').getByRole('button', { name: '15 more', exact: true }).click();
+    expect(Math.abs(await toggle(page).evaluate(textLeft) - headingLeft)).toBeLessThan(1);
+    await toggle(page).click();
     await expect(section(page, 'review').locator('.task-item')).toHaveCount(18);
-    await section(page, 'review').getByRole('button', { name: 'Show less', exact: true }).click();
+    await expect(toggle(page)).toHaveText('Show less');
+    await toggle(page).click();
     await expect(section(page, 'review').locator('.task-item')).toHaveCount(3);
     await expect(section(page, 'pinned').locator('.folder-more')).toHaveCount(0);
   });
@@ -87,27 +94,52 @@ test.describe('sidebar sections', () => {
     await heading.click();
     await expect(section(page, 'review').locator('.task-item')).toHaveCount(6);
   });
-  test('All projects draws no folders: only Pinned, Active, Finished and Settled', async ({ page }) => {
+  test('All projects draws no folders and no Settled group: Pinned, Active, Finished, then the fold', async ({ page }) => {
     await open(page);
     await expect(page.locator('#navigation .folder-heading')).toHaveCount(0);
-    expect(await page.locator('#navigation > .task-group').evaluateAll(groups => groups.map(g => (g as HTMLElement).dataset.threadGroup))).toEqual(['pinned', 'active', 'review', 'completed']);
+    const groups = () => page.locator('#navigation > *').evaluateAll(items => items.map(item => (item as HTMLElement).dataset.threadGroup ?? item.className));
+    expect(await groups()).toEqual(['pinned', 'active', 'review', 'folder-more more-fold']);
+    await expect(page.getByRole('button', { name: /^Settled/ })).toHaveCount(0);
+    // Open, the settled threads follow Finished in place and the fold still ends the list.
+    await toggle(page).click();
+    expect(await groups()).toEqual(['pinned', 'active', 'review', 'completed', 'folder-more more-fold']);
     await expect(section(page, 'review').locator('.task-item').first().locator('.task-app-icon')).toBeVisible();
   });
 
-  test('Settled starts closed, opens on click, pages in more and stays open after reload', async ({ page }) => {
+
+  test('the fold starts closed, opens in place, pages in more and stays open after reload', async ({ page }) => {
     await open(page);
     await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
-    await expect(toggle(page)).toContainText('12');
-    await expect(section(page, 'completed').locator('.task-item')).toHaveCount(0);
+    // 12 Finished rows past the cap of 6 and 12 settled threads.
+    await expect(toggle(page)).toHaveText('24 more');
+    await expect(section(page, 'review').locator('.task-item')).toHaveCount(6);
+    await expect(section(page, 'completed')).toHaveCount(0);
+    // It ends the list, right under the last row.
+    const last = (await section(page, 'review').locator('.task-item').last().boundingBox())!, fold = (await toggle(page).boundingBox())!;
+    expect(fold.y).toBeGreaterThanOrEqual(last.y + last.height - 1);
+    expect(fold.y - (last.y + last.height)).toBeLessThan(12);
     await toggle(page).click();
     await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true');
+    await expect(toggle(page)).toHaveText('Show less');
+    // In place: the row that was last keeps its position, and the rest follow it.
+    expect((await row(page, (await ids(page, 'review'))[5]!).boundingBox())!.y).toBeCloseTo(last.y, 0);
+    await expect(section(page, 'review').locator('.task-item')).toHaveCount(18);
     expect((await ids(page, 'completed')).slice(0, 3)).toEqual(['sections-done-1', 'sections-done-2', 'sections-done-3']);
     await expect(section(page, 'completed').locator('.task-item')).toHaveCount(10);
-    await section(page, 'completed').getByRole('button', { name: 'Show 2 more', exact: true }).click();
+    await pager(page, 2).click();
     await expect(section(page, 'completed').locator('.task-item')).toHaveCount(12);
+    await expect(section(page, 'completed').locator('.folder-more')).toHaveCount(0);
+    expect(await page.evaluate(() => localStorage.getItem('pandacode.sidebar.completedOpen'))).toBe('true');
     await page.reload();
     await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true');
+    await expect(section(page, 'review').locator('.task-item')).toHaveCount(18);
     await expect(section(page, 'completed').locator('.task-item')).toHaveCount(10);
+    // Closing puts everything back behind it, and that is saved too.
+    await toggle(page).click();
+    await expect(toggle(page)).toHaveText('24 more');
+    await expect(section(page, 'completed')).toHaveCount(0);
+    await page.reload();
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
   });
 
   test('row titles keep their width on hover: the actions cover the age instead', async ({ page }) => {
@@ -132,10 +164,10 @@ test.describe('sidebar sections', () => {
     await action(page, 'Settle: Fix the flaky filter test').click();
     await expect(section(page, 'completed').locator('.task-item').first()).toHaveAttribute('data-id', 'sections-review-1');
     await expect(section(page, 'review').locator('.section-count')).toHaveText('17');
-    await expect(toggle(page)).toContainText('13');
+    await expect(pager(page, 3)).toBeVisible();
     await page.locator('#toast').getByRole('button', { name: 'Undo', exact: true }).click();
     await expect(section(page, 'completed').locator('[data-id="sections-review-1"]')).toHaveCount(0);
-    await expect(toggle(page)).toContainText('12');
+    await expect(pager(page, 2)).toBeVisible();
     // Undo restores the stage and the unread mark, so it is back in Finished, still unread.
     await expect(section(page, 'review').locator('[data-id="sections-review-1"]')).toHaveCount(1);
     await expect(row(page, 'sections-review-1')).toHaveClass(/\bunread\b/);
@@ -181,8 +213,8 @@ test.describe('sidebar sections', () => {
     await row(page, 'sections-review-2').hover();
     await action(page, 'Settle: Write the release notes').click();
     await expect(section(page, 'review').locator('[data-id="sections-review-2"]')).toHaveCount(0);
-    await expect(toggle(page)).toContainText('13');
     await toggle(page).click();
+    await expect(pager(page, 3)).toBeVisible();
     await expect(section(page, 'completed').locator('.task-item').first()).toHaveAttribute('data-id', 'sections-review-2');
   });
 
@@ -201,45 +233,15 @@ test.describe('sidebar sections', () => {
     await expect(section(page, 'review').locator('.section-count')).toHaveText('17');
   });
 
-  test('the filter field narrows every section by title, branch, PR or project, and Esc clears it', async ({ page }) => {
+  test('the sidebar has no filter box: Search covers it, and / is an ordinary key', async ({ page }) => {
     await open(page);
-    const filter = page.getByRole('searchbox', { name: 'Filter tasks', exact: true });
-    await filter.fill('toolchain');
-    await expect(page.locator('#navigation .task-item')).toHaveCount(1);
-    await expect(row(page, 'sections-failed')).toBeVisible();
-    await filter.fill('compact-rows');
-    await expect(page.locator('#navigation .task-item')).toHaveCount(1);
-    await expect(row(page, 'sections-long')).toBeVisible();
-    await filter.fill('#482');
-    await expect(row(page, 'sections-long')).toBeVisible();
-    await filter.fill('no such task');
-    await expect(page.locator('#navigation .task-item')).toHaveCount(0);
-    await expect(page.locator('#navigation .sidebar-no-match')).toHaveText('No tasks match');
-    await filter.press('Escape');
-    await expect(filter).toHaveValue('');
-    await expect(row(page, 'sections-failed')).toBeVisible();
-  });
-
-  test('the filter reaches into closed Settled, a folded Finished section and past the per-section limit, without saving it', async ({ page }) => {
-    await open(page);
-    const filter = page.getByRole('searchbox', { name: 'Filter tasks', exact: true });
-    const chats = section(page, 'review').locator('.section-fold');
-    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
-    await expect(row(page, 'sections-many-6')).toHaveCount(0);
-    await chats.click();
-    await expect(chats).toHaveAttribute('aria-expanded', 'false');
-    await filter.fill('fixtures');
-    await expect(row(page, 'sections-old-8')).toBeVisible();
-    await filter.fill('the bundle');
-    await expect(row(page, 'sections-many-6')).toBeVisible();
-    await filter.fill('logger');
-    await expect(row(page, 'sections-many-0')).toBeVisible();
-    await filter.fill('chat');
-    await expect(row(page, 'sections-chat')).toBeVisible();
-    await filter.press('Escape');
-    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
-    await expect(chats).toHaveAttribute('aria-expanded', 'false');
-    expect(await page.evaluate(() => localStorage.getItem('pandacode.sidebar.completedOpen'))).not.toBe('true');
+    await expect(page.locator('#workspace-sidebar').getByRole('searchbox')).toHaveCount(0);
+    await expect(page.locator('#workspace-sidebar .sidebar-search, #sidebar-filter')).toHaveCount(0);
+    await row(page, 'session-2').focus();
+    await page.keyboard.press('/');
+    await expect(row(page, 'session-2')).toBeFocused();
+    await page.locator('#workspace-sidebar').getByRole('button', { name: /^Search/ }).click();
+    await expect(page.getByRole('textbox', { name: 'Search tasks and commands', exact: true })).toBeFocused();
   });
 
   test('a thread opened by shortcut holds its section; once it runs it leaves Settled for good', async ({ page }) => {
@@ -288,7 +290,7 @@ test.describe('sidebar sections', () => {
   test('the open Settled thread stays listed past the first page', async ({ page }) => {
     await open(page);
     await toggle(page).click();
-    await section(page, 'completed').getByRole('button', { name: 'Show 2 more', exact: true }).click();
+    await pager(page, 2).click();
     await row(page, 'sections-old-8').click();
     await expect(row(page, 'sections-old-8')).toHaveAttribute('aria-current', 'page');
     // Closing and reopening resets the page to 10 rows; the open thread is still there.
@@ -296,21 +298,6 @@ test.describe('sidebar sections', () => {
     await toggle(page).click();
     await expect(row(page, 'sections-old-8')).toBeVisible();
     await expect(section(page, 'completed').locator('.task-item')).toHaveCount(11);
-  });
-
-  test('while filtering, heading clicks do not save open or closed state', async ({ page }) => {
-    await open(page);
-    await page.getByRole('searchbox', { name: 'Filter tasks', exact: true }).fill('the');
-    const orbit = section(page, 'review').locator('.section-fold');
-    await orbit.click();
-    await toggle(page).click();
-    await expect(orbit).toHaveAttribute('aria-expanded', 'true');
-    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true');
-    await page.getByRole('searchbox', { name: 'Filter tasks', exact: true }).fill('');
-    await expect(orbit).toHaveAttribute('aria-expanded', 'true');
-    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
-    expect(await page.evaluate(() => localStorage.getItem('pandacode.sidebar.collapsedSections') ?? '')).not.toContain('review');
-    expect(await page.evaluate(() => localStorage.getItem('pandacode.sidebar.completedOpen'))).not.toBe('true');
   });
 
   test('a focused row’s actions fade into the row’s own background', async ({ page }) => {
@@ -343,7 +330,7 @@ test.describe('sidebar sections', () => {
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem('pandacode.sidebar.sort')!).perProject)).toBe(10);
   });
 
-  test('Settled docks at the bottom of the list while 30 running threads scroll above it', async ({ page }) => {
+  test('the fold scrolls with the list, with no dock, and takes the arrow keys', async ({ page }) => {
     await page.route('**/src/preview.ts*', async route => {
       const response = await route.fetch();
       const body = (await response.text()).replace(/switch\s*\(command\)\s*\{/, `if (!window.__manyRunning) { window.__manyRunning = true; for (let i = 0; i < 30; i++) sessions.push({ ...sessions[0], id: 'many-running-' + i, title: 'Running task ' + i, status: 'running', taskStage: 'in_progress', lastPromptAt: Date.now() - i * 60000, pinned: false, sidebarOrder: null }); }
@@ -354,49 +341,33 @@ $&`);
     await open(page);
     await expect(section(page, 'active').locator('.task-item')).toHaveCount(34);
     const nav = page.locator('#navigation');
-    const heading = toggle(page);
     const inView = async () => {
-      const [h, n] = await Promise.all([heading.boundingBox(), nav.boundingBox()]);
-      return h!.y >= n!.y && h!.y + h!.height <= n!.y + n!.height;
+      const [h, n] = await Promise.all([toggle(page).boundingBox(), nav.boundingBox()]);
+      return h!.y >= n!.y - 1 && h!.y + h!.height <= n!.y + n!.height + 1;
     };
-    expect(await inView()).toBe(true);
+    // Nothing is docked: at the top of a long list the fold is out of sight, and it is the list's last row.
     await nav.evaluate(node => { node.scrollTop = 0; });
+    expect(await inView()).toBe(false);
+    await expect(toggle(page)).toHaveCSS('position', 'static');
+    await nav.evaluate(node => { node.scrollTop = node.scrollHeight; });
     expect(await inView()).toBe(true);
-    // Open, its rows scroll in their own capped panel; the list above still scrolls.
-    await heading.click();
+    // → opens it and ← closes it, as on a heading; ↑ goes back into the list.
+    await toggle(page).focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true');
+    await expect(toggle(page)).toBeFocused();
+    // The settled rows are part of the one scrolling list: no panel of their own.
     await expect(section(page, 'completed').locator('.task-item')).toHaveCount(10);
-    const list = section(page, 'completed').locator('.task-list');
-    const capped = await list.evaluate(node => node.getBoundingClientRect().height <= innerHeight * 0.4 + 1);
-    expect(capped).toBe(true);
-    expect(await nav.evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true);
-    expect(await inView()).toBe(true);
-    // ↑/↓ cross between the list above and the docked section.
-    await heading.focus();
+    expect(await section(page, 'completed').locator('.task-list').evaluate(node => [getComputedStyle(node).overflowY, node.scrollHeight <= node.clientHeight + 1])).toEqual(['visible', true]);
     await page.keyboard.press('ArrowUp');
-    expect(await page.evaluate(() => Boolean(document.activeElement?.closest('[data-thread-group="completed"]')))).toBe(false);
+    await expect(pager(page, 2)).toBeFocused();
     await page.keyboard.press('ArrowDown');
-    await expect(heading).toBeFocused();
-    await page.keyboard.press('ArrowDown');
-    await expect(section(page, 'completed').locator('.task-item').first()).toBeFocused();
+    await expect(toggle(page)).toBeFocused();
+    await page.keyboard.press('ArrowLeft');
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
+    await page.keyboard.press('ArrowUp');
+    expect(await page.evaluate(() => document.activeElement?.closest<HTMLElement>('[data-thread-group]')?.dataset.threadGroup)).toBe('review');
   });
-
-  for (const [theme, wallpaper] of [['light', false], ['dark', false], ['light', true], ['dark', true]] as const) {
-    test(`Settled shows the sidebar's own surface and rows never pass under it (${theme}${wallpaper ? ', wallpaper' : ''})`, async ({ page }) => {
-      await page.addInitScript(([theme, wallpaper]) => { localStorage.setItem('pandacode.theme', theme); localStorage.setItem('pandacode.wallpaperPreferences', JSON.stringify({ version: 3, enabled: wallpaper, visibility: 20, blur: 0, set: 'automatic', pinned: null })); }, [theme, wallpaper] as const);
-      await page.setViewportSize({ width: 1280, height: 640 });
-      await open(page);
-      expect(await page.locator('.workspace').evaluate(node => node.hasAttribute('data-wallpaper'))).toBe(wallpaper);
-      const dock = section(page, 'completed');
-      // No fill of its own: solid, frosted and native sidebar materials all show through unchanged.
-      await expect(dock).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-      await expect(dock).toHaveCSS('backdrop-filter', 'none');
-      const nav = page.locator('#navigation');
-      expect(await nav.evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true);
-      // The list's scrollport ends where the dock begins.
-      const clip = await nav.evaluate(node => { const box = node.getBoundingClientRect(); return box.top + node.clientTop + node.clientHeight; });
-      expect(Math.abs(clip - (await dock.boundingBox())!.y)).toBeLessThan(1);
-    });
-  }
 });
 
 test('every row keeps one indicator node: a state change fades and moves nothing', async ({ page }) => {
@@ -425,7 +396,7 @@ test('every row keeps one indicator node: a state change fades and moves nothing
 
   // Every state, on a card and on a one-line row: the slot's neighbours stay put, the paint changes.
   const states = ['running', 'attention', 'failed', 'limited', 'unread', ''];
-  for (const selector of ['#navigation .task-item:not(.task-oneline)', '#navigation .completed-group .task-item.task-oneline']) {
+  for (const selector of ['#navigation .task-item:not(.task-oneline)', '#navigation .more-group .task-item.task-oneline']) {
     const results = await page.locator(selector).first().evaluate((item, states) => {
       const node = item.querySelector<HTMLElement>('.task-indicator')!, next = node.nextElementSibling!;
       return states.map(state => {
@@ -452,10 +423,10 @@ test('rows sit straight in their section with no inner panel, and the open threa
   await page.goto('/?sections');
   const row = page.locator('#navigation .task-item.selected').first();
   await expect(row).toBeVisible();
-  const list = page.locator('#navigation .task-group:not(.completed-group) > .task-list').first();
+  const list = page.locator('#navigation .task-group > .task-list').first();
   expect(await list.evaluate(el => { const style = getComputedStyle(el); return [style.borderTopWidth, style.backgroundColor, style.boxShadow]; })).toEqual(['0px', 'rgba(0, 0, 0, 0)', 'none']);
   // Sections carry no card either, and the open row is a fill with no edge or shadow.
-  const group = page.locator('#navigation .task-group:not(.completed-group)').first();
+  const group = page.locator('#navigation .task-group').first();
   expect(await group.evaluate(el => { const style = getComputedStyle(el); return [style.borderTopWidth, style.backgroundColor, style.boxShadow]; })).toEqual(['0px', 'rgba(0, 0, 0, 0)', 'none']);
   expect(await row.evaluate(el => { const style = getComputedStyle(el); return [style.boxShadow, style.backgroundColor !== 'rgba(0, 0, 0, 0)']; })).toEqual(['none', true]);
 });

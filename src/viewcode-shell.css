@@ -89,11 +89,9 @@ html[data-theme] .workspace>.sidebar .sidebar-actions>.new-task-button{height:32
 .workspace>.sidebar .project-filter:is(:hover,[aria-expanded=true]){color:var(--text)}
 .workspace>.sidebar .project-filter>.task-app-icon{display:none}
 .workspace>.sidebar .sidebar-projects>.icon-button{width:24px;height:24px;color:var(--faint)}
-.workspace>.sidebar .sidebar-search{height:30px;margin:2px 8px 6px;border-color:transparent;background:var(--ds-fill)}
 
 /* Sections sit straight on the frame: no cards, a small muted heading. */
-.workspace>.sidebar .task-group:not(.completed-group){padding:0;border:0;border-radius:0;background:none;box-shadow:none}
-.workspace>.sidebar .completed-group::before{border:0;background:var(--frame,var(--sidebar));box-shadow:none;inset:0}
+.workspace>.sidebar .task-group{padding:0;border:0;border-radius:0;background:none;box-shadow:none}
 .workspace>.sidebar .group-heading{height:28px;padding:0 10px;font-size:var(--ds-text-chip);font-weight:var(--weight-medium);color:var(--faint)}
 .workspace>.sidebar .group-heading>span{font-size:var(--ds-text-chip);color:var(--faint)}
 .workspace>.sidebar .task-group>.task-list{gap:1px}
@@ -122,6 +120,8 @@ html[data-theme] .workspace[data-wallpaper]>.sidebar .task-row:has(>.task-item.s
 .workspace>.sidebar .task-link[data-attention]{background:color-mix(in srgb,var(--ds-danger) 14%,transparent);color:var(--ds-danger)}
 .workspace>.sidebar .folder-more{height:28px;padding:0 10px;font-size:var(--ds-text-chip);color:var(--faint)}
 .workspace>.sidebar .folder-more:hover{color:var(--text)}
+/* The fold that ends the list: Finished rows past the cap and every settled thread wait behind it. */
+.workspace>.sidebar .navigation>.more-fold{flex:none;margin-top:2px}
 
 /* ---------- Main pane header: the title, then the dock as a row of small icons ---------- */
 .breadcrumb>.crumb-title,.breadcrumb>.crumb-title:last-child{max-width:none;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-weight:var(--weight-medium)}

@@ -5,7 +5,7 @@ import { PROJECT_LIMIT, readCollapsed, shownTasks } from './sidebar-tree';
 import { railProjectsHtml, railUsageHtml } from './project-rail';
 import { USAGE_PEEK_EVENT } from './usage-peek';
 import { COLLAPSED_SECTIONS_KEY, COMPLETED_OPEN_KEY, UNREVIEWED_KEY, readOpen, sectionOf, sidebarSections, type HeldSection } from './sidebar-sections';
-import { PER_PROJECT, PROJECT_ORDER_KEY, SORT_KEY, compareManual, matchesFilter, readProjectOrder, readSort, taskComparator, type SidebarSort } from './sidebar-sort';
+import { PER_PROJECT, PROJECT_ORDER_KEY, SORT_KEY, compareManual, readProjectOrder, readSort, taskComparator, type SidebarSort } from './sidebar-sort';
 import './styles.css';
 import { createVoiceDictation, voiceButtonHtml } from './voice-dictation';
 import './design-system.css';
@@ -161,7 +161,7 @@ const state = {
   projectId: '', sessionId: '', messages: [] as Message[], messagesLoading: false, messagesError: '', streams: new Map<string, Stream>(),
   view: (({ board: 'board', github: 'github' } as Record<string, 'board' | 'github'>)[localStorage.getItem('pandacode.view') ?? ''] ?? 'conversation') as WorkspaceView, boardPanel: false,
   sidebarCollapsed: localStorage.getItem('pandacode.sidebarCollapsed') === 'true',
-  query: '', inspector: false, inspectorTab: threadDefault(inspectorTabs) as PanelView,
+  inspector: false, inspectorTab: threadDefault(inspectorTabs) as PanelView,
   projectFilter: localStorage.getItem('pandacode.projectFilter') ?? '', collapsedFolders: readCollapsed(localStorage, 'pandacode.collapsedFolders'), expandedFolders: new Set<string>(),
   /** Follow-ups typed while an agent works, per task, in delivery order; mirrored from native storage. */
   queues: new Map<string, QueuedMessage[]>(), queueHolds: new Map<string, HoldReason>(), queueEditing: '', queueBusy: new Set<string>(),
@@ -179,8 +179,6 @@ let renderFrame = 0;
 /** Shows the open thread's scene behind the conversation (set once the sky mounts; `renderTranscript` calls it). */
 let showThreadScene: (id: string | null) => void = () => {};
 let navigationFrame = 0;
-let settledDock: HTMLElement | null = null;
-const settledResize = new ResizeObserver(() => { if (settledDock) $('#navigation').style.setProperty('--settled-height', `${settledDock.offsetHeight}px`); });
 type FinishingStream = { stream: Stream; finishedAt: number; error?: string };
 const finishingStreams = new Map<string, FinishingStream>();
 // Ignore late snapshots/events for IDs removed during this window's lifetime.
@@ -515,9 +513,8 @@ $app.innerHTML = `<div class="workspace" data-tauri-drag-region>
   <nav id="project-rail" class="project-rail" aria-label="Projects and shortcuts" data-tauri-drag-region><div id="rail-projects" class="rail-projects" role="group" aria-label="Projects"></div><div id="rail-usage" class="rail-usage" role="group" aria-label="Usage by agent"></div></nav>
   <aside id="workspace-sidebar" class="sidebar" aria-label="Projects and tasks">
     <div class="brand" data-tauri-drag-region><button type="button" class="brand-name" aria-label="Replay PandaCode animation" data-tauri-drag-region="false">PandaCode</button>${button('view-menu', 'Workspace view: Conversation', 'thread', 'view-menu', 'id="view-menu" aria-haspopup="menu" aria-expanded="false"')}</div>
-    <div class="sidebar-actions"><button class="new-task-button" data-action="new-task">${icon('edit')}<span>New thread</span><kbd>${shortcut('N')}</kbd></button><button class="new-chat-button" data-action="new-chat" title="New chat (no project)">${icon('chat')}<span>New chat</span></button><button class="search-trigger" data-action="search">${icon('search')}<span>Search</span><kbd>${shortcut('K')}</kbd></button></div>
+    <div class="sidebar-actions"><button class="new-task-button" data-action="new-task">${icon('edit')}<span>New thread</span><kbd>${shortcut('N')}</kbd></button><button class="search-trigger" data-action="search">${icon('search')}<span>Search</span><kbd>${shortcut('K')}</kbd></button></div>
     <div class="sidebar-projects"><button id="project-filter" class="project-filter" data-action="filter-projects" aria-label="Filter projects" aria-haspopup="dialog" aria-expanded="false"><span data-filter-label>All projects</span>${icon('down')}</button><button id="sidebar-sort" class="icon-button sidebar-sort" data-action="sidebar-sort" aria-label="Sort and view" title="Sort and view" aria-haspopup="menu" aria-expanded="false">${SORT_ICON}</button>${button('import-conversations', 'Import conversations', 'download', 'import-trigger')}${button('add-project', 'Open project', 'plus')}</div>
-    <div class="sidebar-search">${icon('search')}<input id="sidebar-filter" type="search" aria-label="Filter tasks" placeholder="Filter tasks" autocomplete="off" spellcheck="false" maxlength="200" aria-keyshortcuts="/"><button type="button" class="sidebar-search-clear" data-action="clear-sidebar-filter" tabindex="-1" aria-label="Clear filter" title="Clear filter">${icon('close')}</button></div>
     <div class="navigation-frame"><div id="navigation" class="navigation"></div></div>
     <section id="sidebar-bots-panel" class="bots-panel" aria-label="Bots"></section>
     <div class="sidebar-bottom"><div id="sidebar-bots" class="sidebar-bots"></div>${button('support', 'Help & support', 'help', 'support-button', 'id="support-button"')}${button('agent-usage', 'Agent usage', 'activity', '', 'id="agent-usage-button"')}${button('rail-github', 'Pull requests and issues', 'pull')}<button data-action="settings-page" data-id="remote" title="Remote access" aria-label="Remote access">${icon('phone')}</button><button data-action="settings" title="Settings (${shortcut(',')})" aria-label="Settings">${icon('settings')}</button>${starPanda()}<button data-action="toggle-theme" id="theme-toggle" aria-label="Dark mode" aria-pressed="false"></button></div>
@@ -553,7 +550,7 @@ let projectsListed = false;
 let bootPending: Promise<void> | undefined;
 let sectionHold: { id: string; section: HeldSection } | undefined, completedOpen = readOpen(localStorage, COMPLETED_OPEN_KEY);
 const collapsedSections = readCollapsed(localStorage, COLLAPSED_SECTIONS_KEY);
-/** Settled lists its newest rows first, then pages in more on request. */
+/** Behind the fold, settled threads list their newest rows first, then page in more on request. */
 const COMPLETED_FIRST = 10, COMPLETED_PAGE = 25;
 let completedShown = COMPLETED_FIRST;
 let sidebarSort: SidebarSort = readSort(localStorage);
@@ -691,7 +688,7 @@ const worktrees = createWorktrees({
     // Only a dialog that is still open may close and navigate; a canceled one leaves the user where they are.
     if (!live) return;
     closeModal();
-    if (current) { state.query = ''; await selectSession(created.id, true); }
+    if (current) { await selectSession(created.id, true); }
   },
   settle: async task => { await changeTaskStage(task, 'completed', false); },
   extraItems: task => github.menuItems(task),
@@ -1546,13 +1543,8 @@ function renderNavigation(): void {
   const filterIcon = filtered ? projectAppIcon(filtered.id, filtered.name) : '';
   const shownIcon = filterLabel.previousElementSibling;
   if ((shownIcon?.outerHTML ?? '') !== filterIcon) { shownIcon?.remove(); if (filterIcon) filterLabel.insertAdjacentHTML('beforebegin', filterIcon); }
-  const filterField = $('#sidebar-filter') as HTMLInputElement;
-  if (filterField.value !== state.query) filterField.value = state.query;
-  filterField.parentElement!.classList.toggle('has-query', Boolean(state.query));
-  const projectName = (s: Session) => state.projects.find(p => p.id === s.projectId)?.name ?? '';
   const sidebarSessions = listedSessions().filter(s => !botProjects.has(s.projectId));
   const inScope = sidebarSessions.filter(s => !state.projectFilter || s.projectId === state.projectFilter);
-  const matching = inScope.filter(s => matchesFilter(s, state.query, projectName(s)));
   // Opening a thread (in view, with the window focused) clears its unread mark; settling one does too.
   const seen = unreviewed ?? (state.sessions.length ? unreviewed = readCollapsed(localStorage, UNREVIEWED_KEY) : new Set<string>());
   const reviewed = [...seen].filter(id => { const task = state.sessions.find(s => s.id === id); return id === state.sessionId && transcriptVisible() && document.hasFocus() || (task ? taskStage(task) === 'completed' : state.sessions.length > 0); });
@@ -1564,7 +1556,7 @@ function renderNavigation(): void {
   if (sectionHold && sectionHold.section !== 'active' && isRunning(sectionHold.id)) sectionHold = { ...sectionHold, section: 'active' };
   const order = taskComparator(sidebarSort.tasks), manual = sidebarSort.tasks === 'manual';
   const sections = sidebarSections({
-    tasks: [...matching].sort(order), stage: taskStage,
+    tasks: [...inScope].sort(order), stage: taskStage,
     // Work that needs you: running or waiting, stopped by a usage limit, or failed while you were away.
     active: s => isRunning(s.id) || limitActive(s, now) || failed(s) && seen.has(s.id),
     selectedId: state.sessionId, hold: sectionHold?.id === state.sessionId ? sectionHold.section : undefined,
@@ -1613,31 +1605,34 @@ function renderNavigation(): void {
   };
   const single = Boolean(state.projectFilter);
   const heading = (key: string, label: string, count: number) => `<div class="group-heading section-heading">${label}<span class="section-count">${count}</span></div>`;
-  const filtering = Boolean(state.query.trim());
   // Active, Finished, Chats and Tasks fold from their headings (saved in collapsedSections); a line
   // runs from the label to the count. `rows` draws only while open.
   const section = (key: string, label: string, name: string, count: number, rows: () => string) => {
     if (!count) return '';
-    const open = filtering || !collapsedSections.has(key);
+    const open = !collapsedSections.has(key);
     return `<section class="task-group sidebar-section ${key}-group" data-thread-group="${key}" aria-label="${name}"><button class="group-heading section-heading section-fold" data-action="toggle-section" data-section="${key}" tabindex="-1" aria-expanded="${open}" aria-controls="${key}-tasks">${label}<span class="section-rule" aria-hidden="true"></span><span class="section-count">${count}</span>${icon('chevron')}</button><div id="${key}-tasks" class="task-list" ${open ? '' : 'hidden'}>${open ? rows() : ''}</div></section>`;
   };
-  // While filtering, every match shows: closed sections open and limits lift, for this draw only
-  // (nothing is saved).
-  const completedVisible = completedOpen || filtering;
+  // The fold at the end of the list: Finished rows past the per-section cap and every settled thread
+  // wait behind one quiet "N more" row. Open (saved as before), Finished lists every row, the
+  // settled ones follow a page at a time, and the row reads "Show less".
+  const reviewCapped = shownTasks(sections.review, false, state.sessionId, sidebarSort.perProject);
+  const reviewRows = completedOpen ? sections.review : reviewCapped;
   // The open (held) thread always shows, even past the first page, as in a folder.
-  const completedRows = filtering ? sections.completed : shownTasks(sections.completed, false, state.sessionId, completedShown);
+  const completedRows = completedOpen ? shownTasks(sections.completed, false, state.sessionId, completedShown) : [];
   const completedMore = sections.completed.length - completedRows.length;
-  const completedSection = sections.completed.length
-    ? `<section class="task-group sidebar-section completed-group" data-thread-group="completed" aria-label="Settled tasks"><button class="group-heading section-heading section-toggle" data-action="toggle-completed" tabindex="-1" aria-expanded="${completedVisible}" aria-controls="completed-tasks">${icon('chevron')}Settled<span class="section-count">${sections.completed.length}</span></button><div id="completed-tasks" class="task-list" ${completedVisible ? '' : 'hidden'}>${completedVisible ? completedRows.map(s => row(s)).join('') + (completedMore ? `<button class="folder-more" data-action="completed-more" tabindex="-1">Show ${Math.min(COMPLETED_PAGE, completedMore)} more</button>` : '') : ''}</div></section>` : '';
+  const folded = sections.review.length - reviewCapped.length + sections.completed.length;
+  const completedSection = completedRows.length
+    ? `<section class="task-group sidebar-section more-group" data-thread-group="completed" aria-label="Settled tasks"><div id="completed-tasks" class="task-list">${completedRows.map(s => row(s)).join('') + (completedMore ? `<button class="folder-more" data-action="completed-more" tabindex="-1">Show ${Math.min(COMPLETED_PAGE, completedMore)} more</button>` : '')}</div></section>` : '';
+  const foldRow = folded ? `<button class="folder-more more-fold" data-action="toggle-completed" tabindex="-1" aria-expanded="${completedOpen}">${completedOpen ? 'Show less' : `${folded} more`}</button>` : '';
   const sectioned = sections.active.length + sections.review.length + sections.completed.length;
   // Pinned keeps the order you gave it, whatever the task sort.
   const pinned = visible.filter(s => s.pinned).sort(compareManual);
   // "Show N more" / "Show less" under a capped list; `key` is a project id, "chats" or "all".
-  const moreButton = (key: string, total: number, shown: number, expanded: boolean, limit: number) => !filtering && (total > shown || expanded && total > limit)
+  const moreButton = (key: string, total: number, shown: number, expanded: boolean, limit: number) => (total > shown || expanded && total > limit)
     ? `<button class="folder-more" data-action="toggle-folder-more" data-project="${escape(key)}" tabindex="-1">${expanded ? 'Show less' : `${total - shown} more`}</button>` : '';
   const capped = (key: string, tasks: Session[], limit: number) => {
     const expanded = state.expandedFolders.has(key);
-    const rows = filtering ? tasks : shownTasks(tasks, expanded, state.sessionId, limit);
+    const rows = shownTasks(tasks, expanded, state.sessionId, limit);
     return { rows, more: moreButton(key, tasks.length, rows.length, expanded, limit) };
   };
   // All projects: no folders, only sections. Projectless chats, then every other task, each row
@@ -1653,7 +1648,7 @@ function renderNavigation(): void {
   // A selected project is already named by the filter above: list its tasks flat, with room for more.
   const project = single ? state.projects.find(p => p.id === state.projectFilter) : undefined;
   const projectTasks = project ? visible.filter(s => !s.pinned && s.projectId === project.id) : [];
-  const projectList = project && (projectTasks.length || !filtering && !sectioned && !pinned.length) ? (() => {
+  const projectList = project && (projectTasks.length || !sectioned && !pinned.length) ? (() => {
     const { rows, more } = capped(project.id, projectTasks, PROJECT_LIMIT);
     const list = rows.map(s => row(s, false, manual)).join('') || '<div class="no-tasks">No tasks yet</div>';
     return `<section class="task-group folder-group single-project" data-thread-group="project:${escape(project.id)}" data-project="${escape(project.id)}" aria-label="${escape(project.name)} tasks"><div class="task-list">${list}${more}</div></section>`;
@@ -1665,11 +1660,10 @@ function renderNavigation(): void {
   const focused = nav.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
   const focusSelector = focused?.dataset.id ? `[data-id="${CSS.escape(focused.dataset.id)}"]` : focused?.dataset.action ? `[data-action="${CSS.escape(focused.dataset.action)}"]${focused.dataset.project ? `[data-project="${CSS.escape(focused.dataset.project)}"]` : ''}${focused.dataset.section ? `[data-section="${CSS.escape(focused.dataset.section)}"]` : ''}${focused.dataset.task ? `[data-task="${CSS.escape(focused.dataset.task)}"]` : ''}` : '';
   const pinnedGroup = pinned.length ? `<section class="task-group pinned-group" data-thread-group="pinned" aria-label="Pinned tasks">${heading('pinned', 'Pinned', pinned.length)}<div class="task-list">${pinned.map(s => row(s, !single, true)).join('')}</div></section>` : '';
-  const empty = filtering ? '<div class="no-tasks sidebar-no-match">No tasks match</div>' : '';
   // Morph rather than replace: unchanged rows keep their nodes, so nothing flickers.
   // Rows sit one level deeper than before (.task-row around .task-item), so morph one level deeper.
   morph(nav, !userProjects().length && !chats.length && !pinned.length && !sectioned ? (projectsListed ? '<div class="sidebar-empty">Open a project to get started.</div>' : '')
-    : `${pinnedGroup}${section('active', 'Active', 'Active tasks', sections.active.length, () => sections.active.map(s => row(s, !single)).join(''))}${section('review', 'Finished', 'Finished tasks', sections.review.length, () => { const { rows, more } = capped('review', sections.review, sidebarSort.perProject); return rows.map(s => row(s, !single, manual)).join('') + more; })}${chatGroup}${tasksGroup}${projectList}${filtering && !matching.length ? empty : ''}${completedSection}`, 6);
+    : `${pinnedGroup}${section('active', 'Active', 'Active tasks', sections.active.length, () => sections.active.map(s => row(s, !single)).join(''))}${section('review', 'Finished', 'Finished tasks', sections.review.length, () => reviewRows.map(s => row(s, !single, manual)).join(''))}${chatGroup}${tasksGroup}${projectList}${completedSection}${foldRow}`, 6);
   if (retainedRow) {
     const replacement = nav.querySelector<HTMLElement>(`.task-item[data-id="${CSS.escape(retainedRow.dataset.id!)}"]`);
     if (replacement) {
@@ -1681,12 +1675,6 @@ function renderNavigation(): void {
       replacement.replaceWith(retainedRow);
       nav.dispatchEvent(new Event('scroll'));
     } else closeChoiceMenu();
-  }
-  // The list's scrollport ends where the docked Settled section starts, so rows never pass under it.
-  const dock = nav.querySelector<HTMLElement>(':scope > .completed-group');
-  if (dock !== settledDock) {
-    settledResize.disconnect(); settledDock = dock;
-    if (dock) settledResize.observe(dock); else nav.style.removeProperty('--settled-height');
   }
   // A row action that moved its task to another section hands focus to the task's row.
   syncRovingFocus(nav);
@@ -3190,7 +3178,7 @@ async function saveBoardTaskForm(form: HTMLFormElement, data: FormData): Promise
   if (saved.id === state.sessionId) fullTaskDescription = { id: saved.id, value: saved.taskDescription ?? '' };
   const current = form.isConnected && document.querySelector<HTMLDialogElement>('#dialog')!.open && generation === state.generation;
   if (current) closeModal();
-  if (!id && current) { state.query = ''; await selectSession(saved.id); }
+  if (!id && current) { await selectSession(saved.id); }
   else { renderBoardView(); if (!id) notify('Task added to Pending.'); }
   renderNavigation();
 }
@@ -5533,7 +5521,7 @@ async function startTask(projectId: string): Promise<void> {
   leaveDraft('');
   // A settled draft (its worktree removed) is never reopened.
   const existing = state.sessions.find(task => task.draft && task.id !== current && task.projectId === active.id && !deletedSessions.has(task.id) && taskStage(task) !== 'completed');
-  if (existing) { state.query = ''; closeModal(); await selectSession(existing.id, true); return; }
+  if (existing) { closeModal(); await selectSession(existing.id, true); return; }
   creatingTask = true;
   let created: Session;
   try {
@@ -5541,7 +5529,7 @@ async function startTask(projectId: string): Promise<void> {
   } finally { creatingTask = false; }
   state.sessions.unshift(created);
   if (generation !== state.generation) { renderNavigation(); return; }
-  state.query = ''; closeModal(); await selectSession(created.id, true);
+  closeModal(); await selectSession(created.id, true);
 }
 /** A projectless chat: its own folder, the usual harness and model. `from` is a New task moved to No project:
  *  the chat takes over its choices, typed text and attachments, so the draft is left empty and discarded on the way out. */
@@ -5553,7 +5541,7 @@ async function createChat(from?: Session): Promise<void> {
   const unused = from ? undefined : state.sessions.find(task => chatTask(task) && task.lastPromptAt == null && !task.resumeId && !task.archived && !deletedSessions.has(task.id) && taskStage(task) !== 'completed');
   if (unused) {
     if (state.projectFilter) setProjectFilter('');
-    state.query = ''; closeModal(); await selectSession(unused.id, true); return;
+    closeModal(); await selectSession(unused.id, true); return;
   }
   const harness = state.providers.find(p => p.id === state.defaultProvider && p.installed)
     ?? state.providers.find(p => p.installed) ?? state.providers[0];
@@ -5588,7 +5576,7 @@ async function createChat(from?: Session): Promise<void> {
   }
   if (generation !== state.generation) { renderNavigation(); return; }
   if (state.projectFilter) setProjectFilter('');
-  state.query = ''; closeModal(); await selectSession(created.id, true);
+  closeModal(); await selectSession(created.id, true);
 }
 /** Drops a chat's hidden project (and its empty folder) once no task uses it. */
 async function forgetChat(projectId: string): Promise<void> {
@@ -5808,15 +5796,10 @@ async function showSidebarSort(anchor: HTMLElement): Promise<void> {
 function visibleSidebarRows(): HTMLElement[] {
   return [...$('#navigation').querySelectorAll<HTMLElement>('.task-item')].filter(row => !row.closest('[hidden]'));
 }
-/** ⌘1…⌘9 open the Nth visible task, ⌘⇧[ and ⌘⇧] the previous and next, / filters, ⌘Z undoes. */
+/** ⌘1…⌘9 open the Nth visible task, ⌘⇧[ and ⌘⇧] the previous and next, ⌘Z undoes. */
 function sidebarShortcut(event: KeyboardEvent): boolean {
   const command = event.metaKey || event.ctrlKey, target = event.target as HTMLElement;
   const typing = target.matches('input, textarea, select, [contenteditable="true"]');
-  if (event.key === 'Escape' && target.id === 'sidebar-filter') {
-    event.preventDefault();
-    if ((target as HTMLInputElement).value) { state.query = ''; renderNavigation(); } else target.blur();
-    return true;
-  }
   // Never take keys meant for the prompt or any other field.
   if (typing) return false;
   if (command && !event.shiftKey && !event.altKey && /^[1-9]$/.test(event.key)) {
@@ -5830,13 +5813,6 @@ function sidebarShortcut(event: KeyboardEvent): boolean {
     event.preventDefault();
     if (next) run(selectSession(next.dataset.id!));
     return true;
-  }
-  // / filters from the task list or anywhere that is not a control (the typing guard above already
-  // passed); when the field is not shown (a narrow window) the key is left alone.
-  const filter = $('#sidebar-filter');
-  const control = !$('#navigation').contains(target) && target.closest('button, a[href], [role="button"], [role="menuitem"], [role="tab"], summary');
-  if (event.key === '/' && !command && !event.altKey && !control && filter.getClientRects().length) {
-    event.preventDefault(); filter.focus(); return true;
   }
   if (command && !event.shiftKey && !event.altKey && event.code === 'KeyZ' && toastUndo) {
     event.preventDefault(); const undo = toastUndo; toastUndo = undefined; void hideToast($('#toast')); undo(); return true;
@@ -6478,7 +6454,7 @@ async function sendCloud(s: Session, target: CloudTarget, draft: string, text: s
     state.attachments = state.attachments.filter(path => !filePaths.includes(path));
     remoteChoice = LOCAL;
     await reloadSessions();
-    state.query = ''; await selectSession(started.id, true);
+    await selectSession(started.id, true);
   } catch (error) {
     if (!accepted) restoreComposerDraft(s, draft);
     throw error;
@@ -6583,7 +6559,7 @@ async function sendRemote(s: Session, target: RemoteTarget, draft: string, text:
     if (remaining.length) state.browserAttachments.set(s.id, remaining); else state.browserAttachments.delete(s.id);
     state.attachments = state.attachments.filter(path => !filePaths.includes(path));
     await reloadSessions();
-    state.query = ''; await selectSession(sessionId, true);
+    await selectSession(sessionId, true);
     // A busy or dirty checkout on the host gave way to a worktree: say so once, under the prompt.
     const mirror = state.sessions.find(task => task.id === sessionId);
     if (started.note && mirror) showComposerNote(mirror, started.note);
@@ -6977,8 +6953,6 @@ async function action(name: string, element: HTMLElement): Promise<void> {
     case 'board-reopen': await changeBoardStage('review'); break;
     case 'project-task': await createTask(element.dataset.id!); break;
     case 'toggle-folder': {
-      // While filtering every folder shows its matches; a click must not quietly save open/closed.
-      if (state.query.trim()) break;
       const id = element.dataset.project!;
       if (element.getAttribute('aria-expanded') === 'true') state.collapsedFolders.add(id); else state.collapsedFolders.delete(id);
       saveCollapsedFolders(); renderNavigation(); break;
@@ -6987,7 +6961,6 @@ async function action(name: string, element: HTMLElement): Promise<void> {
     case 'sidebar-sort': await showSidebarSort(element); break;
     case 'view-menu': await showViewMenu(element); break;
     case 'folder-menu': { const heading = element.parentElement?.querySelector<HTMLElement>('.folder-heading'); if (heading) await showFolderMenu(heading); break; }
-    case 'clear-sidebar-filter': state.query = ''; renderNavigation(); $('#sidebar-filter').focus(); break;
     case 'toggle-folder-more': { const id = element.dataset.project!; if (!state.expandedFolders.delete(id)) state.expandedFolders.add(id); renderNavigation(); break; }
     case 'add-project': showOpenProject(); break;
     case 'browse-project': {
@@ -7004,13 +6977,12 @@ async function action(name: string, element: HTMLElement): Promise<void> {
     case 'sidebar-delete': sidebarTaskAction('delete', element.dataset.task!); break;
     case 'sidebar-more': { const row = element.closest('.task-row')?.querySelector<HTMLElement>('.task-item'); if (row) await showSidebarTaskMenu(row); break; }
     case 'toggle-section': {
-      if (state.query.trim()) break;
       const key = element.dataset.section!;
       if (!collapsedSections.delete(key)) collapsedSections.add(key);
       try { localStorage.setItem(COLLAPSED_SECTIONS_KEY, JSON.stringify([...collapsedSections])); } catch { /* per-launch preference only */ }
       renderNavigation(); break;
     }
-    case 'toggle-completed': if (state.query.trim()) break; completedOpen = !completedOpen; completedShown = COMPLETED_FIRST; try { localStorage.setItem(COMPLETED_OPEN_KEY, String(completedOpen)); } catch { /* per-launch preference only */ } renderNavigation(); break;
+    case 'toggle-completed': completedOpen = !completedOpen; completedShown = COMPLETED_FIRST; try { localStorage.setItem(COMPLETED_OPEN_KEY, String(completedOpen)); } catch { /* per-launch preference only */ } renderNavigation(); break;
     case 'select-project': await selectProject(element.dataset.id!); break;
     case 'toggle-theme': toggleTheme(); break;
     case 'colors-settings': await showColorsSettings(); break;
@@ -7238,7 +7210,7 @@ function resizePrompt(): void {
   if (prompt.style.overflowY !== overflow) prompt.style.overflowY = overflow;
 }
 window.addEventListener('pandacode-ui-scale-change', resizePrompt);
-document.addEventListener('input', event => { const input = event.target as HTMLInputElement; if (input.id === 'command-query') renderCommands(input.value); if (input.id === 'prompt') resizePrompt(); if (input.id === 'shared-channel-prompt' && state.sharedChannelId) state.sharedChannelDrafts.set(state.sharedChannelId, input.value); if (input.id === 'sidebar-filter') { state.query = input.value; renderNavigation(); } });
+document.addEventListener('input', event => { const input = event.target as HTMLInputElement; if (input.id === 'command-query') renderCommands(input.value); if (input.id === 'prompt') resizePrompt(); if (input.id === 'shared-channel-prompt' && state.sharedChannelId) state.sharedChannelDrafts.set(state.sharedChannelId, input.value); });
 document.addEventListener('scroll', event => {
   if (!state.sharedChannelId) return;
   const history = (event.target as Element | null)?.closest?.('.bc-history') as HTMLElement | null;
