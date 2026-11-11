@@ -625,6 +625,23 @@ const MESSAGE_LIMIT = 16 * 1024 * 1024;
 /** tests: a live `subagent` event for any task (`__previewSubagent('session-1', { id, name, status, … })`). */
 (window as any).__previewSubagent = (sessionId: string, data: Record<string, unknown>) => agent({ sessionId, kind: 'subagent', text: '', data: { parentId: null, prompt: '', response: '', tools: [], startedAt: now, updatedAt: Date.now(), ...data } } as unknown as AgentEvent);
 function session(value: unknown): Session { const result = sessions.find(s => s.id === value); if (!result) throw new Error('Task not found'); return result; }
+const SIDE_CHAT_IDLE_MS = 24 * 60 * 60 * 1000;
+/** What each side chat's first turn would be told of its thread; `__sideChatSnapshot(sideId)` reads it in tests. */
+const sideChatSnapshots: Record<string, string> = {};
+function sideChatSession(value: unknown): Session { const side = session(value); if (side.kind !== 'side') throw new Error('This is not a side chat.'); return side; }
+/** The thread's newest saved user and assistant messages (60 rows, 24,000 characters, 8,000 a message), as the backend copies them. */
+function sideChatSnapshot(parentId: string): string {
+  const kept: string[] = []; let remaining = 24_000;
+  for (const message of (messages[parentId] ?? []).filter(m => (m.role === 'user' || m.role === 'assistant') && m.content).slice(-60).reverse()) {
+    if (remaining <= 0) break;
+    const text = message.content.slice(-Math.min(remaining, 8_000)); remaining -= text.length;
+    kept.unshift(`${message.role === 'user' ? 'User' : 'Agent'}: ${text}`);
+  }
+  return kept.join('\n\n');
+}
+(window as any).__sideChatSnapshot = (sideId: string) => sideChatSnapshots[sideId];
+/** tests: ends a held side chat run (`__sideChatHold`) with its saved reply. */
+(window as any).__sideChatFinish = (sessionId: string, text: string) => finish(sessionId, text);
 function assertIdle(s: Session): void {
   if (s.status === 'running' || s.status === 'waiting' || timers.has(s.id)) throw new Error('Stop the agent before changing this task.');
 }
@@ -1821,6 +1838,51 @@ export async function invoke<T>(command: string, args: Record<string, any>): Pro
       if (!message) throw new Error('This saved message does not belong to the source task.');
       result = message.content; break;
     }
+    // Side chats (docs/side-chat.md), as `side_chat.rs` keeps them: a session of kind `side` under its thread,
+    // absent from `list_sessions`, opened with a snapshot of the thread and archived after 24 hours idle.
+    case 'side_chat_open': {
+      const parent = session(args.parentId);
+      if (parent.kind === 'side') throw new Error('A side chat cannot open another side chat.');
+      if (parent.remoteDevice || parent.cloud) throw new Error('Side chats run on this computer, and this task runs elsewhere.');
+      const created = session((await invoke<Session>('create_session', { projectId: parent.projectId, provider: parent.provider, model: parent.model, mode: parent.mode })).id);
+      const line = String(args.question ?? '').split(/\s+/).filter(Boolean).join(' ').replace(/^[*_`]+|[*_`]+$/g, '');
+      Object.assign(created, { kind: 'side', parentSessionId: parent.id, title: !line ? 'Side chat' : [...line].length > 48 ? [...line].slice(0, 47).join('') + '…' : line, worktreePath: parent.worktreePath, worktreeBranch: parent.worktreeBranch ?? null, reasoningEffort: parent.reasoningEffort ?? null, taskStage: 'in_progress' });
+      sideChatSnapshots[created.id] = sideChatSnapshot(parent.id);
+      result = structuredClone(created); break;
+    }
+    case 'side_chat_list': {
+      const now = Date.now() + ((window as any).__sideChatClock ?? 0);
+      for (const side of sessions) {
+        const idleSince = Math.max(side.updatedAt, side.lastPromptAt ?? 0, side.lastResponseAt ?? 0);
+        if (side.kind !== 'side' || side.archived || side.status !== 'idle' || timers.has(side.id) || now - idleSince < SIDE_CHAT_IDLE_MS) continue;
+        side.archived = true; emit('side-chats-changed', { parentId: side.parentSessionId ?? null, sessionId: side.id, reason: 'expired' });
+      }
+      result = structuredClone(sessions.filter(side => side.kind === 'side' && side.parentSessionId === args.parentId && !side.archived).sort((a, b) => b.updatedAt - a.updatedAt)); break;
+    }
+    case 'side_chat_send': {
+      const side = sideChatSession(args.sessionId), w = window as any;
+      if (side.archived) throw new Error('This side chat has expired. Start a new one.');
+      // `__sideChatHold`: the question is saved and the run stays open, so a test streams the reply itself
+      // (`__previewEmit('agent-event', …)`) and ends it with `__sideChatFinish(sessionId, text)`.
+      if (w.__sideChatHold) { assertIdle(side); side.status = 'running'; side.updatedAt = side.lastPromptAt = Date.now(); messages[side.id].push({ id: ++id, sessionId: side.id, role: 'user', content: String(args.text), createdAt: Date.now() }); break; }
+      await invoke('send_message', { sessionId: side.id, text: args.text }); break;
+    }
+    case 'side_chat_stop': {
+      const side = sideChatSession(args.sessionId);
+      if (timers.has(side.id) || !(window as any).__sideChatHold) { await invoke('stop_session', { sessionId: side.id }); break; }
+      side.status = 'idle'; agent({ sessionId: side.id, kind: 'done', text: 'Stopped' }); break;
+    }
+    case 'side_chat_close': {
+      const side = sideChatSession(args.sessionId);
+      if (side.status !== 'idle') throw new Error('Stop the side chat before closing it.');
+      side.archived = true; emit('side-chats-changed', { parentId: side.parentSessionId ?? null, sessionId: side.id, reason: 'closed' }); break;
+    }
+    case 'side_chat_promote': {
+      const side = sideChatSession(args.sessionId);
+      side.kind = 'thread'; side.archived = false; side.updatedAt = Date.now();
+      emit('side-chats-changed', { parentId: side.parentSessionId ?? null, sessionId: side.id, reason: 'promoted' }); emit('sessions-changed', undefined);
+      result = structuredClone(side); break;
+    }
     case 'fork_session_at_message': {
       const source = session(args.sessionId), history = messages[source.id] ?? [];
       const boundary = history.findIndex(message => message.id === args.messageId);
@@ -1880,7 +1942,7 @@ export async function invoke<T>(command: string, args: Record<string, any>): Pro
     case 'browser_capture': result = { id: crypto.randomUUID(), name: 'Sample screenshot', path: '/sample/browser-capture.png', mimeType: 'image/png', url: browserState.url, title: browserState.title, width: 1280, height: 800, dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==' }; break;
     // Like the native rowid: projects are pushed in the order they were added.
     case 'list_projects': result = projects.map((project, index) => ({ ...project, addedOrder: index + 1 })); break;
-    case 'list_sessions': sessions.forEach(settleDraft); result = [...sessions].filter(task => !task.draft).sort(compareThreadOrder).map(taskSummary); break;
+    case 'list_sessions': sessions.forEach(settleDraft); result = [...sessions].filter(task => !task.draft && task.kind !== 'side').sort(compareThreadOrder).map(taskSummary); break;
     case 'set_resume_at_reset': {
       const s = session(args.sessionId);
       if (args.enabled && !(s.limitedAt && s.limitedUntil)) throw new Error('This task has no usage limit with a known reset time.');
@@ -2036,7 +2098,7 @@ export async function invoke<T>(command: string, args: Record<string, any>): Pro
       const task = session(args.sessionId); assertIdle(task);
       if (architect.isActive(task.id)) throw new Error('Stop the team before deleting this task.');
       if (task.goalState?.status === 'active') throw new Error('Pause the goal before deleting this task.');
-      const deletedSessionIds = [...new Set([task.id, ...(architect.get(task.id)?.workers.map(worker => worker.sessionId) ?? [])])];
+      const deletedSessionIds = [...new Set([task.id, ...(architect.get(task.id)?.workers.map(worker => worker.sessionId) ?? []), ...sessions.filter(side => side.kind === 'side' && side.parentSessionId === task.id).map(side => side.id)])];
       for (const id of deletedSessionIds) { const worker = sessions.find(task => task.id === id); if (worker) assertIdle(worker); }
       architect.remove(deletedSessionIds);
       turnChanges.remove(deletedSessionIds);
