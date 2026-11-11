@@ -14,7 +14,8 @@ and until a settings screen exists that takes the `computer_use_set_settings` co
 The app is the only gate. It assumes the agent ignores every instruction and sends raw
 requests itself, so every decision is made from what is true at that moment and is made
 again at each step: when the request arrives, before the helper prepares a target, and
-immediately before input.
+immediately before input. The rules on approvals, protected apps, the screen and the
+pause hold unless the user turned on [bypass](#bypass-all-permissions).
 
 - **Modes** (`policy::Mode`): off, observe (look only: list windows, read controls, take
   screenshots) and control (also input). An unreadable setting counts as off.
@@ -62,6 +63,36 @@ the target it just read, once as `prepare` before it activates anything and once
 `dispatch` immediately before input, and waits for `{id, nonce, decision}` (`null`
 allows). A lost, mismatched or unreadable line is never permission, and a helper that
 dies after an allowed `dispatch` is reported as "may have been delivered".
+
+## Bypass all permissions
+
+`approvals: "bypass"` turns every permission rule off. It exists for people who want an
+agent to do anything on their machine and accept what that means. **It is at your own
+risk.** It is never a default, a stored value that cannot be read is never bypass, and
+`computer_use_set_settings` refuses to turn it on unless the same call carries
+`acknowledgeRisk: true`. Switching away needs nothing and puts every rule back at once.
+`computer_use_state` returns `bypass: true` while it is on, for a standing warning.
+
+With the mode on control, bypass removes:
+
+- **Every approval.** Nothing asks, destructive-looking input included, and Full access
+  on the thread is not needed.
+- **The show-on-screen question.** Input may bring any window to the front.
+- **The protected apps.** An agent can read, capture and operate password managers,
+  Keychain Access, System Settings, the login and security prompts, and PandaCode's own
+  window and browser tab. A screenshot is taken even with a password manager on top.
+- **The pause while an approval waits.** Together with the line above, this means an
+  agent can click the approval prompts this app shows for *other* tools, its own
+  included. Nothing stops an agent approving itself.
+
+With the mode on observe, bypass lifts the protected-apps and overlap rules for looking;
+input stays refused. Off stays off.
+
+What stays, because it is about acting on the right thing and not about permission:
+request validation, a turn must be running (and still be the same turn at the last
+check), unknown and stale refs, shots and windows, the check that the helper is about to
+act on the window that was checked, helper failures, timeouts and restarts, and Plan
+mode's refusal of the input tools.
 
 ## The service
 
@@ -117,14 +148,14 @@ reports itself unavailable unless that variable points at a helper built from
 ## Settings, commands and tools
 
 Settings are one JSON row (`computer_use_settings`, schema 39): `mode` (`off`,
-`observe`, `control`; default off), `approvals` (`thread`, `risky`, `never`; default
-thread) and `screen` (`allow`, `ask`; default allow). A stored value that cannot be read
+`observe`, `control`; default off), `approvals` (`thread`, `risky`, `never`, or `bypass`,
+see above; default thread) and `screen` (`allow`, `ask`; default allow). A stored value that cannot be read
 counts as off, thread and ask.
 
 | Command | Does |
 | --- | --- |
-| `computer_use_state` | `{settings, status, approvals, activity}`; `status` is `{mode, platform, driverAvailable, accessibility, reason?}` |
-| `computer_use_set_settings` | Takes `{mode?, approvals?, screen?}`; turning it off closes every approval |
+| `computer_use_state` | `{settings, bypass, status, approvals, activity}`; `status` is `{mode, platform, driverAvailable, accessibility, reason?}` |
+| `computer_use_set_settings` | Takes `{mode?, approvals?, screen?, acknowledgeRisk?}`; turning it off closes every approval |
 | `computer_use_approvals` | The waiting cards: `{requestId, threadId, turnId, appName, detail, options, createdAt}` |
 | `computer_use_respond` | `sessionId`, `requestId`, `decision` (`accept`, `acceptForSession`, `decline`, `cancel`) |
 

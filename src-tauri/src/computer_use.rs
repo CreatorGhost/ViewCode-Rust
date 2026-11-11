@@ -43,11 +43,13 @@ fn service(app: &tauri::AppHandle) -> Result<std::sync::Arc<service::Service>> {
 pub async fn computer_use_state(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<Value> {
     let settings = settings::read(&*state.store.lock().map_err(|error| error.to_string())?)?;
     let service = service(&app)?;
-    Ok(json!({ "settings": settings, "status": service.status().await, "approvals": service.pending_approvals(), "activity": service.recent_activity() }))
+    // `bypass` is for a standing warning: every permission rule is off.
+    Ok(json!({ "settings": settings, "bypass": settings.approvals == policy::Approvals::Bypass, "status": service.status().await, "approvals": service.pending_approvals(), "activity": service.recent_activity() }))
 }
 
 /// Changes the mode (off, observe, control), when input asks, or whether it may take the
-/// screen; fields left out keep their value. Turning computer use off closes every
+/// screen; fields left out keep their value. `approvals: "bypass"` (every permission rule
+/// off) is refused unless the same call carries `acknowledgeRisk: true`. Turning computer use off closes every
 /// approval and forgets every thread's targets.
 #[tauri::command]
 pub async fn computer_use_set_settings(app: tauri::AppHandle, state: State<'_, AppState>, settings: settings::SettingsPatch) -> Result<settings::Settings> {
