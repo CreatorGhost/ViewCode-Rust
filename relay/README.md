@@ -47,6 +47,33 @@ Hardening notes:
 - A reconnect keeps the device's rate bucket (20/s, burst 100), seeded from the old socket before it closes.
 - The schema migrates once, gated on `PRAGMA user_version`.
 
+## Self-hosted mode (Quick connect)
+
+The same Worker also runs on a user's own Cloudflare account, deployed by the desktop app
+(`src-tauri/src/quick_connect/`) from `wrangler.self.json`: `RELAY_MODE=self`, no custom
+domain, no GitHub app, no rate-limit bindings. One Durable Object (`self`) holds the device
+list. Frames, presence, encryption and every authenticated `/v1/*` route are unchanged; only
+how a device gets its token differs (`src/self.ts`, contract in
+[docs/remote-access.md](../docs/remote-access.md#quick-connect)):
+
+- `HOST_SECRET` (a Worker secret, at least 32 characters, stored by the desktop right after the
+  deploy) replaces GitHub sign-in. Until it is stored every request gets `500 server error`.
+  It only authenticates the desktop. Device tokens are signed with a key the deployment's
+  Durable Object makes once and keeps (`self:signing-key`), so rotating the host secret leaves
+  every paired phone paired.
+- A paired device stays paired for 30 days from pairing (`SELF_DEVICE_TTL_SECONDS`, the lifetime
+  of a ViewCode session). Use and `POST /v1/token` never extend it: a refreshed token ends at the
+  same moment. When it lapses the row is deleted and its socket closed (`4001`), exactly as a
+  revoke; the phone pairs again with a new code. The desktop's own row has no fixed end.
+- `GET /v1/self/probe`, `POST /v1/self/host`, `POST|DELETE /v1/self/pairings` take
+  `Authorization: Bearer <HOST_SECRET>`. `host` registers the desktop as the deployment's
+  admin device; `pairings` offers `{ codeHash, ttlSeconds ≤ 300 }` or cancels the waiting ones.
+- `POST /v1/self/pair` `{ code, device }` needs no account: the SHA-256 of `code` must match a
+  waiting pairing, which is then spent. Unknown, used and expired codes get the same `401`.
+- Only the admin device hosts, removes other devices or deletes the deployment's state; a
+  pairing never registers under the admin device's id. `/v1/auth/github` is `404` here, and
+  `/v1/self/*` is `404` on the shared relay.
+
 ## Develop
 
 ```sh
@@ -58,5 +85,6 @@ npx wrangler dev    # local; put SESSION_SECRET=... in .dev.vars
 | File | Job |
 |---|---|
 | `src/index.ts` | Routes, auth rate limits, GitHub sign-in, token check |
+| `src/self.ts` | Self-hosted mode: host secret, pairing rules, its routes (pure; `test/self.test.ts`) |
 | `src/account.ts` | Durable Object: device rows, hibernating WebSockets, forwarding, presence |
 | `src/token.ts`, `body.ts`, `config.ts`, `policy.ts`, `validate.ts`, `bucket.ts`, `frames.ts`, `github.ts`, `limits.ts` | Pure logic, unit tested |

@@ -640,3 +640,12 @@ test('settings deep links still land on their own page', async ({ page }) => {
   await panel(page, 'Recommended').locator('[data-recommendation="routing"]').getByRole('button').click();
   await expect(panel(page, 'Model routing')).toBeVisible();
 });
+
+test('Settings → About states that the app is a fork of PandaCode and links to it', async ({ page }) => {
+  await open(page);
+  await settings(page);
+  await tab(page, 'About').click();
+  const row = page.locator('.settings-fork-notice');
+  await expect(row.locator('strong')).toHaveText('This is a fork of PandaCode');
+  await expect(row.getByRole('button', { name: 'PandaCode' })).toHaveAttribute('data-url', 'https://github.com/aicodeking/pandacode');
+});

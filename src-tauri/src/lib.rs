@@ -19,6 +19,7 @@ mod checks;
 mod code_search;
 mod connections;
 mod command_operations;
+mod computer_use;
 mod context_recovery;
 mod conversation_fork;
 mod conversation_import;
@@ -59,11 +60,13 @@ mod prompt_attachments;
 mod overlay;
 mod panda_router;
 mod provider_settings;
+mod quick_connect;
 mod remote;
 mod providers;
 mod session_titles;
 mod slash_commands;
 mod recipes;
+mod review;
 mod schedules;
 mod storage;
 mod subagent_state;
@@ -666,6 +669,7 @@ async fn delete_session_with_attachment_cleanup(
             let sessions = deleted.deleted_session_ids.clone();
             if let Err(error) = crate::blocking(move || {
                 for sid in sessions {
+                    computer_use::thread_removed(&data_dir, &sid);
                     let path = data_dir.join("attachments").join(sid);
                     if let Err(error) = std::fs::remove_dir_all(path) {
                         if error.kind() != std::io::ErrorKind::NotFound {
@@ -696,6 +700,13 @@ async fn add_project(state: State<'_, AppState>, path: String) -> Result<Project
         .add_project(&PathBuf::from(path));
     skill_manager::projects_changed();
     project
+}
+/// Sets or clears (null) a project's colour, and tells every window.
+#[tauri::command]
+async fn set_project_color(app: tauri::AppHandle, state: State<'_, AppState>, project_id: String, color: Option<String>) -> Result<storage::Project> {
+    let project = state.store.lock().map_err(|e| e.to_string())?.set_project_color(&project_id, color.as_deref())?;
+    let _ = app.emit("project-changed", &project);
+    Ok(project)
 }
 #[tauri::command]
 async fn remove_project(state: State<'_, AppState>, project_id: String) -> Result<()> {
@@ -2210,6 +2221,8 @@ async fn launch_operation_admitted(
         let team_sink = team.clone();
         let coalescer = Arc::new(Mutex::new(providers::Coalescer::default()));
         let coalescer_sink = coalescer.clone();
+        // Kept for the end of the run; the sink takes the id itself.
+        let ended_run_id = run_id.clone();
         let sink: providers::Sink = Arc::new(move |mut e: AgentEvent| {
             if cloud && app_sink.state::<AppState>().shutdown.load(Ordering::SeqCst) != 0 {
                 return;
@@ -2365,6 +2378,8 @@ async fn launch_operation_admitted(
         let host = agent_tools::with_jev(host, app.clone(), session_id.clone(), stopped.clone());
         let host = bots::tools::with_bot(host, app.clone(), session_id.clone(), stopped.clone());
         let host = schedules::tools::with_schedules(host, app.clone(), session_id.clone(), stopped.clone());
+        let host = review::tools::with_review(host, app.clone(), session_id.clone(), stopped.clone());
+        let host = computer_use::tools::with_computer_use(host, app.clone(), session_id.clone(), stopped.clone());
         let host = simulator::tools::with_simulator_for(host, app.clone(), session_id.clone(), stopped.clone());
         let host = vm::tools::with_vm(host, app.clone(), session_id.clone(), stopped.clone());
         let host = remote::orchestrate::with_machines(host, app.clone(), session_id.clone(), stopped.clone(), team.is_some());
@@ -2641,6 +2656,9 @@ async fn launch_operation_admitted(
             architect::completed(&app, &session_id, team.as_ref(), successful, was_stopped, provider_error.as_deref(), registry);
         }
         drop(registry);
+        // Computer use belongs to a turn: its approvals close and its grant ends here. After
+        // the registry is released, because the gate reads the running turn from it.
+        computer_use::turn_ended(&session_id, &ended_run_id);
         // Start the next turn's agent now, so a follow-up skips the CLI's own startup.
         if let (true, Some((mut next, (tools, approvals)))) = (successful && !was_stopped, warm_next) {
             // A turn that ended without any reply (seen after background commands) may have
@@ -3987,7 +4005,9 @@ fn setup_common(app: &tauri::App) -> crate::Result<PathBuf> {
         shutdown: AtomicU8::new(0),
     });
     cloud_agents::init(app.handle());
+    quick_connect::setup(app.handle(), &dir);
     remote::setup(app.handle(), &dir);
+    quick_connect::resume(app.handle());
     app.manage(browser::BrowserState::default());
     app.manage(simulator::Simulators::default());
     app.manage(vm::Vms::default());
@@ -4064,6 +4084,7 @@ fn on_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
         });
     } else if matches!(event, tauri::RunEvent::Exit) {
         if let Some(voice) = app.try_state::<voice::Voice>() { voice.shutdown(); }
+        computer_use::shutdown();
         app.state::<file_preview::FilePreviews>().shutdown();
         // VMs PandaCode started release their memory when it quits.
         app.state::<vm::Vms>().shutdown();
@@ -4274,6 +4295,21 @@ pub fn run() {
                 remote::grants::remote_pair_code,
                 remote::grants::remote_pair_code_cancel,
                 remote::grants::remote_pair_redeem,
+                quick_connect::quick_connect_status,
+                quick_connect::quick_connect_start_setup,
+                quick_connect::quick_connect_prepare_tools,
+                quick_connect::quick_connect_sign_in,
+                quick_connect::quick_connect_continue,
+                quick_connect::quick_connect_choose_account,
+                quick_connect::quick_connect_cancel,
+                quick_connect::quick_connect_set_enabled,
+                quick_connect::quick_connect_remove,
+                quick_connect::quick_connect_pairing_create,
+                quick_connect::quick_connect_pairing_cancel,
+                quick_connect::quick_connect_devices,
+                quick_connect::quick_connect_revoke_device,
+                quick_connect::quick_connect_set_mode,
+                quick_connect::quick_connect_set_legacy_connect_visible,
                 remote::diagnostics::remote_diagnostics,
                 remote::diagnostics::remote_diagnostics_export,
                 remote_resubscribe,
@@ -4344,6 +4380,16 @@ pub fn run() {
                 bots::schedule::bot_schedule_set_enabled,
                 bots::schedule::bot_schedule_delete,
                 bots::schedule::bot_run_schedule_now,
+                computer_use::computer_use_state,
+                computer_use::computer_use_set_settings,
+                computer_use::computer_use_approvals,
+                computer_use::computer_use_respond,
+                review::review_state,
+                review::review_rate_finding,
+                review::review_skill,
+                review::review_edit_skill,
+                review::review_learn_skill,
+                review::review_start_local,
                 schedules::schedules_list,
                 schedules::schedule_create,
                 schedules::schedule_update,
@@ -4413,6 +4459,7 @@ pub fn run() {
                 list_projects,
                 add_project,
                 remove_project,
+                set_project_color,
                 relink_project,
                 list_sessions,
                 pin_session,

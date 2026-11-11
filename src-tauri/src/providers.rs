@@ -26,6 +26,11 @@ mod warm;
 pub use warm::{discard as discard_warm_agent, epoch as warm_epoch, prewarm as prewarm_agent, supported as warms};
 use host_tools::apply_step;
 pub use host_tools::ToolHost;
+/// Whether the harness side would accept this host's catalog (names, schemas, size).
+#[cfg(test)]
+pub(crate) fn host_tools_accept(host: &ToolHost) -> bool {
+    host_tools::HostTools::new(host.clone()).is_ok()
+}
 pub(crate) mod acp;
 pub(crate) mod acp_catalog;
 #[cfg(test)]
@@ -3539,7 +3544,9 @@ async fn run_process(
 
 /// Host tools that need no permission prompt once registered for the run.
 fn self_scoped_host_tool(name: &str) -> bool {
-    optional_metadata_tool(name) || crate::bots::tools::self_scoped(name) || crate::schedules::tools::self_scoped(name) || crate::architect::team_tool(name)
+    // Computer-use tools are decided by their own gate on every call, which asks the user
+    // itself and never shows typed text; a harness prompt showing the arguments would.
+    optional_metadata_tool(name) || crate::bots::tools::self_scoped(name) || crate::schedules::tools::self_scoped(name) || crate::architect::team_tool(name) || crate::computer_use::tools::self_gated(name)
 }
 fn optional_metadata_tool(name: &str) -> bool {
     name == crate::session_titles::TOOL || name == crate::turn_changes::TRACK_TOOL
@@ -3558,6 +3565,7 @@ fn optional_transport_tool(name: &str) -> bool {
         || name.starts_with("pandacode_design_")
         || name.starts_with("pandacode_jev_")
         || name.starts_with("pandacode_bot_")
+        || name.starts_with("pandacode_computer_")
 }
 fn per_run_mcp_tool(name: &str) -> bool {
     name.starts_with("pandacode_jev_")
@@ -4260,6 +4268,7 @@ mod tests {
             "pandacode_design_artboard",
             "pandacode_jev_test",
             "pandacode_bot_recall",
+            "pandacode_computer_press",
         ] {
             assert!(optional_transport_tool(name), "{name} should be optional transport");
         }

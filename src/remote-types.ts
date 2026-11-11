@@ -2,6 +2,8 @@
 export interface RemoteStatus {
   configured: boolean; signedIn: boolean; account?: { login: string; avatarUrl?: string };
   device: { id: string; name: string; fingerprint: string }; hostEnabled: boolean; notifyEnabled: boolean; remoteFullAccess: boolean; connected: boolean;
+  /** `quickConnect` while the socket is on the user's own relay (src/quick-connect-types.ts); `shared` otherwise. */
+  relay?: 'shared' | 'quickConnect';
 }
 export interface RemoteDevice { id: string; name: string; platform: string; fingerprint: string; host: boolean; online: boolean; lastSeen: number | string | null; current: boolean }
 export interface RemoteSignIn { userCode: string; verificationUri: string; expiresIn: number }
