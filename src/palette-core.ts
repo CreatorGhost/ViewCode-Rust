@@ -99,6 +99,10 @@ export function accentTokens(source: Rgb, mode: 'light' | 'dark'): Tokens {
   };
 }
 
+/** The accent a fresh profile starts with, and what the scene accent falls back to while no wallpaper or scene shows:
+ * the teal of ViewCode's default look ("Obsidian"), per base. `accentTokens` derives every accent token from it. */
+export const DEFAULT_ACCENT = { dark: '#2dd4bf', light: '#0f8577' };
+
 /** The most chromatic color among a VS Code theme's highlight colors. */
 function themeAccent(get: (key: string) => Rgb | undefined): { color: Rgb; key: string } | undefined {
   const keys = ['button.background', 'focusBorder', 'activityBarBadge.background', 'textLink.foreground', 'progressBar.background', 'tab.activeBorderTop', 'statusBarItem.remoteBackground', 'editorCursor.foreground', 'list.highlightForeground', 'terminal.ansiBlue', 'terminal.ansiMagenta'];

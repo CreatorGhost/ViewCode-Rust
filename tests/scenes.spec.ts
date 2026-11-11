@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { enableScenes } from './scene-helper';
 
 /** Each thread shows its own scene (src/scenes/: `sceneFor` hashes the thread id), crossfading on a switch. */
 const layer = (page: Page) => page.locator('.thread-sky');
@@ -6,6 +7,7 @@ const sky = <T>(page: Page, key: string) => page.evaluate(name => (window as any
 const rows = (page: Page) => page.locator('#navigation .task-item[data-id]');
 
 async function open(page: Page, query = ''): Promise<void> {
+  await enableScenes(page);
   await page.goto(`/?sky=12:00${query}`);
   await expect(page.locator('#prompt')).toBeEnabled();
   await expect(page.locator('#transcript .message').first()).toBeVisible();

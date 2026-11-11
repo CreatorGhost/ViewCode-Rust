@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { enableScenes } from './scene-helper';
 
 // The preview stores imported themes in memory; Open VSX knows only Dracula.
 const accent = (page: Page) => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim());
@@ -37,7 +38,29 @@ test('the accent follows the wallpaper scene and falls back to classic yellow wi
   await expect.poll(() => accent(page)).toBe(blue);
 });
 
-test('with Wallpapers off the scene accent is the Sky: a calm blue, and Wallpaper again once a scene shows', async ({ page }) => {
+test('a fresh profile takes the default teal accent, and the scene accent falls back to it while nothing shows', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('.workspace')).not.toHaveAttribute('data-scene');
+  // Teal: green and blue well above red.
+  const teal = async () => { const value = await accent(page), part = (at: number) => parseInt(value.slice(at, at + 2), 16); return Math.min(part(3), part(5)) - part(1); };
+  await expect.poll(teal).toBeGreaterThan(60);
+  await openColors(page);
+  await expect(page.getByRole('radio', { name: 'Default', exact: true })).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByRole('radio', { name: 'Sky', exact: true })).toHaveCount(0);
+  await page.getByRole('radio', { name: 'Classic', exact: true }).click();
+  await expect.poll(() => accent(page)).toBe('#ffd43b');
+  // With no wallpaper and no scene on screen, Wallpaper has nothing to follow: it is the default accent, never yellow.
+  await page.getByRole('radio', { name: 'Wallpaper', exact: true }).click();
+  await expect.poll(teal).toBeGreaterThan(60);
+  await page.getByRole('radio', { name: 'Default', exact: true }).click();
+  await expect.poll(teal).toBeGreaterThan(60);
+  await page.reload();
+  await expect.poll(teal).toBeGreaterThan(60);
+});
+
+test('with Wallpapers off and Live scenes on the scene accent is the Sky: a calm blue, and Wallpaper again once a scene shows', async ({ page }) => {
+  await enableScenes(page);
+  await page.addInitScript(() => { if (localStorage.getItem('pandacode.palette') === null) localStorage.setItem('pandacode.palette', JSON.stringify({ accent: { mode: 'wallpaper' } })); });
   await page.goto('/');
   await expect(page.locator('.workspace')).toHaveAttribute('data-scene', 'sky');
   // A blue: blue channel well above red.

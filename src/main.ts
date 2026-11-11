@@ -2,6 +2,7 @@ import { decodeHandoff, historicalProvider } from './provider-handoff';
 import { ACCOUNT_SWITCH_PREFIX, accountSwitchDetail } from './account-switch-note';
 import { bindThreadReordering, syncRovingFocus, threadGroupRows } from './thread-order';
 import { PROJECT_LIMIT, readCollapsed, shownTasks } from './sidebar-tree';
+import { SCENES_EVENT, scenesEnabled, setScenesEnabled } from './scene-preference';
 import { isParkedChoice, menuAnchor, mountComposerMore, parkedItems, pressParked } from './composer-more';
 import { railProjectsHtml, railUsageHtml } from './project-rail';
 import { USAGE_PEEK_EVENT } from './usage-peek';
@@ -1057,10 +1058,10 @@ const subagents = new Subagents($('#subagents-host'), 'subagents-panel', session
 const jevActivity = new JevActivity();
 $('#transcript').before(jevActivity.host);
 mountAgents($('#agents-toggle') as HTMLButtonElement, $('#agents-flyout'), () => architectView ? [architectView, subagents, lineageSource] : [subagents, lineageSource]);
-// The thread is a window: the wallpaper (when the Wallpapers switch is on) or the sky shows inside the main pane.
+// The thread is a plain panel unless the user opts in: the wallpaper (the Wallpapers switch) or, with that off, a live scene (the Live scenes switch) shows inside the main pane.
 const wallpapers = mountWallpapers($('.workspace'), $('.main-pane'));
 const sky = mountSky($('.main-pane'), $('.workspace'), {
-  wanted: () => !wallpapers.preferences.enabled,
+  wanted: () => !wallpapers.preferences.enabled && scenesEnabled(),
   fixedMinutes: preview ? parseSkyTime(new URLSearchParams(location.search).get('sky')) : null,
   expose: preview,
   pinnedScene: preview ? new URLSearchParams(location.search).get('scene') : null,
@@ -1081,7 +1082,7 @@ const tiles = mountThreadTiles({
   open: async (id, scrollTop) => { await selectSession(id); if (scrollTop !== undefined) { transcriptScroller.scrollTop = scrollTop; releaseTranscript(); } },
   focusPrompt: () => document.querySelector<HTMLTextAreaElement>('#prompt')?.focus(),
   draw: (id, rows, scroller) => drawTile(id, rows, scroller),
-  scene: (tile, id) => { const scene = mountSky(tile, $('.workspace'), { wanted: () => !wallpapers.preferences.enabled, fixedMinutes: skyTime, tileRoot: $('.work-area') }); scene.setThread(id); return scene; },
+  scene: (tile, id) => { const scene = mountSky(tile, $('.workspace'), { wanted: () => !wallpapers.preferences.enabled && scenesEnabled(), fixedMinutes: skyTime, tileRoot: $('.work-area') }); scene.setThread(id); return scene; },
   notify,
 });
 wallpapers.subscribe(() => tiles.refreshScenes());
@@ -1089,9 +1090,10 @@ showThreadScene = id => { sky.setThread(id); tiles.sync(id); };
 showThreadScene(session()?.draft ? null : session()?.id ?? null);
 wallpapers.subscribe(() => sky.refresh());
 // The accent follows the scene on screen; a VS Code theme keeps its own colors.
-// With Wallpapers off the scene is the sky, and the scene accent is its calm blue.
-const syncPaletteWallpaper = () => palette.setWallpaper(wallpapers.enabled ? wallpapers.currentId : SKY_SCENE);
+// With Wallpapers off and Live scenes on the scene is the sky, and the scene accent is its calm blue; with neither there is no scene.
+const syncPaletteWallpaper = () => palette.setWallpaper(wallpapers.enabled ? wallpapers.currentId : scenesEnabled() ? SKY_SCENE : undefined);
 wallpapers.subscribe(syncPaletteWallpaper); syncPaletteWallpaper();
+window.addEventListener(SCENES_EVENT, () => { sky.refresh(); tiles.refreshScenes(); syncPaletteWallpaper(); });
 window.addEventListener('pandacode-theme-change', () => palette.refresh());
 const disposeSidebarResizing = initializeSidebarResizing($('.workspace'), $('.sidebar'));
 const disposeInspectorResizing = initializeSidebarResizing($('.workspace'), $('#inspector'), true);
@@ -5932,7 +5934,7 @@ async function showSettings(section?: import('./settings').SettingsSection, inte
     if (host.hidden) return;
     settingsView = mountSettings(host, {
       providers: state.providers, defaultProvider: state.defaultProvider, defaultModel: defaultModelLabel(), activityExpanded: activityExpanded(),
-      compact: document.body.classList.contains('compact'), wallpapers: wallpapers.preferences.enabled,
+      compact: document.body.classList.contains('compact'), wallpapers: wallpapers.preferences.enabled, scenes: scenesEnabled(),
       theme: currentTheme(), preview, section, discover: discoverSettingsProviders,
       projects: { list: userProjects, remove: removeProject },
       turnChecks: turnChecksEnabled(),
@@ -7223,6 +7225,7 @@ document.addEventListener('scroll', event => {
 }, true);
 document.addEventListener('change', event => {
   const input = event.target as HTMLInputElement;
+  if (input.id === 'live-scenes') setScenesEnabled(input.checked);
   if (input.id === 'daily-wallpapers') { wallpapers.setEnabled(input.checked); document.querySelector('.settings-wallpapers')?.toggleAttribute('hidden', !input.checked); }
   if (input.id === 'turn-checks') turnChecksSetEnabled(input.checked);
   // A switch toggles natively (the data-action click path cancels the default), then saves.
