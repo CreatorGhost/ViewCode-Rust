@@ -1,13 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mainContext, parseBtw, readLinks, sideTitle, tail, writeLink } from '../src/btw.ts';
+import { FRESH, activeSideChat, isSideChat, parseBtw, sideChatsOf, sidePreferences } from '../src/btw.ts';
 
-const main = { title: 'Build search', status: 'running' };
-const history = [
-  { id: 1, role: 'user', content: 'Add search' },
-  { id: 2, role: 'tool', content: '{"type":"tool_activity"}' },
-  { id: 3, role: 'assistant', content: 'Added an index.' },
-];
+const storage = (seed = {}) => {
+  const values = new Map(Object.entries(seed)); let writes = 0, reads = 0;
+  return {
+    getItem: key => { reads++; return values.get(key) ?? null; },
+    setItem: (key, value) => { writes++; values.set(key, value); },
+    removeItem: key => { values.delete(key); },
+    values, counts: () => ({ reads, writes }),
+  };
+};
+const chat = (id, parentSessionId, updatedAt, more = {}) => ({ id, kind: 'side', parentSessionId, archived: false, updatedAt, ...more });
 
 test('/btw is parsed only at the start of a prompt', () => {
   assert.equal(parseBtw('/btw what is X?'), 'what is X?');
@@ -17,75 +21,43 @@ test('/btw is parsed only at the start of a prompt', () => {
   assert.equal(parseBtw('say /btw hi'), null);
 });
 
-test('side threads are titled BTW and fit the sidebar', () => {
-  assert.equal(sideTitle('why  is\nthis slow'), 'BTW: why is this slow');
-  assert.ok(sideTitle('x'.repeat(200)).length <= 53);
+test('a thread owns its live side chats, newest first, and nothing else is one', () => {
+  const tasks = [
+    chat('old', 'main', 10), chat('new', 'main', 30), chat('expired', 'main', 40, { archived: true }),
+    chat('other', 'elsewhere', 50), { id: 'main', kind: 'thread', archived: false, updatedAt: 60 }, { id: 'legacy', archived: false, updatedAt: 70 },
+    // A side chat opened as a full thread keeps its parent link but is an ordinary thread.
+    { id: 'promoted', kind: 'thread', parentSessionId: 'main', archived: false, updatedAt: 80 },
+  ];
+  assert.deepEqual(sideChatsOf(tasks, 'main').map(task => task.id), ['new', 'old']);
+  assert.deepEqual(sideChatsOf(tasks, 'nobody'), []);
+  assert.deepEqual(tasks.filter(isSideChat).map(task => task.id), ['old', 'new', 'expired', 'other']);
 });
 
-test('the first message carries the recent tail, later ones only what is new', () => {
-  const first = mainContext(main, history, 0);
-  assert.match(first.text, /^\n\nMain thread context: "Build search" \(running\)/);
-  assert.match(first.text, /Recent main-thread messages:/);
-  assert.match(first.text, /User: Add search\n\nAgent: Added an index\./);
-  assert.doesNotMatch(first.text, /tool_activity/);
-  assert.equal(first.seenId, 3);
-
-  const later = mainContext(main, [...history, { id: 5, role: 'user', content: 'Now sort it' }], first.seenId, 'Sorting by');
-  assert.match(later.text, /New in the main thread since your last message:/);
-  assert.doesNotMatch(later.text, /Add search/);
-  assert.match(later.text, /User: Now sort it\n\nAgent \(still writing\): Sorting by$/);
-  assert.equal(later.seenId, 5);
-
-  const idle = mainContext(main, history, 3);
-  assert.match(idle.text, /Nothing new in the main thread/);
-  assert.equal(idle.seenId, 3);
+test('the panel shows the remembered side chat while it lives, else the newest, and none after New', () => {
+  const chats = sideChatsOf([chat('a', 'main', 10), chat('b', 'main', 20)], 'main');
+  assert.equal(activeSideChat(chats, undefined).id, 'b');
+  assert.equal(activeSideChat(chats, 'a').id, 'a');
+  assert.equal(activeSideChat(chats, 'expired').id, 'b', 'a remembered chat that is gone falls back to the newest');
+  assert.equal(activeSideChat(chats, FRESH), undefined);
+  assert.equal(activeSideChat([], 'a'), undefined);
 });
 
-test('context stays bounded, keeps the newest text, and says when it is cut', () => {
-  const long = Array.from({ length: 40 }, (_, i) => ({ id: i + 1, role: i % 2 ? 'assistant' : 'user', content: `entry ${i} ` + 'é'.repeat(1000) }));
-  const { text, seenId } = mainContext(main, long, 0, '', 8 * 1024);
-  assert.ok(new TextEncoder().encode(text).length < 8 * 1024 + 600);
-  assert.match(text, /entry 39/);
-  assert.doesNotMatch(text, /entry 0 /);
-  assert.match(text, /Older main-thread text was left out to stay within 8 KB\./);
-  assert.equal(seenId, 40);
-});
-
-test('links are stored per main thread and tolerate bad storage', () => {
-  const data = new Map();
-  const storage = { getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value) };
-  writeLink(storage, 'main', { sideId: 'side', seenId: 3 });
-  assert.deepEqual(readLinks(storage).main, { sideId: 'side', seenId: 3 });
-  writeLink(storage, 'main', null);
-  assert.deepEqual(readLinks(storage), {});
-  data.set('pandacode.btw', 'not json');
-  assert.deepEqual(readLinks(storage), {});
-});
-
-test('/btw takes text after blank lines, and titles drop Markdown markers', () => {
-  assert.equal(parseBtw('/btw\n\nwhat is X?'), 'what is X?');
-  assert.equal(sideTitle('why is **`search`** _slow_?'), 'BTW: why is search slow?');
-});
-
-test('tail keeps whole code points within the byte limit', () => {
-  const size = value => new TextEncoder().encode(value).length;
-  assert.equal(tail('short', 100), 'short');
-  const emoji = 'a'.repeat(50) + '😀' + 'b'.repeat(10);
-  for (let limit = 8; limit < 30; limit++) {
-    const cut = tail(emoji, limit);
-    assert.ok(size(cut) <= limit, `limit ${limit}`);
-    assert.ok(cut.startsWith('…'));
-    assert.doesNotMatch(cut, /[\uD800-\uDFFF](?![\uDC00-\uDFFF])/u);
-    assert.ok(!cut.includes('\uFFFD'));
-  }
-  assert.equal(tail(emoji, 3 + 4 + 10), '…😀' + 'b'.repeat(10));
-  const huge = mainContext(main, [{ id: 9, role: 'assistant', content: '😀'.repeat(20000) }], 0, '', 4096);
-  assert.ok(size(huge.text) < 4096 + 600);
-  assert.match(huge.text, /left out/);
-});
-
-test('unloaded older history is reported as left out', () => {
-  const context = mainContext(main, history, 0, '', 24 * 1024, true);
-  assert.match(context.text, /Older main-thread text was left out/);
-  assert.equal(context.seenId, 3);
+test('preferences are read once, written only on change, and the old /btw links are dropped', () => {
+  const store = storage({ 'pandacode.btw': '{"main":{"sideId":"task-1","seenId":4}}', 'pandacode.sidechat.active': '{"main":"a","bad":4}' });
+  const picks = sidePreferences(store);
+  assert.equal(store.values.has('pandacode.btw'), false);
+  assert.equal(picks.get('main'), 'a');
+  assert.equal(picks.get('bad'), undefined);
+  for (let frame = 0; frame < 100; frame++) picks.get('main');
+  assert.deepEqual(store.counts(), { reads: 1, writes: 0 }, 'streaming frames never touch storage');
+  picks.set('main', 'a');
+  assert.equal(store.counts().writes, 0);
+  picks.set('main', FRESH); picks.set('other', 'b'); picks.set('other', undefined);
+  assert.equal(picks.get('main'), FRESH);
+  assert.deepEqual(JSON.parse(store.values.get('pandacode.sidechat.active')), { main: FRESH });
+  assert.deepEqual(sidePreferences(storage({ 'pandacode.sidechat.active': 'not json' })).get('main'), undefined);
+  // Storage that throws (private mode) leaves the picks in memory.
+  const broken = sidePreferences({ getItem: () => { throw new Error('denied'); }, setItem: () => { throw new Error('denied'); }, removeItem: () => { throw new Error('denied'); } });
+  broken.set('main', 'a');
+  assert.equal(broken.get('main'), 'a');
 });

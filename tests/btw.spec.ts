@@ -6,6 +6,7 @@ const side = (page: Page) => page.getByRole('textbox', { name: 'Message the side
 const log = (page: Page) => page.getByRole('log', { name: 'Side thread conversation', exact: true });
 const answers = (page: Page) => log(page).locator('.message.agent-message[data-message-id]');
 const idle = (page: Page) => expect(page.getByRole('button', { name: 'Send to side thread', exact: true })).toBeEnabled();
+const snapshot = (page: Page, id: string): Promise<string> => page.evaluate(id => (window as any).__sideChatSnapshot(id), id);
 const calls = (page: Page, name: string): Promise<any[]> => page.evaluate(name => ((window as any).__btwCalls ?? []).filter((c: any) => c.command === name), name);
 
 test.beforeEach(async ({ page }) => {
@@ -25,7 +26,6 @@ window.__btwNote = (sessionId, text) => { messages[sessionId].push({ id: ++id, s
 window.__btwBindMainAccount = sessionId => { previewConnections.tasks[sessionId] = previewConnections.connections[0].id; previewConnections.pools = ['claude']; };
 window.__btwAccountSnapshot = () => structuredClone(previewConnections);
 window.__btwFinish = (sessionId, text) => { const task = session(sessionId); task.status = 'idle'; messages[sessionId].push({ id: ++id, sessionId, role: 'assistant', content: text, createdAt: Date.now() }); emit('agent-event', { sessionId, kind: 'done', text: '' }); };
-window.__btwDelete = id => { sessions.splice(sessions.findIndex(task => task.id === id), 1); emit('sessions-changed', null); };
 ` });
   });
   await page.goto('/');
@@ -47,19 +47,18 @@ test('/btw while the main thread runs opens a side thread without queueing or st
   const sends = await calls(page, 'send_message');
   expect(sends).toHaveLength(2);
   expect(sends[1].args.sessionId).not.toBe(mainId);
-  expect(sends[1].args.text).toMatch(/^what does the index cost\?\n\nMain thread context: ".*" \(running\)/);
-  expect(sends[1].args.text).toContain('User: Build the feature');
+  // Only the question is sent. What the thread had said by then goes with the side chat as a snapshot, taken once.
+  expect(sends[1].args.text).toBe('what does the index cost?');
+  expect((await calls(page, 'side_chat_open')).map(call => call.args)).toEqual([{ parentId: mainId, question: 'what does the index cost?' }]);
+  expect(await snapshot(page, sends[1].args.sessionId)).toContain('User: Build the feature');
   expect(await calls(page, 'queue_add')).toHaveLength(0);
   expect(await calls(page, 'steer_task')).toHaveLength(0);
   await expect(page.getByRole('button', { name: 'Stop task', exact: true })).toBeVisible();
-  // The context shows as one chip that opens its raw text, and the sidebar keeps the BTW title.
-  const chip = log(page).locator('.user-message .prompt-chip');
-  await expect(chip).toHaveCount(1);
-  await expect(chip.locator('.prompt-chip-name')).toHaveText('Main thread context');
-  await chip.click();
-  await expect(page.locator('#dialog .message-attachment-raw')).toContainText('Main thread context: "');
-  await page.keyboard.press('Escape');
-  await expect(page.locator(`.task-item[data-id="${sends[1].args.sessionId}"]`)).toHaveAttribute('title', /^BTW: what does the index cost\?/);
+  // Its own messages only: no chip, nothing of the main thread, and no row in the sidebar.
+  await expect(log(page).locator('.user-message .prompt-chip')).toHaveCount(0);
+  await expect(log(page).locator('.user-message')).toHaveText(/^\s*what does the index cost\?\s*$/);
+  await expect(log(page)).not.toContainText('Build the feature');
+  await expect(page.locator(`.task-item[data-id="${sends[1].args.sessionId}"]`)).toHaveCount(0);
   await expect(page.locator('.btw-head small')).toHaveText('Ready · main running');
   // A bare /btw reopens the panel and focuses its composer.
   await page.getByRole('button', { name: 'Close side thread panel', exact: true }).click();
@@ -75,7 +74,7 @@ test('/btw while the main thread runs opens a side thread without queueing or st
   await expect(page.locator('#inspector-title')).not.toHaveText('By the way');
 });
 
-test('follow-ups reuse the side thread with only new main-thread context, and the panel comes back', async ({ page }) => {
+test('follow-ups reuse the side thread, and the panel comes back with it', async ({ page }) => {
   await prompt(page).fill('/btw first question');
   await prompt(page).press('Enter');
   await expect(answers(page)).toHaveCount(1); await idle(page);
@@ -84,27 +83,28 @@ test('follow-ups reuse the side thread with only new main-thread context, and th
   await expect(answers(page)).toHaveCount(2); await idle(page);
   await prompt(page).fill('/btw third question');
   await prompt(page).press('Enter');
-  await expect(answers(page)).toHaveCount(3);
+  await expect(answers(page)).toHaveCount(3); await idle(page);
   const sends = (await calls(page, 'send_message')).slice(1);
   expect(new Set(sends.map(call => call.args.sessionId)).size).toBe(1);
-  expect(sends[1].args.text).toContain('Nothing new in the main thread since your last message.');
-  expect(sends[1].args.text).not.toContain('Build the feature');
-  expect(sends[2].args.text).not.toContain('Build the feature');
+  // One side chat, opened once; follow-ups carry nothing of the main thread.
+  expect(sends.map(call => call.args.text)).toEqual(['first question', 'second question', 'third question']);
+  expect(await calls(page, 'side_chat_open')).toHaveLength(1);
 
   // Insert an answer into the main prompt.
   await log(page).getByRole('button', { name: 'Insert this answer into the main prompt' }).first().click();
   await expect(prompt(page)).toHaveValue(/browser preview/);
   await prompt(page).fill('');
 
+  // Another thread and back: the panel returns with the same side chat.
   const sideId = sends[0].args.sessionId, mainId = await page.evaluate(() => (window as any).__mainId);
-  await page.getByRole('button', { name: 'Open side thread as a full thread', exact: true }).click();
-  await expect(page.locator(`.task-item[data-id="${sideId}"]`)).toHaveAttribute('aria-current', 'page');
+  await page.locator(`.task-item:not([data-id="${mainId}"])`).first().click();
+  await expect(prompt(page)).not.toHaveAttribute('data-session-id', mainId);
   await page.locator(`.task-item[data-id="${mainId}"]`).click();
   await expect(page.locator('#inspector-title')).toHaveText('By the way');
   await expect(page.locator('.btw-head strong')).toHaveText('first question');
   await expect(answers(page)).toHaveCount(3);
 
-  // A new side thread starts empty; the next message creates it.
+  // A new side thread starts empty; the next message opens it with a fresh snapshot.
   await page.getByRole('button', { name: 'New side thread', exact: true }).click();
   await expect(page.getByText('No side thread yet')).toBeVisible();
   await side(page).fill('fresh start');
@@ -112,7 +112,15 @@ test('follow-ups reuse the side thread with only new main-thread context, and th
   await expect(page.locator('.btw-head strong')).toHaveText('fresh start');
   await expect.poll(async () => (await calls(page, 'send_message')).at(-1).args.sessionId).not.toBe(sideId);
   const fresh = (await calls(page, 'send_message')).at(-1);
-  expect(fresh.args.text).toContain('User: Build the feature');
+  expect(fresh.args.text).toBe('fresh start');
+  expect(await snapshot(page, fresh.args.sessionId)).toContain('User: Build the feature');
+  await expect(answers(page)).toHaveCount(1); await idle(page);
+
+  // Open as full thread: it becomes an ordinary task in the sidebar, and the main thread's panel moves on.
+  await page.getByRole('button', { name: 'Open side thread as a full thread', exact: true }).click();
+  await expect(page.locator(`.task-item[data-id="${fresh.args.sessionId}"]`)).toHaveAttribute('aria-current', 'page');
+  await page.locator(`.task-item[data-id="${mainId}"]`).click();
+  await expect(page.locator('.btw-head strong')).toHaveText('first question');
 });
 
 const sideId = async (page: Page) => {
@@ -127,20 +135,6 @@ test('Cmd/Ctrl+Enter on /btw goes to the side thread, never steers', async ({ pa
   expect(await calls(page, 'steer_task')).toHaveLength(0);
   expect(await calls(page, 'queue_add')).toHaveLength(0);
   expect(await sideId(page)).not.toBe(await page.evaluate(() => (window as any).__mainId));
-});
-
-test('a deleted side thread is forgotten, so the next /btw starts a new one', async ({ page }) => {
-  await prompt(page).fill('/btw first');
-  await prompt(page).press('Enter');
-  await expect(answers(page)).toHaveCount(1); await idle(page);
-  const first = await sideId(page);
-  await page.evaluate(id => (window as any).__btwDelete(id), first);
-  await expect(page.locator(`.task-item[data-id="${first}"]`)).toHaveCount(0);
-  await prompt(page).fill('/btw second');
-  await prompt(page).press('Enter');
-  await expect(page.locator('.btw-head strong')).toHaveText('second');
-  expect(await sideId(page)).not.toBe(first);
-  expect(await calls(page, 'create_session')).toHaveLength(2);
 });
 
 test('a failed side send puts the /btw draft back', async ({ page }) => {
@@ -175,19 +169,20 @@ test('the final answer stays visible from the end of the run until its saved cop
   expect(await page.evaluate(() => (window as any).__answerGone)).toBe(false);
 });
 
-test('a worktree task forks its side thread and hides the copied transcript', async ({ page }) => {
+test('a worktree task shares its checkout with its side thread without forking the transcript', async ({ page }) => {
   await page.evaluate(() => { const w = window as any; w.__btwSession(w.__mainId).worktreePath = '/tmp/orbit-worktree'; w.__btwEmit('sessions-changed', null); });
   await expect.poll(() => calls(page, 'list_sessions').then(list => list.length)).toBeGreaterThan(1);
   await prompt(page).fill('/btw on the side');
   await prompt(page).press('Enter');
   await expect(answers(page)).toHaveCount(1);
-  expect(await calls(page, 'fork_session_at_message')).toHaveLength(1);
-  expect(await calls(page, 'create_session')).toHaveLength(0);
+  expect(await calls(page, 'fork_session_at_message')).toHaveLength(0);
+  expect(await calls(page, 'side_chat_open')).toHaveLength(1);
+  const sent = (await calls(page, 'send_message')).at(-1);
+  expect(sent.args.text).toBe('on the side');
+  expect(await page.evaluate(id => (window as any).__btwSession(id).worktreePath, sent.args.sessionId)).toBe('/tmp/orbit-worktree');
   await expect(log(page).locator('.user-message')).toHaveCount(1);
   await expect(log(page)).not.toContainText('Build the feature');
   await expect(log(page)).not.toContainText('Search feels a little slow');
-  const sent = (await calls(page, 'send_message')).at(-1);
-  expect(sent.args.text).toContain('Nothing new in the main thread since your last message.');
 });
 
 test('tasks on another computer and prompts with attachments are refused, keeping the draft', async ({ page }) => {
@@ -206,7 +201,7 @@ test('tasks on another computer and prompts with attachments are refused, keepin
   await prompt(page).press('Enter');
   await expect(page.getByText('this task runs elsewhere', { exact: false })).toBeVisible();
   await expect(prompt(page)).toHaveValue('/btw elsewhere');
-  expect(await calls(page, 'create_session')).toHaveLength(0);
+  expect(await calls(page, 'side_chat_open')).toHaveLength(0);
 });
 
 test('typing in the side prompt survives streaming, and Esc there never stops the main agent', async ({ page }) => {
@@ -232,7 +227,7 @@ test('typing in the side prompt survives streaming, and Esc there never stops th
   await expect(page.getByRole('button', { name: 'Stop task', exact: true })).toBeVisible();
 });
 
-// The side panel's own thread view and composer (docs/btw.md).
+// The side panel's own thread view and composer (docs/side-chat.md).
 const panel = (page: Page) => page.locator('.btw-panel');
 const mainTrigger = (page: Page) => page.locator('#model-picker-trigger');
 const sideModel = (page: Page) => panel(page).getByRole('button', { name: /^Model: / });
@@ -256,22 +251,21 @@ const rows = (page: Page, selector: string) => page.locator(selector).evaluate(r
     text: (row.querySelector('.message-content')?.textContent ?? row.querySelector('.turn-activity-label')?.textContent ?? '').trim().slice(0, 60),
   })));
 
-test('the side thread draws chat rows and opens as a full thread with its turn in a card', async ({ page }) => {
+test('the side thread draws its turn as the same card a full thread does', async ({ page }) => {
   const sideId = await openSide(page);
   const inPanel = await rows(page, '.btw-transcript');
-  // A user row with the context chip, the tool turn, then the answer with its actions.
-  expect(inPanel.map(row => row.kind).slice(0, 3)).toEqual(['message user-message', expect.stringContaining('turn-activity'), 'message agent-message after-trace']);
-  expect(inPanel[0].chips).toEqual(['Main thread context']);
+  // A user row, then one card holding the tool trace and the answer with its actions.
+  expect(inPanel.map(row => row.kind)).toEqual(['message user-message', 'turn-card']);
+  expect(inPanel[0].chips).toEqual([]);
   expect(inPanel[1].tools).toBeGreaterThan(0);
-  expect(inPanel[2].actions).toEqual(['Copy message', 'Fork from here']);
+  expect(inPanel[1].actions).toEqual(['Copy message', 'Fork from here']);
   await expect(log(page).getByRole('button', { name: 'Insert this answer into the main prompt' })).toHaveCount(1);
   await page.getByRole('button', { name: 'Open side thread as a full thread', exact: true }).click();
   await expect(page.locator(`.task-item[data-id="${sideId}"]`)).toHaveAttribute('aria-current', 'page');
   await expect(page.locator('#transcript .agent-message[data-message-id]')).toHaveCount(1);
-  // The panel keeps chat rows; the same turn opened as a full thread is one card, with the same bubble and context chip.
+  // The same turn opened as a full thread: the same rows, from the same renderer.
   await expect(page.locator('#transcript .turn-card')).toHaveCount(1);
-  const full = await rows(page, '#transcript');
-  expect(full[0]).toEqual(inPanel[0]);
+  expect(await rows(page, '#transcript')).toEqual(inPanel);
 });
 
 test('model, effort and permissions change the side thread only and survive reopening the panel', async ({ page }) => {
@@ -372,7 +366,7 @@ test('/btw typed in the side prompt sends to the side thread', async ({ page }) 
   await expect(answers(page)).toHaveCount(2);
   const sent = (await calls(page, 'send_message')).at(-1);
   expect(sent.args.sessionId).toBe(sideId);
-  expect(sent.args.text).toMatch(/^and another thing\n\nMain thread context:/);
+  expect(sent.args.text).toBe('and another thing');
   expect(await calls(page, 'queue_add')).toHaveLength(0);
 });
 
@@ -479,7 +473,6 @@ test('a side thread whose picked settings cannot be applied is removed, keeping 
   const created = (await calls(page, 'configure_session'))[0].args.sessionId;
   expect((await calls(page, 'delete_session')).map(call => call.args.sessionId)).toEqual([created]);
   expect((await calls(page, 'send_message')).length).toBe(1);
-  await expect(page.locator('.task-item[title^="BTW:"]')).toHaveCount(0);
   await expect(side(page)).toHaveValue('will not start');
   await expect(page.getByText('No side thread yet')).toBeVisible();
   await expect(sideModel(page)).toContainText('Claude Opus 5');
