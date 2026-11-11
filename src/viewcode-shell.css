@@ -175,7 +175,7 @@ html .workspace .new-task-page .composer-area{max-width:648px}
 .conversation-pane .composer-area .composer .composer-actions>[data-action=attach]{order:1;width:32px;height:32px}
 .conversation-pane .composer-area .composer .composer-tools>.mode-picker{order:2}
 /* A wrapping row wraps before it shrinks, so the model's width is capped to what the row has left (the composer is a size container) and its name truncates instead. */
-.conversation-pane .composer-area .composer .composer-tools>.model-picker{order:6;flex:0 1 auto;min-width:0;max-width:max(44px,calc(100cqw - 480px));margin-left:auto}
+.conversation-pane .composer-area .composer .composer-tools>.model-picker{order:6;flex:0 1 auto;min-width:0;max-width:max(44px,calc(100cqw - 440px));margin-left:auto}
 .conversation-pane .composer-area .composer .composer-actions>.composer-pill{order:9;margin-left:6px}
 .conversation-pane .composer-area .composer .composer-actions>:not([data-action=attach],.composer-pill){order:8}
 /* Where it runs (computer, folder, branch, linked PR) is a quiet last row of the card. */
