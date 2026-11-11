@@ -585,7 +585,9 @@ test.describe('bots', () => {
     await page.goto('/');
     await page.locator('.search-trigger').click();
     await page.getByRole('textbox', { name: 'Search tasks and commands' }).fill('bots');
-    await page.locator('#command-results').getByRole('button', { name: 'Bots' }).click();
+    // Two commands: Bots opens the manager, Bots in the sidebar the Bots view.
+    await expect(page.locator('#command-results').getByRole('button', { name: 'Bots in the sidebar', exact: true })).toBeVisible();
+    await page.locator('#command-results').getByRole('button', { name: 'Bots', exact: true }).click();
     await expect(bots(page)).toBeVisible();
   });
 

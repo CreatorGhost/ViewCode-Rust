@@ -91,14 +91,15 @@ test.describe('keyboard layouts', () => {
       await row.focus();
       await row.press('ControlOrMeta+Enter');
       await expect(page.locator('#toast')).toContainText('Task settled');
-      await expect(page.locator('#navigation [data-thread-group="completed"]')).toBeVisible();
+      // Settled, the thread waits behind the fold that ends the list.
+      await expect(page.locator('#navigation > .more-fold')).toBeVisible();
+      await expect(row).toHaveCount(0);
       const body = page.locator('body');
       for (const extra of [{ shiftKey: true }, { altKey: true }, ...imeStates]) {
         expect(await key(body, { key: 'я', code: 'KeyZ', ...mod, ...extra })).toBe(false);
       }
       expect(await key(prompt(page), { key: 'я', code: 'KeyZ', ...mod })).toBe(false);
       expect(await key(body, { key: 'я', code: 'KeyZ', ...mod })).toBe(true);
-      await expect(page.locator('#navigation [data-thread-group="completed"]')).toHaveCount(0);
       await expect(row).toBeVisible();
     });
 
