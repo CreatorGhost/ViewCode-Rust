@@ -640,11 +640,9 @@ it).
 before it is unpacked, and a verified folder is reused. A mismatch, a cut-off download or an
 archive that is not a Node release installs nothing.
 
-> **The pinned checksums are not recorded yet.** `RELEASES` carries the marker
-> `CHECKSUM_NOT_RECORDED` for all six targets, so this build never downloads Node: a machine
-> without Node 22+ is told to install it. Before shipping, copy the six digests for
-> `PINNED_NODE` from nodejs.org's signed `SHASUMS256.txt`; the ignored test
-> `every_pinned_checksum_is_filled_in` is the gate.
+The six digests come from nodejs.org's `SHASUMS256.txt` for `PINNED_NODE`; change them
+together with the version. The test `every_pinned_checksum_is_filled_in` fails on a marker left
+behind.
 
 wrangler runs as `npx --yes wrangler@<exact version>` (`WRANGLER_VERSION`, never a range)
 through `process.rs`: a bounded runner in the style of `workspace::run_process` (own process

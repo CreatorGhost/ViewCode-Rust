@@ -19,8 +19,9 @@ const MAX_ARCHIVE_BYTES: u64 = 160 * 1024 * 1024;
 /// Marks a checksum that still has to be copied from nodejs.org's signed
 /// `SHASUMS256.txt` for `PINNED_NODE`. It can never equal a SHA-256, so a build that still
 /// carries it refuses to download instead of running an unverified Node
-/// (`a_placeholder_checksum_refuses_before_any_request`), and the ignored release gate
+/// (`a_placeholder_checksum_refuses_before_any_request`), and the test
 /// `every_pinned_checksum_is_filled_in` fails until all six are real.
+#[cfg(test)]
 pub(crate) const CHECKSUM_NOT_RECORDED: &str = "CHECKSUM-NOT-RECORDED-copy-it-from-SHASUMS256.txt";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -32,12 +33,12 @@ pub(crate) struct Release {
 }
 
 pub(crate) const RELEASES: [Release; 6] = [
-    Release { target: "darwin-arm64", archive: "tar.gz", sha256: CHECKSUM_NOT_RECORDED },
-    Release { target: "darwin-x64", archive: "tar.gz", sha256: CHECKSUM_NOT_RECORDED },
-    Release { target: "linux-x64", archive: "tar.gz", sha256: CHECKSUM_NOT_RECORDED },
-    Release { target: "linux-arm64", archive: "tar.gz", sha256: CHECKSUM_NOT_RECORDED },
-    Release { target: "win-x64", archive: "zip", sha256: CHECKSUM_NOT_RECORDED },
-    Release { target: "win-arm64", archive: "zip", sha256: CHECKSUM_NOT_RECORDED },
+    Release { target: "darwin-arm64", archive: "tar.gz", sha256: "c9e1dbc748b33ed2d14f42445191ecaf14c56259c7a9a26d0042c49ec2b66428" },
+    Release { target: "darwin-x64", archive: "tar.gz", sha256: "efcc2b0db6f94bf53eddb038fe2b370277a042bd29e4f19b8f8e23598795b819" },
+    Release { target: "linux-x64", archive: "tar.gz", sha256: "b8492284c76a54baf58d61668dd0e41ee0fc98adabf9503d30f05d08f55b4406" },
+    Release { target: "linux-arm64", archive: "tar.gz", sha256: "f7a1e486dbc8b286847815b477d4fb5e9fb963ed4489c3e1588853d685f589f9" },
+    Release { target: "win-x64", archive: "zip", sha256: "cbc74b5e0982c9dbb41525fd8fb5dcd32fbee237863f7829072f4639a1ce5f20" },
+    Release { target: "win-arm64", archive: "zip", sha256: "a8b8cd79cbbb3062435f449591d98dd63730bbbf30ce2d7cc3a6376c236cb111" },
 ];
 
 /// This build's nodejs.org target, or none on a platform Node publishes nothing for.
@@ -309,10 +310,9 @@ mod tests {
         assert!(!is_sha256(CHECKSUM_NOT_RECORDED) && !is_sha256(&"A".repeat(64)) && is_sha256(&"a1".repeat(32)));
     }
 
-    /// The release gate: run with `--ignored` before shipping Quick connect. It fails while
-    /// any checksum is still the marker.
+    /// Fails while any checksum is still the marker: a new `PINNED_NODE` needs all six
+    /// copied from that version's `SHASUMS256.txt`.
     #[test]
-    #[ignore = "release gate: fill RELEASES from nodejs.org's SHASUMS256.txt for PINNED_NODE"]
     fn every_pinned_checksum_is_filled_in() {
         for release in RELEASES {
             assert!(is_sha256(release.sha256), "{} has no recorded checksum", release.target);
