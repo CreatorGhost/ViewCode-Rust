@@ -63,6 +63,7 @@ mod provider_settings;
 mod remote;
 mod providers;
 mod session_titles;
+mod side_chat;
 mod slash_commands;
 mod recipes;
 mod review;
@@ -4016,6 +4017,7 @@ fn setup_common(app: &tauri::App) -> crate::Result<PathBuf> {
     // Machine threads that settled while PandaCode was closed wake their idle tasks.
     remote::orchestrate::reconcile(app.handle());
     schedules::start(app.handle().clone());
+    side_chat::start(app.handle().clone());
     Ok(dir)
 }
 
@@ -4433,6 +4435,12 @@ pub fn run() {
                 task_controls::set_task_preference,
                 task_controls::fork_codex_task,
                 task_controls::fork_session_at_message,
+                side_chat::side_chat_open,
+                side_chat::side_chat_list,
+                side_chat::side_chat_send,
+                side_chat::side_chat_stop,
+                side_chat::side_chat_close,
+                side_chat::side_chat_promote,
                 task_controls::get_message_content,
                 task_controls::archive_codex_task,
                 task_controls::export_task,

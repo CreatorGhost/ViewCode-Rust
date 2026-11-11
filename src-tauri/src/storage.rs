@@ -119,6 +119,12 @@ pub struct Session {
     /// `{provider, label, machine, stage, detail}`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cloud: Option<serde_json::Value>,
+    /// `thread` for an ordinary task. `side` is a side chat (docs/side-chat.md): never
+    /// listed, searched or mirrored to phones, and archived after a day idle.
+    pub kind: String,
+    /// The thread this one was opened from, if any. Kept when a side chat becomes a full thread.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_session_id: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct RemoteDevice {
@@ -167,7 +173,7 @@ pub struct Store {
 type Result<T> = std::result::Result<T, String>;
 /// The newest `PRAGMA user_version`. Every migration step below must run for any
 /// database older than this, so the guard reads this constant, never a literal.
-pub const SCHEMA_VERSION: i64 = 39;
+pub const SCHEMA_VERSION: i64 = 40;
 
 const SIDEBAR_ORDER: &str = "pinned DESC,sidebar_order IS NULL,sidebar_order,COALESCE(MAX(last_response_at,last_prompt_at),last_response_at,last_prompt_at,created_at) DESC,id";
 
@@ -647,6 +653,21 @@ impl Store {
                 migration.execute_batch(crate::computer_use::settings::SCHEMA).map_err(|e| e.to_string())?;
                 migration.execute_batch("PRAGMA user_version=39;").map_err(|e| e.to_string())?;
             }
+            if version < 40 {
+                // Thread kinds and parent links: `kind` is `thread` unless a feature says
+                // otherwise (`side`: docs/side-chat.md), and `parent_session_id` names the
+                // thread another was opened from. Both are general; `side_chats` holds what
+                // only a side chat needs. The parent link has no foreign key (SQLite cannot
+                // add one with a default), so deletion removes a thread's side chats itself.
+                for (name, definition) in [("kind", "TEXT NOT NULL DEFAULT 'thread'"), ("parent_session_id", "TEXT")] {
+                    let exists: bool = migration.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('sessions') WHERE name=?1)", [name], |r| r.get(0)).map_err(|e| e.to_string())?;
+                    if !exists {
+                        migration.execute_batch(&format!("ALTER TABLE sessions ADD COLUMN {name} {definition};")).map_err(|e| e.to_string())?;
+                    }
+                }
+                migration.execute_batch(crate::side_chat::SCHEMA).map_err(|e| e.to_string())?;
+                migration.execute_batch("PRAGMA user_version=40;").map_err(|e| e.to_string())?;
+            }
             migration.commit().map_err(|e| e.to_string())?;
         }
         let recovery = db.transaction().map_err(|e| e.to_string())?;
@@ -970,6 +991,8 @@ impl Store {
             worktree_branch: r.get(21)?,
             remote_device: r.get::<_, Option<String>>(29)?.map(|id| RemoteDevice { name: crate::remote::device_label(&id), id }),
             cloud: r.get::<_, Option<String>>(30)?.as_deref().and_then(crate::cloud_agents::view),
+            kind: r.get(31)?,
+            parent_session_id: r.get(32)?,
             issue: None,
             pull_request: None,
         })
@@ -977,7 +1000,7 @@ impl Store {
     pub fn sessions(&self) -> Result<Vec<Session>> {
         // Lists only need a card preview. Full details remain in SQLite and are
         // fetched for the selected task or directly for an agent's Start prompt.
-        let mut stmt=self.db.prepare(&format!("SELECT id,project_id,title,provider,model,mode,status,created_at,updated_at,archived,resume_id,last_response_at,worktree_path,reasoning_effort,context_used_tokens,context_window,task_stage,substr(task_description,1,512),completed_at,goal_state,codex_settings,worktree_branch,last_prompt_at,pinned,sidebar_order,draft,limited_at,limited_until,resume_at_reset,remote_device,cloud FROM sessions WHERE draft=0 AND id NOT IN (SELECT session_id FROM architect_workers) ORDER BY {SIDEBAR_ORDER} LIMIT 500")).map_err(|e|e.to_string())?;
+        let mut stmt=self.db.prepare(&format!("SELECT id,project_id,title,provider,model,mode,status,created_at,updated_at,archived,resume_id,last_response_at,worktree_path,reasoning_effort,context_used_tokens,context_window,task_stage,substr(task_description,1,512),completed_at,goal_state,codex_settings,worktree_branch,last_prompt_at,pinned,sidebar_order,draft,limited_at,limited_until,resume_at_reset,remote_device,cloud,kind,parent_session_id FROM sessions WHERE draft=0 AND kind<>'side' AND id NOT IN (SELECT session_id FROM architect_workers) ORDER BY {SIDEBAR_ORDER} LIMIT 500")).map_err(|e|e.to_string())?;
         let rows = stmt
             .query_map([], Self::session_row)
             .map_err(|e| e.to_string())?;
@@ -988,7 +1011,7 @@ impl Store {
         Ok(sessions)
     }
     pub fn session(&self, sid: &str) -> Result<Session> {
-        let mut session = self.db.query_row("SELECT id,project_id,title,provider,model,mode,status,created_at,updated_at,archived,resume_id,last_response_at,worktree_path,reasoning_effort,context_used_tokens,context_window,task_stage,task_description,completed_at,goal_state,codex_settings,worktree_branch,last_prompt_at,pinned,sidebar_order,draft,limited_at,limited_until,resume_at_reset,remote_device,cloud FROM sessions WHERE id=?1",[sid],Self::session_row).optional().map_err(|e|e.to_string())?.ok_or_else(||String::from("Conversation not found."))?;
+        let mut session = self.db.query_row("SELECT id,project_id,title,provider,model,mode,status,created_at,updated_at,archived,resume_id,last_response_at,worktree_path,reasoning_effort,context_used_tokens,context_window,task_stage,task_description,completed_at,goal_state,codex_settings,worktree_branch,last_prompt_at,pinned,sidebar_order,draft,limited_at,limited_until,resume_at_reset,remote_device,cloud,kind,parent_session_id FROM sessions WHERE id=?1",[sid],Self::session_row).optional().map_err(|e|e.to_string())?.ok_or_else(||String::from("Conversation not found."))?;
         self.attach_links(std::slice::from_mut(&mut session))?;
         Ok(session)
     }
@@ -1035,7 +1058,7 @@ impl Store {
             "SELECT s.id,s.title,s.updated_at,
                (SELECT m.content FROM messages m WHERE m.session_id=s.id AND m.role IN ('user','assistant') AND m.content LIKE ?2 ESCAPE '\\' ORDER BY m.id DESC LIMIT 1)
              FROM sessions s
-             WHERE s.project_id=?1 AND s.draft=0 AND s.id NOT IN (SELECT session_id FROM architect_workers)
+             WHERE s.project_id=?1 AND s.draft=0 AND s.kind<>'side' AND s.id NOT IN (SELECT session_id FROM architect_workers)
                AND (s.title LIKE ?2 ESCAPE '\\' OR EXISTS(SELECT 1 FROM messages m WHERE m.session_id=s.id AND m.role IN ('user','assistant') AND m.content LIKE ?2 ESCAPE '\\'))
              ORDER BY s.updated_at DESC LIMIT ?3").map_err(|e| e.to_string())?;
         let needle = query.to_lowercase();
@@ -2102,7 +2125,10 @@ impl Store {
         Ok(page)
     }
     pub fn message_page(&self, sid: &str, before: Option<i64>) -> Result<MessagePage> {
-        let messages = self.messages(sid, before)?;
+        // A side chat shows only its own exchange; the rows copied from its parent stay hidden.
+        let inherited = crate::side_chat::inherited_through(self, sid)?.unwrap_or(0);
+        let mut messages = self.messages(sid, before)?;
+        messages.retain(|message| message.id > inherited);
         // IDs are shared by every task, so the first ID alone cannot tell us
         // whether this task has earlier history. The session/id index keeps
         // this lookup bounded even when the returned page hit its byte limit.
@@ -2110,8 +2136,8 @@ impl Store {
             Some(first) => self
                 .db
                 .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM messages WHERE session_id=?1 AND id<?2)",
-                    params![sid, first.id],
+                    "SELECT EXISTS(SELECT 1 FROM messages WHERE session_id=?1 AND id<?2 AND id>?3)",
+                    params![sid, first.id, inherited],
                     |row| row.get(0),
                 )
                 .map_err(|e| e.to_string())?,
