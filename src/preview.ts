@@ -234,6 +234,7 @@ const providers: Provider[] = [
   { id: 'devin', name: 'Devin CLI', installed: true, path: '/sample/bin/devin', version: 'devin 3000.11.216 (sample)', models: [] },
   { id: 'zcode', name: 'ZCode', installed: true, path: '/sample/bin/zcode', version: '3.16.3', models: [] },
   { id: 'hermes', name: 'Hermes Agent', installed: true, path: '/sample/bin/hermes', version: 'hermes 0.5.0 (sample)', models: [] },
+  { id: 'cursor', name: 'Cursor', installed: true, path: '/sample/bin/cursor-agent', version: '2026.10.01 (sample)', models: [] },
 ];
 // Mirrors providers::mimo::ENDPOINTS; the native side is the authority.
 const previewMimoEndpoints = [
@@ -318,6 +319,23 @@ const catalogs: Record<ProviderId, ProviderModel[]> = {
     ['glm-5-2', 'GLM-5.2 High', ['none', 'high', 'max'], 'high'],
     ['fusion-claude-opus-5-5-medium-sidekick-swe-2-medium', 'Fusion (Claude Opus 5.5 Medium + SWE-2 Medium)', ['low', 'medium', 'high', 'xhigh', 'max'], 'medium'],
   ] as [string, string, string[], string][]).map(([id, name, efforts, effort]) => ({ id, name, description: id === 'glm-5-2' ? 'Text only' : '', reasoningEfforts: efforts.map(value => ({ id: value, name: value === 'xhigh' ? 'Extra high' : value[0].toUpperCase() + value.slice(1), description: '' })), ...(effort ? { defaultReasoningEffort: effort } : {}) })),
+  // The shape `cursor/list_available_models` gives: base models, each listed once per
+  // combination of its own options, with the efforts of its reasoning option.
+  cursor: (() => {
+    const efforts = (ids: string[]) => ids.map(id => ({ id, name: id === 'extra-high' ? 'Extra High' : id[0].toUpperCase() + id.slice(1), description: '' }));
+    const gpt = efforts(['none', 'low', 'medium', 'high', 'extra-high']), opus = efforts(['low', 'medium', 'high']);
+    return [
+      { id: 'default', name: 'Auto', description: 'Cursor picks the model' },
+      { id: 'composer-2[fast=false]', name: 'Composer 2', description: 'Fast: false' },
+      { id: 'composer-2[fast=true]', name: 'Composer 2 · Fast', description: 'Fast: true' },
+      { id: 'gpt-5.4[context=272k,fast=false]', name: 'GPT-5.4', description: 'Context: 272k, Fast: false', reasoningEfforts: gpt, defaultReasoningEffort: 'medium', contextWindow: 272000 },
+      { id: 'gpt-5.4[context=272k,fast=true]', name: 'GPT-5.4 · Fast', description: 'Context: 272k, Fast: true', reasoningEfforts: gpt, defaultReasoningEffort: 'medium', contextWindow: 272000 },
+      { id: 'gpt-5.4[context=1m,fast=false]', name: 'GPT-5.4 · 1M', description: 'Context: 1m, Fast: false', reasoningEfforts: gpt, defaultReasoningEffort: 'medium', contextWindow: 1000000 },
+      { id: 'gpt-5.4[context=1m,fast=true]', name: 'GPT-5.4 · 1M · Fast', description: 'Context: 1m, Fast: true', reasoningEfforts: gpt, defaultReasoningEffort: 'medium', contextWindow: 1000000 },
+      { id: 'claude-opus-4-6[thinking=true]', name: 'Opus 4.6', description: 'Thinking: true', reasoningEfforts: opus, defaultReasoningEffort: 'medium' },
+      { id: 'claude-opus-4-6[thinking=false]', name: 'Opus 4.6 · Thinking off', description: 'Thinking: false', reasoningEfforts: opus, defaultReasoningEffort: 'medium' },
+    ];
+  })(),
   hermes: [
     { id: 'default', name: 'Default model', description: 'Uses the model configured in Hermes (~/.hermes/config.yaml).' },
     { id: 'nous/hermes-3-llama-3.1-405b', name: 'Hermes 3 Llama 3.1 405B', description: 'Flagship open-weights model fine-tuned by Nous Research.' },
@@ -1708,6 +1726,12 @@ export async function invoke<T>(command: string, args: Record<string, any>): Pro
         result = { provider, status: 'ready', checkedAt: Date.now(), stale: false, plan: null, windows: [],
           source: 'Sample limits for the browser preview. No provider request was made.',
           message: 'Balance CNY 110.00 (granted 10.00, topped up 100.00).' };
+        break;
+      }
+      if (provider === 'cursor') {
+        // What `cursor-agent about` gives: the account and plan, no limits. A sample address.
+        result = { provider, status: 'unsupported', checkedAt: Date.now(), stale: false, email: 'you@example.com', plan: 'Pro', windows: [], source: null,
+          message: 'Cursor shows plan usage on its dashboard; the CLI\'s ACP server does not report limits.', dashboardUrl: 'https://cursor.com/dashboard' };
         break;
       }
       // A named connection gets its own sample: the first has used its whole week (held until previewHoldUntil), the
