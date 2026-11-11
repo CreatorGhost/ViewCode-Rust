@@ -1622,3 +1622,55 @@ fn a_slow_help_probe_is_not_remembered_but_an_answer_is() {
     assert!(super::hook_events_answer(key(), || Some("--include-hook-events".into())), "asked again");
     assert!(super::hook_events_answer(key(), || panic!("remembered")));
 }
+
+/// A reply that shows an image: the Markdown reaches the transcript events byte for byte even
+/// when a delta splits the image syntax, the path in it loads through the transcript's image
+/// rule, and an image a tool returned never rides the event stream as bytes.
+#[test]
+fn a_reply_with_an_image_reaches_the_transcript_and_tool_image_bytes_stay_out_of_events() {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
+    let root = std::env::temp_dir().join(format!("pandacode-chat-image-stream-{}", uuid::Uuid::new_v4()));
+    let outside = std::env::temp_dir().join(format!("pandacode-chat-image-shots-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(root.join("docs")).unwrap();
+    std::fs::create_dir_all(&outside).unwrap();
+    let (root, outside) = (root.canonicalize().unwrap(), outside.canonicalize().unwrap());
+    std::fs::write(root.join("docs/before.png"), STANDARD.decode(PNG).unwrap()).unwrap();
+    let shot = outside.join("after shot.png");
+    std::fs::write(&shot, STANDARD.decode(PNG).unwrap()).unwrap();
+    let shot = shot.to_str().unwrap().to_owned();
+
+    let reply = format!("Here is the change.\n\n![Before](docs/before.png)\n\n![After](<{shot}>)\n");
+    let (head, tail) = reply.split_at(reply.find("](docs").unwrap() + 4);
+    let delta = |text: &str| json!({"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":text}}});
+    let events = events(&[
+        json!({"type":"stream_event","event":{"type":"message_start","message":{"id":"tools"}}}),
+        json!({"type":"assistant","message":{"id":"tools","content":[{"type":"tool_use","id":"shot-1","name":"mcp__pandacode__browser_screenshot","input":{}}]}}),
+        json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"shot-1","content":[
+            {"type":"text","text":"Saved the screenshot."},
+            {"type":"image","source":{"type":"base64","media_type":"image/png","data":PNG}},
+        ]}]}}),
+        json!({"type":"stream_event","event":{"type":"message_start","message":{"id":"answer"}}}),
+        delta(head),
+        delta(tail),
+        json!({"type":"assistant","message":{"id":"answer","content":[{"type":"text","text":reply}]}}),
+    ]);
+    // The transcript's Markdown is exactly what the agent wrote.
+    assert_eq!(text(&events), reply);
+    // Each image the reply names loads by the transcript's rule: inside and outside the project.
+    let inside = crate::chat_images::load(&root, "docs/before.png").unwrap();
+    assert_eq!(inside.url, format!("data:image/png;base64,{PNG}"));
+    let external = crate::chat_images::load(&root, &shot).unwrap();
+    assert_eq!((external.name.as_str(), external.path.as_str()), ("after shot.png", shot.as_str()));
+    // The tool's result keeps its text; its image is noted, and no event carries the bytes.
+    let done = events
+        .iter()
+        .filter_map(|event| event.tool.as_ref())
+        .find(|tool| tool.id == "shot-1" && tool.status != "running")
+        .expect("the finished tool call");
+    assert!(done.output.contains("Saved the screenshot."), "{}", done.output);
+    assert!(done.output.contains("[Non-text content omitted]"), "{}", done.output);
+    assert!(!serde_json::to_string(&events).unwrap().contains(PNG));
+    let _ = std::fs::remove_dir_all(root);
+    let _ = std::fs::remove_dir_all(outside);
+}
