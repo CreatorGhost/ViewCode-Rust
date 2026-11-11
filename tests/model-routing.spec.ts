@@ -135,7 +135,8 @@ test('Team opens a menu of team kinds, turns the team on with the uncapped catal
   await expect(teamButton(page)).toHaveAttribute('aria-haspopup', 'dialog');
   await expect(teamButton(page)).not.toHaveAttribute('data-on');
   await pickFromPlus(page, teamButton(page));
-  await expect(teamButton(page)).toHaveAttribute('aria-expanded', 'true');
+  // The Team menu opens from +, which owns it while it is open.
+  await expect(page.locator('#composer-more')).toHaveAttribute('aria-expanded', 'true');
   await expect(page.getByRole('menuitemradio')).toHaveText([/No team/, /Cheap team/, /Balanced team/, /Best team/]);
   await expect(kind(page, 'No team')).toHaveAttribute('aria-checked', 'true');
   await kind(page, 'Cheap team').click();

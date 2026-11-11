@@ -384,6 +384,8 @@ test('the panel places itself again when its content changes', async ({ page }) 
 
 test('the + menu names Council by its state, and follows it', async ({ page }) => {
   await open(page, '/?council');
+  // The menu lists the controls as they are when it opens, so wait for the state to load first.
+  await expect(button(page)).toHaveAttribute('aria-label', 'Council: Round 2 of 10 · reviewing');
   await expect((await openPlus(page)).getByRole('menuitem', { name: 'Council: Round 2 of 10 · reviewing', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
   await page.evaluate(() => (window as any).__councilSeat({ round: 2, lens: 'User experience', score: 8.6 }));
