@@ -580,14 +580,11 @@ pub(crate) fn is_denylisted_app(window: AppWindow<'_>) -> bool {
 /// terminal that started it) whatever its name says; the service extends this set with
 /// the remaining ancestors once at startup.
 pub(crate) fn own_process_floor() -> HashSet<u32> {
-    let mut pids = HashSet::from([std::process::id()]);
     #[cfg(unix)]
-    {
-        let parent = std::os::unix::process::parent_id();
-        if parent > 1 {
-            pids.insert(parent);
-        }
-    }
+    let parent = Some(std::os::unix::process::parent_id()).filter(|parent| *parent > 1);
+    #[cfg(not(unix))]
+    let parent: Option<u32> = None;
+    let pids: HashSet<u32> = std::iter::once(std::process::id()).chain(parent).collect();
     pids
 }
 
