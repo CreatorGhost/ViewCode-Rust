@@ -19,6 +19,7 @@ mod checks;
 mod code_search;
 mod connections;
 mod command_operations;
+mod computer_use;
 mod context_recovery;
 mod conversation_fork;
 mod conversation_import;
