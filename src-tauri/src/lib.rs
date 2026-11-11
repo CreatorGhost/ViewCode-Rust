@@ -668,6 +668,7 @@ async fn delete_session_with_attachment_cleanup(
             let sessions = deleted.deleted_session_ids.clone();
             if let Err(error) = crate::blocking(move || {
                 for sid in sessions {
+                    computer_use::thread_removed(&data_dir, &sid);
                     let path = data_dir.join("attachments").join(sid);
                     if let Err(error) = std::fs::remove_dir_all(path) {
                         if error.kind() != std::io::ErrorKind::NotFound {
@@ -2219,6 +2220,8 @@ async fn launch_operation_admitted(
         let team_sink = team.clone();
         let coalescer = Arc::new(Mutex::new(providers::Coalescer::default()));
         let coalescer_sink = coalescer.clone();
+        // Kept for the end of the run; the sink takes the id itself.
+        let ended_run_id = run_id.clone();
         let sink: providers::Sink = Arc::new(move |mut e: AgentEvent| {
             if cloud && app_sink.state::<AppState>().shutdown.load(Ordering::SeqCst) != 0 {
                 return;
@@ -2375,6 +2378,7 @@ async fn launch_operation_admitted(
         let host = bots::tools::with_bot(host, app.clone(), session_id.clone(), stopped.clone());
         let host = schedules::tools::with_schedules(host, app.clone(), session_id.clone(), stopped.clone());
         let host = review::tools::with_review(host, app.clone(), session_id.clone(), stopped.clone());
+        let host = computer_use::tools::with_computer_use(host, app.clone(), session_id.clone(), stopped.clone());
         let host = simulator::tools::with_simulator_for(host, app.clone(), session_id.clone(), stopped.clone());
         let host = vm::tools::with_vm(host, app.clone(), session_id.clone(), stopped.clone());
         let host = remote::orchestrate::with_machines(host, app.clone(), session_id.clone(), stopped.clone(), team.is_some());
@@ -2651,6 +2655,9 @@ async fn launch_operation_admitted(
             architect::completed(&app, &session_id, team.as_ref(), successful, was_stopped, provider_error.as_deref(), registry);
         }
         drop(registry);
+        // Computer use belongs to a turn: its approvals close and its grant ends here. After
+        // the registry is released, because the gate reads the running turn from it.
+        computer_use::turn_ended(&session_id, &ended_run_id);
         // Start the next turn's agent now, so a follow-up skips the CLI's own startup.
         if let (true, Some((mut next, (tools, approvals)))) = (successful && !was_stopped, warm_next) {
             // A turn that ended without any reply (seen after background commands) may have
@@ -4074,6 +4081,7 @@ fn on_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
         });
     } else if matches!(event, tauri::RunEvent::Exit) {
         if let Some(voice) = app.try_state::<voice::Voice>() { voice.shutdown(); }
+        computer_use::shutdown();
         app.state::<file_preview::FilePreviews>().shutdown();
         // VMs PandaCode started release their memory when it quits.
         app.state::<vm::Vms>().shutdown();
@@ -4354,6 +4362,10 @@ pub fn run() {
                 bots::schedule::bot_schedule_set_enabled,
                 bots::schedule::bot_schedule_delete,
                 bots::schedule::bot_run_schedule_now,
+                computer_use::computer_use_state,
+                computer_use::computer_use_set_settings,
+                computer_use::computer_use_approvals,
+                computer_use::computer_use_respond,
                 review::review_state,
                 review::review_rate_finding,
                 review::review_skill,
