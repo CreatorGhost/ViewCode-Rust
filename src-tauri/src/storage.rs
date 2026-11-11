@@ -167,7 +167,7 @@ pub struct Store {
 type Result<T> = std::result::Result<T, String>;
 /// The newest `PRAGMA user_version`. Every migration step below must run for any
 /// database older than this, so the guard reads this constant, never a literal.
-pub const SCHEMA_VERSION: i64 = 38;
+pub const SCHEMA_VERSION: i64 = 39;
 
 const SIDEBAR_ORDER: &str = "pinned DESC,sidebar_order IS NULL,sidebar_order,COALESCE(MAX(last_response_at,last_prompt_at),last_response_at,last_prompt_at,created_at) DESC,id";
 
@@ -640,6 +640,12 @@ impl Store {
                     migration.execute_batch("ALTER TABLE projects ADD COLUMN color TEXT;").map_err(|e| e.to_string())?;
                 }
                 migration.execute_batch("PRAGMA user_version=38;").map_err(|e| e.to_string())?;
+            }
+            if version < 39 {
+                // Computer use: the mode (off by default), when input asks and whether it
+                // may take the screen. See `computer_use/settings.rs`.
+                migration.execute_batch(crate::computer_use::settings::SCHEMA).map_err(|e| e.to_string())?;
+                migration.execute_batch("PRAGMA user_version=39;").map_err(|e| e.to_string())?;
             }
             migration.commit().map_err(|e| e.to_string())?;
         }

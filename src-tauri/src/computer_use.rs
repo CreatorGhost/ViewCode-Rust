@@ -14,6 +14,7 @@
 pub(crate) mod command;
 pub(crate) mod policy;
 pub(crate) mod protocol;
+pub(crate) mod settings;
 #[cfg(test)]
 mod stream_tests;
 pub(crate) mod targets;
