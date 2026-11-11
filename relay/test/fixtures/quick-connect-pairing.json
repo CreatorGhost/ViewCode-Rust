@@ -1,0 +1,7 @@
+{
+  "comment": "Quick connect pairing derivations, checked by relay/test/self.test.ts and src-tauri/src/quick_connect/pairing.rs. The token is 32 bytes of 0x07: a test vector, never a real pairing.",
+  "token": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc",
+  "relayCode": "vPssv3ZA5j1m-H-cywEgJEFUoNxxZ7alq76eha93RrU",
+  "relayCodeHash": "2a93f7832db4108937874b6fbe9e8cc5ea2ae119dd772197a51070e71969680b",
+  "hostCode": "8kcsaGAQmQaN3BnoxeKtoeeDtvnlfTit3OMzoPLFbZU"
+}
