@@ -62,7 +62,9 @@ pub(crate) enum Mode {
 /// When input asks the user first. `Thread`: follow the thread's permission mode (Full
 /// access skips routine approvals). `Risky`: only destructive-looking actions ask, in any
 /// mode. `Never`: nothing asks. The protected apps and the pause while any approval waits
-/// apply in every case.
+/// apply in all three. `Bypass` removes every permission rule, those two included: nothing
+/// asks, no app is protected and input never pauses. It is turned on deliberately, at the
+/// user's own risk, and is never what a default or an unreadable setting gives.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum Approvals {
@@ -71,6 +73,7 @@ pub(crate) enum Approvals {
     Thread,
     Risky,
     Never,
+    Bypass,
 }
 
 /// Whether input may bring windows to the front. `Allow`: whenever it needs to. `Ask`:
@@ -588,9 +591,31 @@ pub(crate) fn own_process_floor() -> HashSet<u32> {
     pids
 }
 
+/// What the protected-apps rule is asked with: the app's own process ancestry, and
+/// whether the user turned every permission rule off ([`Approvals::Bypass`]), in which
+/// case no window is protected. A bare set of pids is the rule in force.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Guard<'a> {
+    pub(crate) own_pids: &'a HashSet<u32>,
+    pub(crate) bypass: bool,
+}
+
+impl<'a> Guard<'a> {
+    pub(crate) fn new(own_pids: &'a HashSet<u32>, approvals: Approvals) -> Self {
+        Self { own_pids, bypass: approvals == Approvals::Bypass }
+    }
+}
+
+impl<'a> From<&'a HashSet<u32>> for Guard<'a> {
+    fn from(own_pids: &'a HashSet<u32>) -> Self {
+        Self { own_pids, bypass: false }
+    }
+}
+
 /// The whole protected-apps rule: by name, or a window of the app's own process ancestry.
-pub(crate) fn is_denied(window: AppWindow<'_>, own_pids: &HashSet<u32>) -> bool {
-    is_denylisted_app(window) || window.pid.is_some_and(|pid| own_pids.contains(&pid))
+pub(crate) fn is_denied<'a>(window: AppWindow<'_>, guard: impl Into<Guard<'a>>) -> bool {
+    let guard = guard.into();
+    !guard.bypass && (is_denylisted_app(window) || window.pid.is_some_and(|pid| guard.own_pids.contains(&pid)))
 }
 
 /// Whether two screen rects share any area.
@@ -603,9 +628,13 @@ pub(crate) fn rects_intersect(left: &Rect, right: &Rect) -> bool {
 /// overlaps it. A region capture shows whatever is on top, so it would leak that window.
 /// Unknown bounds count as overlapping. Asked before the capture and again after it,
 /// because a protected window may have appeared while the capture ran.
-pub(crate) fn protected_overlay(listed: &[DriverWindow], handle: &str, own_pids: &HashSet<u32>) -> bool {
+pub(crate) fn protected_overlay<'a>(listed: &[DriverWindow], handle: &str, guard: impl Into<Guard<'a>>) -> bool {
+    let guard = guard.into();
+    if guard.bypass {
+        return false;
+    }
     let live = listed.iter().find(|entry| entry.handle == handle);
-    if live.is_some_and(|live| is_denied(live.into(), own_pids)) {
+    if live.is_some_and(|live| is_denied(live.into(), guard)) {
         return true;
     }
     let target = live.and_then(|live| live.bounds.as_ref());
@@ -645,7 +674,7 @@ pub(crate) fn is_destructive_chord(keys: &str) -> bool {
 /// is Full access on thread and session, or "allow for the rest of this turn".
 pub(crate) fn input_needs_approval(approvals: Approvals, destructive: bool, granted: bool) -> bool {
     match approvals {
-        Approvals::Never => false,
+        Approvals::Never | Approvals::Bypass => false,
         Approvals::Risky => destructive,
         Approvals::Thread => destructive || !granted,
     }
@@ -1020,9 +1049,9 @@ impl ThreadGate {
 // ── Targets ─────────────────────────────────────────────────────────────────
 
 /// The window an observe or screenshot names, unless it is unknown or protected.
-pub(crate) fn observable_window(targets: &ThreadTargets, window_id: u64, own_pids: &HashSet<u32>) -> Result<WindowRecord, ComputerUseError> {
+pub(crate) fn observable_window<'a>(targets: &ThreadTargets, window_id: u64, guard: impl Into<Guard<'a>>) -> Result<WindowRecord, ComputerUseError> {
     let window = targets.window(window_id).ok_or_else(|| unknown_window(window_id, None))?;
-    if is_denied(window.into(), own_pids) {
+    if is_denied(window.into(), guard) {
         return Err(denied_app(None));
     }
     Ok(window.clone())
@@ -1067,8 +1096,9 @@ impl ResolvedTarget {
 /// Resolves what an input request names, or says why it cannot be acted on: an unknown
 /// number, a ref from an older observation, a shot that is not its window's newest, a
 /// closed window, a protected app, or a point outside the image.
-pub(crate) fn resolve_input_target(targets: &ThreadTargets, request: &InputRequest, own_pids: &HashSet<u32>) -> Result<ResolvedTarget, ComputerUseError> {
-    let denied = |window: &WindowRecord| is_denied(window.into(), own_pids);
+pub(crate) fn resolve_input_target<'a>(targets: &ThreadTargets, request: &InputRequest, guard: impl Into<Guard<'a>>) -> Result<ResolvedTarget, ComputerUseError> {
+    let guard = guard.into();
+    let denied = |window: &WindowRecord| is_denied(window.into(), guard);
     match *request {
         InputRequest::Key { window, .. } | InputRequest::TypeFocused { window, .. } | InputRequest::Focus { window } => {
             let record = targets.window(window).ok_or_else(|| unknown_window(window, Some(Effect::NotDispatched)))?;
@@ -1157,6 +1187,18 @@ pub(crate) struct Live<'a> {
     pub(crate) background_input: bool,
 }
 
+impl<'a> Live<'a> {
+    /// The user turned every permission rule off. Only the rules that keep an action on
+    /// the target it was checked for remain: a running turn, and targets that are current.
+    pub(crate) fn bypass(&self) -> bool {
+        self.approvals == Approvals::Bypass
+    }
+
+    pub(crate) fn guard(&self) -> Guard<'a> {
+        Guard::new(self.own_pids, self.approvals)
+    }
+}
+
 /// Whether the show-on-screen question comes before anything else.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ScreenStep {
@@ -1171,15 +1213,15 @@ pub(crate) fn begin_input(live: &Live<'_>, gate: &ThreadGate, request: &InputReq
     let Some(turn) = live.turn else {
         return Err(not_dispatched(ErrorCode::NoTurn, "No turn is running in this thread; computer actions only happen while you are working on the user's request."));
     };
-    if live.approval_pending {
+    if live.approval_pending && !live.bypass() {
         return Err(input_paused());
     }
-    let resolved = resolve_input_target(&gate.targets, request, live.own_pids)?;
+    let resolved = resolve_input_target(&gate.targets, request, live.guard())?;
     // Everything but press, set-value and type by ref brings the window to the front;
     // those only do when their fallback needs it (asked at the helper's prepare check).
     let background_candidate = live.background_input && !resolved.window().focused && matches!(request, InputRequest::Click { .. } | InputRequest::Key { .. } | InputRequest::Scroll { .. } | InputRequest::ScrollAt { .. } | InputRequest::Drag { .. } | InputRequest::Move { .. } | InputRequest::TypeFocused { .. });
     let takes_screen = !matches!(resolved, ResolvedTarget::Element { .. }) || matches!(request, InputRequest::Scroll { .. });
-    if background_candidate || !takes_screen {
+    if background_candidate || !takes_screen || live.bypass() {
         return Ok((resolved, ScreenStep::Proceed));
     }
     match gate.screen_allowed(live.screen, &turn.turn_id) {
@@ -1267,7 +1309,7 @@ pub(crate) fn final_check(live: &Live<'_>, gate: &ThreadGate, input: &CheckedInp
     let Some(turn) = live.turn.filter(|turn| turn.turn_id == input.turn_id) else {
         return Err(not_dispatched(if input.asked { ErrorCode::Declined } else { ErrorCode::NoTurn }, "The turn ended before the action ran."));
     };
-    if live.approval_pending {
+    if live.approval_pending && !live.bypass() {
         return Err(input_paused());
     }
     // Fresh, so switching to a stricter setting (or leaving Full access) mid-action never
@@ -1275,24 +1317,24 @@ pub(crate) fn final_check(live: &Live<'_>, gate: &ThreadGate, input: &CheckedInp
     if !input.asked && input_needs_approval(live.approvals, input.destructive, gate.granted(turn)) {
         return Err(not_dispatched(ErrorCode::Declined, "The thread now requires approval; request the action again."));
     }
-    let fresh = resolve_input_target(&gate.targets, input.request, live.own_pids)?;
+    let fresh = resolve_input_target(&gate.targets, input.request, live.guard())?;
     if !input.resolved.same_as(&fresh) {
         return Err(not_dispatched(fresh.stale_code(), "The target changed since this action was checked; look again."));
     }
     let Some(native) = native else { return Ok(()) };
-    if native.foreground && gate.screen_allowed(live.screen, &turn.turn_id) != Some(true) {
+    if native.foreground && !live.bypass() && gate.screen_allowed(live.screen, &turn.turn_id) != Some(true) {
         return Err(not_dispatched(ErrorCode::Declined, "This control can only be operated with its window in front, which this task may not do. Act on other controls by reference, or ask the user."));
     }
     if native.window.handle != fresh.window().handle {
         return Err(not_dispatched(ErrorCode::Declined, "The native target changed before dispatch."));
     }
-    if is_denied((&native.window).into(), live.own_pids) {
+    if is_denied((&native.window).into(), live.guard()) {
         return Err(denied_app(Some(Effect::NotDispatched)));
     }
     // Only element targets and clicks were checked for destructiveness up front. The
     // label is compared as the agent and the up-front check saw it: clipped.
     let destructive_applies = matches!(fresh, ResolvedTarget::Element { .. }) || matches!(input.request, InputRequest::Click { .. });
-    if live.approvals != Approvals::Never && !input.destructive && destructive_applies && native.element.as_ref().is_some_and(|element| is_destructive_target(&element.role, &clip_value(&element.label))) {
+    if !matches!(live.approvals, Approvals::Never | Approvals::Bypass) && !input.destructive && destructive_applies && native.element.as_ref().is_some_and(|element| is_destructive_target(&element.role, &clip_value(&element.label))) {
         return Err(not_dispatched(fresh.stale_code(), "The target now looks destructive; look again and request approval."));
     }
     Ok(())

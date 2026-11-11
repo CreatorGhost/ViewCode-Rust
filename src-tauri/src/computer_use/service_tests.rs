@@ -89,10 +89,12 @@ while IFS= read -r line; do
       act '{"window":'"$notes"',"element":'"$(identity "$element")"'}' "" false;;
     key|typeFocused|focus|click|drag|move|scrollAt)
       current "$(field window)" || continue
+      target="$notes"
+      case "$(field window)" in *.2) target="$vault";; esac
       named=""
-      [ "$scenario" = delete-at-dispatch ] && named='{"window":'"$notes"',"element":{"role":"button","label":"Delete list"},"point":{"x":121.0,"y":71.0}}'
+      [ "$scenario" = delete-at-dispatch ] && named='{"window":'"$target"',"element":{"role":"button","label":"Delete list"},"point":{"x":121.0,"y":71.0}}'
       [ "$scenario" = moved ] && { fail stale "The window moved." ""; continue; }
-      act '{"window":'"$notes"',"foreground":true}' "${named:-{\"window\":$notes\}}" true;;
+      act '{"window":'"$target"',"foreground":true}' "${named:-{\"window\":$target\}}" true;;
     *) fail failed "unknown op" "";;
   esac
 done
@@ -810,4 +812,81 @@ async fn a_call_nobody_waits_for_is_never_sent_and_never_allowed() {
     assert_eq!((seen[0].0, seen[0].1.window.handle.as_str(), seen[0].1.element.as_ref().map(|element| element.label.as_str()), seen[0].1.foreground), (Phase::Prepare, handle.as_str(), Some("Done"), false));
     assert!(ops().contains("refused:prepare:CU-CON-004") && !ops().contains("did:press"), "{}", ops());
     assert_eq!(driver.helpers_started().await, 1, "one helper served all of it");
+}
+
+#[tokio::test]
+async fn bypass_runs_anything_without_asking_but_still_refuses_stale_targets() {
+    // Not Full access, the screen set to ask, and the helper names a destructive control
+    // under the pointer at dispatch: without bypass each of these would stop the click.
+    let rig = rig_for("delete-at-dispatch", Mode::Control, false).await;
+    rig.host.set(|settings| *settings = Settings { mode: Mode::Control, approvals: Approvals::Bypass, screen: Screen::Ask });
+    let listed = rig.ok(json!({"command":"list-windows"})).await;
+    let (notes, vault) = (listed["windows"][0]["id"].as_u64().unwrap(), listed["windows"][1]["id"].as_u64().unwrap());
+    // The password manager can be read, captured and clicked.
+    assert_eq!(rig.ok(json!({"command":"observe","window":vault})).await["elements"].as_array().unwrap().len(), 3);
+    let shot = rig.ok(json!({"command":"screenshot","window":vault})).await["shot"].as_u64().unwrap();
+    let clicked = rig.ok(json!({"command":"click","shot":shot,"x":10,"y":10})).await;
+    assert_eq!((clicked["effect"].as_str(), clicked["tookFocus"].as_bool()), (Some("dispatched"), Some(true)));
+    assert!(clicked["screenshot"]["shot"].as_u64().unwrap() > shot, "and the follow-up screenshot of it is taken");
+    assert_eq!(rig.ok(json!({"command":"key","window":vault,"keys":"cmd+q"})).await["effect"], "dispatched");
+    // A destructive-looking control by reference, and typing, in a thread that would ask for each.
+    let observed = rig.ok(json!({"command":"observe","window":notes})).await;
+    let refs: Vec<u64> = observed["elements"].as_array().unwrap().iter().map(|element| element["ref"].as_u64().unwrap()).collect();
+    rig.ok(json!({"command":"press","ref":refs[2]})).await;
+    rig.ok(json!({"command":"type","ref":refs[1],"text":"hunter2"})).await;
+    assert_eq!((rig.did("click"), rig.did("key"), rig.did("press"), rig.did("typeText")), (1, 1, 1, 1));
+    assert_eq!((rig.host.changes(), rig.service.pending_approvals().len()), (0, 0), "no approval was ever opened");
+    assert!(!rig.ops().iter().any(|op| op.starts_with("refused:")), "{:?}", rig.ops());
+
+    // Input goes through while a provider's approval waits, or cannot be read.
+    for pending in [Some(true), None] {
+        *rig.host.provider_pending.lock().unwrap() = pending;
+        rig.ok(json!({"command":"press","ref":refs[0]})).await;
+    }
+    assert_eq!(rig.did("press"), 3);
+
+    // What keeps an action on the target it was aimed at is still enforced.
+    rig.ok(json!({"command":"observe","window":notes})).await;
+    let stale = rig.refused(json!({"command":"press","ref":refs[0]})).await;
+    assert_eq!((stale.code, stale.effect), (ErrorCode::StaleRef, Some(Effect::NotDispatched)));
+    assert_eq!(rig.refused(json!({"command":"click","shot":shot,"x":10,"y":10})).await.code, ErrorCode::StaleShot, "a newer shot of the window exists");
+    assert_eq!(rig.refused(json!({"command":"press","ref":refs[0] + 1000})).await.code, ErrorCode::UnknownRef);
+    assert_eq!(rig.refused(json!({"command":"focus","window":vault + 50})).await.code, ErrorCode::UnknownWindow);
+    assert_eq!(rig.refused(json!({"command":"press"})).await.code, ErrorCode::MissingArgument);
+    rig.host.turn(THREAD, None, false);
+    assert_eq!(rig.refused(json!({"command":"key","window":notes,"keys":"enter"})).await.code, ErrorCode::NoTurn);
+    assert_eq!((rig.did("press"), rig.did("click"), rig.did("key")), (3, 1, 1));
+
+    // Leaving bypass puts every rule back at once.
+    rig.host.turn(THREAD, Some("turn-2"), true);
+    rig.host.set(|settings| settings.approvals = Approvals::Never);
+    assert_eq!(rig.refused(json!({"command":"key","window":notes,"keys":"enter"})).await.code, ErrorCode::ApprovalPending, "the pause is back");
+    *rig.host.provider_pending.lock().unwrap() = Some(false);
+    assert_eq!(rig.refused(json!({"command":"key","window":vault,"keys":"enter"})).await.code, ErrorCode::ProtectedApp);
+    assert_eq!(rig.refused(json!({"command":"observe","window":vault})).await.code, ErrorCode::ProtectedApp);
+    // An unreadable setting is off, never bypass.
+    *rig.host.settings.lock().unwrap() = None;
+    assert_eq!(rig.refused(json!({"command":"observe","window":vault})).await.code, ErrorCode::Off);
+}
+
+#[tokio::test]
+async fn bypass_under_look_only_lifts_the_protected_apps_rule_and_still_takes_no_input() {
+    // A password manager overlaps Notes.
+    let rig = rig_for("overlap", Mode::Observe, true).await;
+    let listed = rig.ok(json!({"command":"list-windows"})).await;
+    let (notes, vault) = (listed["windows"][0]["id"].as_u64().unwrap(), listed["windows"][1]["id"].as_u64().unwrap());
+    assert_eq!(rig.refused(json!({"command":"observe","window":vault})).await.code, ErrorCode::ProtectedApp);
+    assert_eq!(rig.refused(json!({"command":"screenshot","window":notes})).await.code, ErrorCode::ProtectedApp);
+    rig.host.set(|settings| settings.approvals = Approvals::Bypass);
+    let observed = rig.ok(json!({"command":"observe","window":vault})).await;
+    for window in [notes, vault] {
+        assert!(Path::new(rig.ok(json!({"command":"screenshot","window":window})).await["path"].as_str().unwrap()).is_file());
+    }
+    // The mode still means what it says.
+    let refused = rig.refused(json!({"command":"press","ref":observed["elements"][0]["ref"]})).await;
+    assert_eq!((refused.code, refused.effect), (ErrorCode::ObserveOnly, Some(Effect::NotDispatched)));
+    assert_eq!(rig.refused(json!({"command":"key","window":vault,"keys":"enter"})).await.code, ErrorCode::ObserveOnly);
+    rig.host.set(|settings| settings.mode = Mode::Off);
+    assert_eq!(rig.refused(json!({"command":"observe","window":vault})).await.code, ErrorCode::Off);
+    assert!(!rig.ops().iter().any(|op| op.starts_with("did:")));
 }
