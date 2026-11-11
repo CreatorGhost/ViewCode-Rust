@@ -80,7 +80,8 @@ export function createThreadFind(host: Host) {
     // The leading box stretches across the row; only its visible items count.
     const leading = [...header.querySelectorAll<HTMLElement>('.header-leading>*')].filter(shown).map(item => item.getBoundingClientRect().right);
     const min = (leading.length ? Math.max(...leading) : box.left) + gap + half;
-    const widgets = [...header.querySelectorAll<HTMLElement>('.header-actions>*'), ...(row ? [row] : [])].filter(shown).map(widget => widget.getBoundingClientRect().left);
+    // The browser preview's note is plain text with nothing to press, so the bar may cover it while it is open.
+    const widgets = [...header.querySelectorAll<HTMLElement>('.header-actions>:not(.preview-status)'), ...(row ? [row] : [])].filter(shown).map(widget => widget.getBoundingClientRect().left);
     const max = (widgets.length ? Math.min(...widgets) : box.right) - gap - half;
     if (min > max) return undefined;
     const pane_ = pane.getBoundingClientRect();

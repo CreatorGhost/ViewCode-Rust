@@ -148,6 +148,9 @@ html .workspace:not(.board-view,.github-view) .conversation-pane.find-docked:not
 .new-task-page .new-task-welcome h1{font-size:clamp(1.5rem,2.4vw,1.9rem);font-weight:var(--weight-medium);letter-spacing:-.02em}
 .new-task-agent{color:var(--accent-ink,var(--accent))}
 html[data-theme=dark] .new-task-agent{color:var(--accent)}
+/* Over a scene (the sky, a wallpaper) the accent alone can drop under 4.5:1, so it leans on the text ink (tests/sky.spec.ts measures it). */
+.workspace[data-scene] .new-task-agent{color:color-mix(in srgb,var(--accent-ink,var(--accent)) 45%,var(--text))}
+html[data-theme=dark] .workspace[data-scene] .new-task-agent{color:color-mix(in srgb,var(--accent) 45%,var(--text))}
 .new-task-where{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:6px;margin:10px 0 0;color:var(--muted);font-size:var(--ds-text-ui)}
 .new-task-where .icon{--icon-size:var(--icon-sm);--icon-stroke:var(--icon-stroke-sm);flex:none;color:var(--faint)}
 .new-task-where>.new-task-sep{color:var(--faint)}

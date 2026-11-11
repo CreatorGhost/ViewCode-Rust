@@ -2589,7 +2589,8 @@ test('a new task is listed after its first prompt and an untouched one is discar
 });
 
 test('opens a new conversation in the active project without listing it', async ({ page }) => {
-  const projectName = await page.locator('#breadcrumb').innerText();
+  // The header shows the thread's title; the (hidden) project crumb still names the project.
+  const projectName = (await page.locator('#breadcrumb [data-action="select-project"]').textContent())!;
   await page.locator('.new-task-button').click();
   await expect(page.getByRole('dialog')).not.toBeVisible();
   await expect(newTaskHeading(page)).toBeVisible();
@@ -3519,12 +3520,18 @@ test('a first visit keeps the old rows (inert, briefly) until the page or the lo
   }
 });
 
-test('the prompt sits in the same place in every thread', async ({ page }) => {
+test('the prompt sits in the same place in every thread with messages, and is centred on an empty one', async ({ page }) => {
   await expect(page.locator('#composer')).toBeVisible();
-  const bottoms: number[] = [];
+  const bottoms: number[] = [], centred: boolean[] = [];
   // Measured once surfaces have settled: panes arrive with a short spring.
   const settled = () => page.evaluate(() => document.getAnimations().filter(animation => animation.timeline instanceof DocumentTimeline && animation.playState === 'running' && Number.isFinite(Number(animation.effect?.getComputedTiming().endTime))).length);
-  const measure = async () => { await expect(page.locator('#composer')).toBeVisible(); await expect.poll(settled).toBe(0); bottoms.push(Math.round((await page.locator('#composer').boundingBox())!.y + (await page.locator('#composer').boundingBox())!.height)); };
+  // An empty thread is the New thread page: headline, project line and composer sit together in the pane's middle.
+  const measure = async () => {
+    await expect(page.locator('#composer')).toBeVisible(); await expect.poll(settled).toBe(0);
+    const box = (await page.locator('#composer').boundingBox())!, pane = (await page.locator('.conversation-pane').boundingBox())!;
+    if (await page.locator('.conversation-pane.new-task-page').count()) centred.push(box.y > pane.y + pane.height * .3 && box.y + box.height < pane.y + pane.height * .85);
+    else bottoms.push(Math.round(box.y + box.height));
+  };
   const ids = await page.locator('#navigation .task-item').evaluateAll(rows => rows.map(row => (row as HTMLElement).dataset.id!));
   expect(ids.length).toBeGreaterThan(1);
   for (const id of ids) {
@@ -3533,11 +3540,14 @@ test('the prompt sits in the same place in every thread', async ({ page }) => {
     await expect(page.locator('#transcript .history-notice')).toHaveCount(0);
     await measure();
   }
-  // A brand-new task, which has no context count yet, lines up too.
+  // A brand-new task is an empty thread too.
   await page.keyboard.press('ControlOrMeta+n');
   await expect(page.locator('.new-task-welcome')).toBeVisible();
   await measure();
+  expect(bottoms.length).toBeGreaterThan(1);
   expect(new Set(bottoms).size, `prompt bottoms: ${bottoms.join(', ')}`).toBe(1);
+  expect(centred.length).toBeGreaterThan(0);
+  expect(centred.every(Boolean)).toBe(true);
 });
 
 test('streaming keeps the transcript at the bottom after sending and leaves a reader who scrolled up', async ({ page }) => {
