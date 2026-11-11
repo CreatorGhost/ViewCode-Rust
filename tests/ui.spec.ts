@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { toggleTheme } from './rail-helper';
 import { pickFromPlus } from './composer-more-helper';
 import { openInspectorTab } from './inspector-tab-helper';
 // The workspace view (Conversation, Board, GitHub) is picked from the sidebar's view menu.
@@ -471,8 +472,8 @@ test('retains loaded history when a completed tool-heavy turn spans multiple pag
 });
 
 test('defaults to dark mode and remembers explicit light and dark preferences after reload', async ({ page }) => {
-  const toggle = page.getByRole('button', { name: 'Dark mode', exact: true });
-  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  // The theme has no rail button: it switches from Go to anything (or Settings → Appearance).
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect(page.locator('html')).toHaveCSS('color-scheme', 'dark');
   expect(await page.evaluate(() => localStorage.getItem('pandacode.theme'))).toBeNull();
   expect((await appearanceSurfaces(page)).mainContrast).toBeGreaterThanOrEqual(4.5);
@@ -482,25 +483,23 @@ test('defaults to dark mode and remembers explicit light and dark preferences af
   await expect(menu.getByRole('combobox', { name: 'Search harnesses and models', exact: true })).toBeFocused();
   await page.screenshot({ path: '/private/tmp/pandacode-dark-models.png', animations: 'disabled' });
   await page.keyboard.press('Escape');
-  await toggle.focus();
-  await page.keyboard.press('Space');
-  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await toggleTheme(page);
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   await expect(page.locator('html')).toHaveCSS('color-scheme', 'light');
   expect(await page.evaluate(() => localStorage.getItem('pandacode.theme'))).toBe('light');
   await page.reload();
-  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   await expect(page.locator('html')).toHaveCSS('color-scheme', 'light');
   // Wallpapers and live scenes are off by default: the main pane is a plain panel with nothing behind it.
   await expect(page.locator('.workspace')).not.toHaveAttribute('data-scene');
   await expect(page.locator('.main-pane')).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   expect(await page.evaluate(() => localStorage.getItem('pandacode.theme'))).toBe('light');
-  await toggle.focus();
-  await page.keyboard.press('Space');
-  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await toggleTheme(page);
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   expect(await page.evaluate(() => localStorage.getItem('pandacode.theme'))).toBe('dark');
   await page.reload();
-  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   expect(await page.evaluate(() => localStorage.getItem('pandacode.theme'))).toBe('dark');
 });
@@ -509,7 +508,6 @@ test('uses dark mode for missing or invalid preferences without writing a prefer
   await page.evaluate(() => localStorage.setItem('pandacode.theme', 'invalid'));
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await expect(page.getByRole('button', { name: 'Dark mode', exact: true })).toHaveAttribute('aria-pressed', 'true');
   expect(await page.evaluate(() => localStorage.getItem('pandacode.theme'))).toBe('invalid');
   await page.evaluate(() => localStorage.removeItem('pandacode.theme'));
   await page.reload();
@@ -553,7 +551,6 @@ for (const theme of ['light', 'dark']) {
     }, theme);
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
-    await expect(page.getByRole('button', { name: 'Dark mode', exact: true })).toHaveAttribute('aria-pressed', String(theme === 'dark'));
     await expect(page.locator('body')).not.toHaveClass(/compact/);
     expect(await page.evaluate(() => ['compact', 'projectFilter', 'model.codex'].map(key => localStorage.getItem(`pandacode.${key}`)))).toEqual(['false', '', 'current-model']);
   });
@@ -642,7 +639,7 @@ test('offers only reported reasoning efforts and remembers the selected effort f
   await effortRadio(page, 'Low').press('End');
   await expect.poll(() => savedEffort(page)).toBe('high');
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'Dark mode', exact: true }).click();
+  await toggleTheme(page);
   await modelTrigger(page).click();
   await expect(reasoningLabel(page)).toHaveText('High');
   await page.keyboard.press('Escape');
@@ -1005,10 +1002,10 @@ test('changes terminal colors without replacing its session or the composer draf
   await expect(viewport).toBeVisible();
   await expect(viewport).toHaveCSS('background-color', 'rgb(25, 26, 24)');
   await page.evaluate(() => { (window as any).__themeNodes = [document.querySelector('#prompt'), document.querySelector('.xterm-screen')]; });
-  await page.getByRole('button', { name: 'Dark mode', exact: true }).click();
+  await toggleTheme(page);
   await expect(viewport).toHaveCSS('background-color', 'rgb(255, 255, 255)');
   await expect(prompt(page)).toHaveValue('Keep this draft while changing appearance');
-  await page.getByRole('button', { name: 'Dark mode', exact: true }).click();
+  await toggleTheme(page);
   await expect(viewport).toHaveCSS('background-color', 'rgb(25, 26, 24)');
   await expect(prompt(page)).toHaveValue('Keep this draft while changing appearance');
   await page.screenshot({ path: '/private/tmp/pandacode-dark-terminal.png', animations: 'disabled' });
@@ -1031,9 +1028,9 @@ test('synchronizes dark mode with native appearance without wallpapers and respe
     });
   });
   await expect.poll(() => page.evaluate(() => (window as any).__themeCalls.at(-1)?.darkMode)).toBe(true);
-  await page.getByRole('button', { name: 'Dark mode', exact: true }).click();
+  await toggleTheme(page);
   await expect.poll(() => page.evaluate(() => (window as any).__themeCalls.at(-1)?.darkMode)).toBe(false);
-  await page.getByRole('button', { name: 'Dark mode', exact: true }).click();
+  await toggleTheme(page);
   await expect.poll(() => page.evaluate(() => (window as any).__themeCalls.at(-1)?.darkMode)).toBe(true);
   const glass = (await appearanceSurfaces(page)).alphas;
   // The main pane is clear: the thread is a window onto the sky.
@@ -1052,7 +1049,7 @@ test('synchronizes dark mode with native appearance without wallpapers and respe
   await page.screenshot({ path: '/private/tmp/pandacode-dark-accessible.png', animations: 'disabled' });
   await page.keyboard.press('Escape');
   const count = await page.evaluate(() => { (window as any).__disposeThemeAppearance(); return (window as any).__themeCalls.length; });
-  await page.getByRole('button', { name: 'Dark mode', exact: true }).click();
+  await toggleTheme(page);
   expect(await page.evaluate(() => (window as any).__themeCalls.length)).toBe(count);
   await devtools.detach();
 });

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { toggleTheme } from './rail-helper';
 // The workspace view (Conversation, Board, GitHub) is picked from the sidebar's view menu.
 const showView = async (page: Page, name: string) => { await page.getByRole('button', { name: /^Workspace view: / }).click(); await page.getByRole('menuitemradio', { name, exact: true }).click(); };
 
@@ -302,7 +303,7 @@ test.describe('project board', () => {
   });
 
   test('opens a task with the keyboard and fits its panel in a narrow light-mode window', async ({ page }) => {
-    await page.getByRole('button', { name: 'Dark mode', exact: true }).click();
+    await toggleTheme(page);
     await openBoard(page);
     await queueTask(page, 'Check compact layouts', 'Keep controls reachable at smaller window sizes.');
     await details(page).getByRole('button', { name: 'Close task details', exact: true }).click();

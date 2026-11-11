@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { showBotsView, showThreadsView } from './rail-helper';
 import { pickFromPlus } from './composer-more-helper';
 
 /* Bots: a bot's conversations are ordinary task threads (same transcript, streaming and
@@ -20,17 +21,9 @@ const opened = (page: Page): Promise<string[]> => page.evaluate(() => (window as
 const copied = (page: Page): Promise<string[]> => page.evaluate(() => (window as any).__copied);
 
 const sidebar = (page: Page) => page.getByRole('region', { name: 'Bots', exact: true });
-const botsBar = (page: Page) => page.locator('.sidebar-bots-bar');
-/** The bar at the bottom of the sidebar switches it to the Bots view. */
-async function showBotsView(page: Page): Promise<void> {
-  if (await botsBar(page).getAttribute('aria-pressed') !== 'true') await botsBar(page).click();
-  await expect(sidebar(page)).toBeVisible();
-}
-/** Back to the task list from the Bots view. */
-async function showTasksView(page: Page): Promise<void> {
-  if (await botsBar(page).getAttribute('aria-pressed') === 'true') await botsBar(page).click();
-  await expect(page.locator('#navigation')).toBeVisible();
-}
+// The Bots view opens from Go to anything ("Bots in the sidebar") and its own Back button returns to the threads.
+const showTasksView = showThreadsView;
+const inBotsView = (page: Page) => page.locator('#workspace-sidebar');
 async function openBots(page: Page): Promise<void> {
   await page.goto('/');
   await showBotsView(page);
@@ -112,7 +105,7 @@ test.describe('bots', () => {
     await expect(sidebar(page)).toBeHidden();
     await newBot(page, 'Scout');
     await expect(page.locator('#navigation')).toBeHidden();
-    await expect(botsBar(page)).toHaveAttribute('aria-pressed', 'true');
+    await expect(inBotsView(page)).toHaveClass(/bots-view/);
     const row = sidebar(page).locator('.bot-card', { hasText: 'Scout' });
     await expect(row).toHaveClass(/selected/);
     await page.locator('#prompt').fill('What is new today?');
@@ -126,14 +119,15 @@ test.describe('bots', () => {
     await search.fill('sco');
     await expect(row).toBeVisible();
     await expect(search).toBeFocused();
-    await expect(botsBar(page)).toContainText('1');
-    // The view is remembered (preview bots live in memory, so the list starts empty); the bar switches back to tasks.
+    // The view is remembered (preview bots live in memory, so the list starts empty); its Back button returns to the threads.
     await page.reload();
     await expect(sidebar(page)).toBeVisible();
-    await botsBar(page).click();
+    await sidebar(page).getByRole('button', { name: 'Back to threads', exact: true }).click();
     await expect(page.locator('#navigation')).toBeVisible();
     await expect(sidebar(page)).toBeHidden();
-    await expect(botsBar(page)).toHaveAttribute('aria-pressed', 'false');
+    await expect(inBotsView(page)).not.toHaveClass(/bots-view/);
+    // And the rail carries no Bots button.
+    await expect(page.locator('.sidebar-bots-bar')).toHaveCount(0);
   });
 
   test('a new bot opens its conversation in the task view, with the bot in the header', async ({ page }) => {

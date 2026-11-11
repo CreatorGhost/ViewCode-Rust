@@ -1,6 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
+import { runCommand } from './rail-helper';
 
-const support = (page: Page) => page.locator('[data-action="support"]');
+/** Help & support has no rail button: it is a command in Go to anything. */
+const support = (page: Page) => runCommand(page, 'Help & support');
 const prompt = (page: Page) => page.getByRole('textbox', { name: 'Message your coding agent' });
 
 async function open(page: Page, behavior = 'mock'): Promise<void> {
@@ -31,68 +33,41 @@ async function open(page: Page, behavior = 'mock'): Promise<void> {
 
 const calls = (page: Page) => page.evaluate(() => (window as any).__supportFixture.calls);
 
-test('Help stays at the left of the sidebar footer and opens only on a keyboard request', async ({ page }) => {
+test('Help is a command in Go to anything and opens only when asked', async ({ page }) => {
   await open(page);
-  await expect(support(page)).toHaveCount(1);
-  await expect(support(page)).toHaveAccessibleName('Help & support');
-  await expect(page.locator('.sidebar-bottom > button').first()).toHaveAttribute('data-action', 'support');
-  await expect(support(page)).toBeVisible();
+  await expect(page.locator('.sidebar-bottom [data-action="support"], #support-button')).toHaveCount(0);
   expect(await calls(page)).toBe(0);
-  await support(page).focus();
+  // From the keyboard: ⌘K, its name, Enter.
+  await page.keyboard.press('ControlOrMeta+k');
+  await page.getByRole('textbox', { name: 'Search tasks and commands', exact: true }).fill('help');
+  await expect(page.locator('#command-results').getByRole('button').first()).toHaveText(/Help & support/);
   await page.keyboard.press('Enter');
   await expect.poll(() => calls(page)).toBe(1);
-  await expect(support(page)).toBeEnabled();
   expect(await page.evaluate(() => (window as any).__supportFixture.args)).toEqual({});
 });
 
-test('one Help button follows the sidebar and board without losing its DOM identity', async ({ page }) => {
-  await open(page);
-  const original = await support(page).elementHandle();
-  await page.getByRole('button', { name: 'Hide sidebar', exact: true }).click();
-  await expect(page.locator('.header-leading > [data-action="support"]')).toBeVisible();
-  await page.getByRole('button', { name: /^Workspace view: / }).click(); await page.getByRole('menuitemradio', { name: 'Board', exact: true }).click();
-  await expect(support(page)).toBeVisible();
-  await expect(support(page)).toHaveCount(1);
-  await page.getByRole('button', { name: /^Workspace view: / }).click(); await page.getByRole('menuitemradio', { name: 'Conversation', exact: true }).click();
-  await page.getByRole('button', { name: 'Show sidebar', exact: true }).click();
-  await expect(page.locator('.sidebar-bottom > [data-action="support"]')).toBeVisible();
-  expect(await original!.evaluate(node => node === document.querySelector('[data-action="support"]'))).toBe(true);
-  expect(await calls(page)).toBe(0);
-});
-
-test('opening support gives immediate feedback and prevents duplicate opens across view changes', async ({ page }) => {
-  await page.setViewportSize({ width: 460, height: 740 });
+test('a second request while support is opening does not open it twice', async ({ page }) => {
   await open(page, 'hold');
-  await support(page).click();
-  await expect(support(page)).toBeDisabled();
-  await expect(support(page)).toHaveAttribute('aria-busy', 'true');
-  await expect(support(page)).toHaveAccessibleName('Opening support…');
-  await expect(support(page).locator('.support-spinner')).toBeVisible();
-  await page.getByRole('button', { name: /^Workspace view: / }).click(); await page.getByRole('menuitemradio', { name: 'Board', exact: true }).click();
-  await expect(support(page)).toBeVisible();
-  await support(page).dispatchEvent('click');
+  await support(page);
+  await expect.poll(() => calls(page)).toBe(1);
+  await support(page);
+  await page.waitForTimeout(300);
   expect(await calls(page)).toBe(1);
   await page.evaluate(() => (window as any).__supportFixture.resolve());
-  await expect(support(page)).toBeEnabled();
-  await expect(support(page)).not.toHaveAttribute('aria-busy', 'true');
-  await expect(support(page)).toHaveAccessibleName('Help & support');
 });
 
 test('support recovers after a failed browser launch', async ({ page }) => {
   await open(page, 'fail');
-  await support(page).click();
+  await support(page);
   await expect(page.locator('#toast')).toHaveText('Could not open support. Please try again.');
-  await expect(support(page)).toBeEnabled();
-  await expect(page.locator('#dialog')).not.toBeVisible();
   await page.evaluate(() => { (window as any).__supportFixture.behavior = 'mock'; });
-  await support(page).click();
+  await support(page);
   await expect.poll(() => calls(page)).toBe(2);
-  await expect(support(page)).toHaveAccessibleName('Help & support');
 });
 
 test('preview opens the GitHub issue tracker without sending customer or workspace details', async ({ page }) => {
   await open(page, 'preview');
-  await support(page).click();
+  await support(page);
   await expect.poll(() => page.evaluate(() => (window as any).__supportFixture.opened)).toEqual([
     ['https://github.com/aicodeking/pandacode/issues', '_blank', 'noopener,noreferrer'],
   ]);

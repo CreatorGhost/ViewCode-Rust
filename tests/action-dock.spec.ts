@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { showBotsView } from './rail-helper';
 import { pickFromPlus } from './composer-more-helper';
 import { openInspectorTab } from './inspector-tab-helper';
 
@@ -258,8 +259,7 @@ test.describe('action dock', () => {
     await page.locator('#terminal-toggle').click();
     // A shared bot channel's header row sits below the workspace header, clear of the dock.
     await page.goto('/?bots=sample');
-    const bar = page.locator('.sidebar-bots-bar');
-    if (await bar.getAttribute('aria-pressed') !== 'true') await bar.click();
+    await showBotsView(page);
     await page.getByRole('region', { name: 'Bots', exact: true }).getByRole('group', { name: 'Channels' }).locator('button').first().click();
     const settings = page.locator('.bc-settings');
     await expect(settings).toBeVisible();

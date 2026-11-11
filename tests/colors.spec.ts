@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { toggleTheme } from './rail-helper';
 import { enableScenes } from './scene-helper';
 
 // The preview stores imported themes in memory; Open VSX knows only Dracula.
@@ -15,7 +16,11 @@ async function openColors(page: Page): Promise<void> {
   await expect(page.locator('.vsix-list')).toHaveAttribute('aria-busy', 'false');
 }
 
-test('the accent follows the wallpaper scene and falls back to classic yellow without one', async ({ page }) => {
+/** The Wallpaper accent, chosen as in Settings → Appearance (a fresh profile starts on the default teal). */
+const followWallpaper = (page: Page) => page.addInitScript(() => { if (localStorage.getItem('pandacode.palette') === null) localStorage.setItem('pandacode.palette', JSON.stringify({ accent: { mode: 'wallpaper' } })); });
+
+test('the Wallpaper accent follows the wallpaper scene, Classic is yellow, and a swatch is kept across reloads', async ({ page }) => {
+  await followWallpaper(page);
   await pin(page, 'wed-night');
   await page.goto('/');
   await expect(page.locator('.workspace')).toHaveAttribute('data-wallpaper', 'wed-night', { timeout: 15000 });
@@ -60,7 +65,7 @@ test('a fresh profile takes the default teal accent, and the scene accent falls 
 
 test('with Wallpapers off and Live scenes on the scene accent is the Sky: a calm blue, and Wallpaper again once a scene shows', async ({ page }) => {
   await enableScenes(page);
-  await page.addInitScript(() => { if (localStorage.getItem('pandacode.palette') === null) localStorage.setItem('pandacode.palette', JSON.stringify({ accent: { mode: 'wallpaper' } })); });
+  await followWallpaper(page);
   await page.goto('/');
   await expect(page.locator('.workspace')).toHaveAttribute('data-scene', 'sky');
   // A blue: blue channel well above red.
@@ -118,7 +123,7 @@ test('the light and dark toggle leaves a VS Code theme for PandaCode\'s own pale
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   expect(await token(page, '--accent')).toBe('#0969da');
   await page.getByRole('button', { name: 'Back to the workspace', exact: true }).click();
-  await page.locator('[data-action="toggle-theme"]').click();
+  await toggleTheme(page);
   await expect(page.locator('#toast')).toContainText('GitHub Light Default turned off');
   await expect(page.locator('html')).not.toHaveAttribute('data-vsix', '');
 });

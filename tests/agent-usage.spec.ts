@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openAgentUsage } from './rail-helper';
 
 const installed = ['claude', 'codex', 'kimi', 'opencode', 'glm', 'grok', 'mimo', 'pi', 'deepseek', 'commandcode', 'cline', 'kilo', 'github-copilot', 'muse', 'devin', 'zcode', 'hermes'];
-const usageButton = (page: Page) => page.getByRole('button', { name: 'Agent usage', exact: true });
 const dialog = (page: Page) => page.getByRole('dialog', { name: 'Agent usage', exact: true });
 const card = (page: Page, name: string) => dialog(page).locator('.usage-card').filter({ hasText: name });
 const refresh = (page: Page) => dialog(page).getByRole('button', { name: 'Refresh usage', exact: true });
@@ -84,8 +84,9 @@ async function openApp(page: Page, hold: string[] = [], failures: string[] = [],
   await expect(page.getByRole('textbox', { name: 'Message your coding agent' })).toBeEnabled();
 }
 
+/** Agent usage has no rail button: it opens from Go to anything, or from a usage ring on the rail. */
 async function openUsage(page: Page): Promise<void> {
-  await usageButton(page).click();
+  await openAgentUsage(page);
   await expect(dialog(page)).toBeVisible();
 }
 
@@ -105,7 +106,7 @@ test('Agent usage loads only on opening and reopening, with explicit used percen
   await openApp(page);
   await page.clock.fastForward(60_000);
   expect(await calls(page)).toEqual([]);
-  await expect(page.locator('.sidebar-bottom > #agent-usage-button')).toBeVisible();
+  await expect(page.locator('#agent-usage-button')).toHaveCount(0);
   await openUsage(page);
   await expect(refresh(page)).toBeEnabled();
   expect((await calls(page)).map(call => call.provider).sort()).toEqual([...installed].sort());
@@ -238,22 +239,14 @@ test('Agent usage ignores responses from a closed panel after a new panel has lo
   expect(errors).toEqual([]);
 });
 
-test('Agent usage remains reachable in the sidebar, collapsed header, and board at 140% text size', async ({ page }, testInfo) => {
+test('Agent usage remains reachable from Go to anything with the sidebar shown, collapsed, and on the board at 140% text size', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 460, height: 740 });
   await page.addInitScript(() => localStorage.setItem('pandacode.uiScale', '1.4'));
   await openApp(page);
   for (const mode of ['sidebar', 'collapsed', 'board']) {
     if (mode === 'collapsed') await page.getByRole('button', { name: 'Hide sidebar', exact: true }).click();
     if (mode === 'board') { await page.getByRole('button', { name: /^Workspace view: / }).click(); await page.getByRole('menuitemradio', { name: 'Board', exact: true }).click(); }
-    await expect(usageButton(page)).toHaveCount(1);
-    await expect(usageButton(page)).toBeVisible();
-    await expect(usageButton(page)).toHaveAttribute('id', 'agent-usage-button');
-    const buttonBounds = (await usageButton(page).boundingBox())!;
-    expect(buttonBounds.x).toBeGreaterThanOrEqual(0);
-    expect(buttonBounds.x + buttonBounds.width).toBeLessThanOrEqual(460);
-    expect(buttonBounds.y + buttonBounds.height).toBeLessThanOrEqual(740);
-    await usageButton(page).focus();
-    await page.keyboard.press('Enter');
+    await openAgentUsage(page);
     await expect(dialog(page)).toBeVisible();
     await expect(refresh(page)).toBeEnabled();
     const bounds = (await dialog(page).boundingBox())!;

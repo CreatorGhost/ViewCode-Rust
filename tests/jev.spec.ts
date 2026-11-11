@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { toggleTheme } from './rail-helper';
 
 const dialog = (page: Page) => page.locator('#dialog');
 const probe = `
@@ -211,7 +212,7 @@ test('browser Jev popover anchors, dismisses, and preserves the form during live
 test('browser Jev popover fits a narrow light window and setup opens from its notice', async ({ page }) => {
   await installProbe(page);
   await page.evaluate(() => { (window as any).__jevConfig.enabled = false; });
-  await page.locator('#theme-toggle').click();
+  await toggleTheme(page);
   await page.setViewportSize({ width: 420, height: 700 });
   await page.getByRole('button', { name: 'Open browser', exact: true }).click();
   await page.getByRole('button', { name: 'Test with Jev', exact: true }).click();

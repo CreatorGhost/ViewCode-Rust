@@ -60,15 +60,6 @@ html[data-native-platform=macos] .workspace:not(.sidebar-collapsed,.board-view,.
 /* The shell's icon buttons, as a column at the rail's foot. */
 .project-rail .sidebar-bottom{flex:none;flex-direction:column;align-items:center;gap:2px;margin:0;padding:0}
 .project-rail .sidebar-bottom>button{flex:none;width:32px;height:32px;padding:0}
-.project-rail .sidebar-bottom>#theme-toggle{margin-left:0}
-.project-rail .sidebar-bots{padding:0}
-.project-rail .sidebar-bots:empty{display:none}
-.project-rail .sidebar-bots-bar{position:relative;justify-content:center;width:32px;height:32px;padding:0;gap:0;border:0;border-radius:var(--ds-radius-control);background:none;box-shadow:none;color:var(--muted)}
-.project-rail .sidebar-bots-bar:hover{background:var(--ds-row-hover);color:var(--text)}
-.project-rail .sidebar-bots-bar[aria-pressed=true]{background:var(--ds-fill-hover);color:var(--text)}
-.project-rail .sidebar-bots-bar>.icon:first-child{--icon-size:var(--icon-sm);--icon-stroke:var(--icon-stroke-sm);color:inherit}
-.project-rail .sidebar-bots-bar>:is(span:not(.sidebar-bots-unread),small,.icon:last-child){position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-.project-rail .sidebar-bots-bar>.sidebar-bots-unread{position:absolute;top:5px;right:5px;margin:0}
 
 @media(max-height:620px){.rail-usage{display:none}}
 @media(max-width:650px){
