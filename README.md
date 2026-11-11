@@ -273,6 +273,10 @@ information:
 | Public model price list (for cost estimates) | `raw.githubusercontent.com` | Daily |
 | PandaCode's own updates (`latest.json` on this repository's latest release) | `github.com` | At launch and about every 6 hours unless Settings → About → Updates is Off |
 | Jev decision model list (optional) | `openrouter.ai` | Only when you choose OpenRouter for Jev decisions and open the model menu or press Refresh; no key is sent |
+| Quick connect setup (optional): Node.js, only if this computer has none of version 22 or newer | `nodejs.org` | Once, after you start Quick connect setup; the download is checked against a checksum built into the app |
+| Quick connect setup (optional): Cloudflare's `wrangler` tool, fetched by `npx` | The npm registry in your `~/.npmrc` (`registry.npmjs.org` unless you changed it) | When you set up, redeploy or remove Quick connect, unless npm already has it cached |
+| Quick connect setup (optional): sign-in and deploy to **your own** Cloudflare account, through `wrangler` with its usage metrics off | `dash.cloudflare.com`, `api.cloudflare.com` | Only when you set up, redeploy or remove Quick connect |
+| Quick connect (optional): this computer's connection to the relay on your own Cloudflare account | Your own `*.workers.dev` address | While Quick connect is on |
 | Jev decisions on OpenRouter (optional) | `openrouter.ai` | Only when you choose OpenRouter in Settings → Tools → Add-ons → Jev and run a decision check; sends the selected evidence with your key |
 | Jev decisions on TypeSafe (optional, the default service): sends the selected evidence with your key | TypeSafe | Only when you save a TypeSafe key in Jev's setup and run a decision check |
 | Cloud agents (optional): the task's checkout, prompt and harness login go to the machine you chose; PandaCode checks on its active runs | The cloud provider you connected | Only for tasks you start on a cloud provider; while a run is active and at launch to re-attach |

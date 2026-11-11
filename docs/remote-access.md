@@ -586,6 +586,158 @@ pull-detection results are keyed by the latest message id and linked PR number, 
 invalidates that session's cache. This avoids repeated GitHub CLI work while the inspected task
 state is unchanged.
 
+## Quick connect
+
+Reach this computer from the phone through a relay on the user's **own** Cloudflare account.
+The setup flow is ViewCode's, step for step; the relay, frames and encryption are this app's.
+Backend only so far: `src-tauri/src/quick_connect/`, the Worker's self-hosted mode
+(`relay/src/self.ts`), the IPC below. The Connect phone UI and the phone's side of pairing are
+not built yet ([what remains](#what-remains)).
+
+### The flow, and the command behind each step
+
+| Step (as in ViewCode) | Here |
+|---|---|
+| Open **Connect phone → Anywhere → Quick connect**, choose **Connect with Cloudflare** | `quick_connect_start_setup` runs every step below as one operation; `quick_connect_status` and the `quick-connect://status` event carry `setup` (`running` with a `step`, or an end state) |
+| "Getting ready…": Cloudflare's tools. A Node.js 22+ you installed is used; otherwise the app gets one | step `checking-tools` (`quick_connect_prepare_tools` runs it alone) → stage `nodeReady` |
+| Sign in: a Cloudflare page opens, the app shows the link and a code to check | step `signing-in`, `setup.signIn = { url, code, openUrl }` (`quick_connect_sign_in` runs steps 1–2 alone) → stage `signedIn` |
+| Several accounts: the app asks which one holds the relay and remembers it | `setup.status = "needs-account"` with `accounts`; answer with `quick_connect_choose_account { accountId }` |
+| The relay is deployed to the account | step `deploying`; `needs-subdomain` when the account has no workers.dev address yet, then `quick_connect_continue` |
+| "Securing it…": the host secret is stored on the Worker | step `storing-secret` |
+| "Checking it works…", waiting if a network blocks the new address | step `verifying` with `problem`; ends `succeeded` or `unreachable` → stage `deployed` |
+| The code for the phone appears; **New code** makes another | `quick_connect_pairing_create { scope? }` → `{ link, expiresAt, scope }` (the QR code encodes `link`); `quick_connect_pairing_cancel` |
+| The phone scans it and is paired, with no account | `quick-connect://paired` `{ deviceId, name, scope }` → stage `paired` |
+| Paired phones are listed and can be revoked | `quick_connect_devices`, `quick_connect_revoke_device { deviceId }` |
+| ⋯ menu: turn off / on, redeploy, redeploy with a new secret, remove (or remove from this computer only) | `quick_connect_set_enabled { enabled }`, `quick_connect_start_setup { rotateSecret? }`, `quick_connect_remove { localOnly? }` |
+| Cancel, or dismiss a finished state | `quick_connect_cancel` |
+| Connection choice: Quick connect, Same Wi-Fi, Tailscale | `quick_connect_set_mode { mode }` (`quickConnect`, `sameWifi`, `tailscale`); `status.modes` says what is available |
+
+One operation runs at a time, off the window, so closing a dialog does not stop it. Every
+command returns the full status (`src/quick-connect-types.ts`).
+
+### State
+
+`quick-connect.json` in the app data dir (0600, no secrets): the connection choice, the
+deployed Worker (`name`, `url`, `accountId`), whether it is on, the paired phones, and
+`legacyConnectVisible`. The stage is derived from it (`state.rs`): `notStarted` → `nodeReady` →
+`signedIn` → `deployed` → `paired`. Removing the relay falls back to `signedIn`; revoking the
+last phone falls back to `deployed`. The SQLite schema is unchanged.
+
+The **host secret** (256 random bits) is in `secret_store` (`pandacode-quick-connect` /
+`host-secret`) and on the Worker as the secret `HOST_SECRET`. It reaches wrangler on stdin only,
+never a command line; it never reaches the webview, and every piece of wrangler output is
+redacted before it is kept or shown. Nothing is logged. A redeploy keeps it unless asked to
+rotate; rotating signs every paired phone out (their tokens are signed with a key derived from
+it).
+
+### Node.js and wrangler
+
+`tools.rs` uses the machine's Node (found where an interactive shell would find it) when
+`node --version` says 22 or newer. Otherwise `node.rs` downloads one pinned release from
+`https://nodejs.org/dist/v<version>/node-v<version>-<target>.<tar.gz|zip>` into
+`<app data>/quick-connect/node/`. The SHA-256 of each of the six archives is compiled in
+(`RELEASES`); the checksum is known to be real before any request, the archive is verified
+before it is unpacked, and a verified folder is reused. A mismatch, a cut-off download or an
+archive that is not a Node release installs nothing.
+
+> **The pinned checksums are not recorded yet.** `RELEASES` carries the marker
+> `CHECKSUM_NOT_RECORDED` for all six targets, so this build never downloads Node: a machine
+> without Node 22+ is told to install it. Before shipping, copy the six digests for
+> `PINNED_NODE` from nodejs.org's signed `SHASUMS256.txt`; the ignored test
+> `every_pinned_checksum_is_filled_in` is the gate.
+
+wrangler runs as `npx --yes wrangler@<exact version>` (`WRANGLER_VERSION`, never a range)
+through `process.rs`: a bounded runner in the style of `workspace::run_process` (own process
+group or Windows job, a deadline of 10 minutes, 15 for the sign-in, cancellable, output
+tail-capped at 64 KiB) with `WRANGLER_SEND_METRICS=false` and, on Node 22.15+,
+`--use-system-ca`. Sign-in is `wrangler login --device --browser=false` (the link and code are
+shown in the app, as in ViewCode); a wrangler without the device flow falls back to its browser
+sign-in. The Cloudflare sign-in stays in wrangler's own config: the app never reads a
+Cloudflare token. The Worker's sources are compiled into the app (`worker.rs`) and staged into
+a temporary folder with `relay/wrangler.self.json` for each run.
+
+Nothing here runs or downloads before the user starts setup. The automatic requests it adds
+are in the README privacy table.
+
+### The self-hosted relay
+
+The same Worker as the shared relay, with `RELAY_MODE=self`: one Durable Object, the same
+frames, presence, limits and authenticated `/v1/*` routes. Tokens have the same format, signed
+with a key derived from the host secret, and last a year (refreshed as usual).
+
+- `GET /v1/self/probe` → `{ ok, mode: "self", protocol }`
+- `POST /v1/self/host` `{ device }` → `{ token, account }`: registers this computer as the
+  deployment's admin device
+- `POST /v1/self/pairings` `{ codeHash, ttlSeconds ≤ 300 }`, `DELETE /v1/self/pairings`
+- `POST /v1/self/pair` `{ code, device }` → `{ token, account }` (no authorization)
+
+The first three take `Authorization: Bearer <host secret>`. Only the admin device hosts,
+removes other devices or deletes the deployment's state. Until the secret is stored the Worker
+answers `500` to everything.
+
+Once deployed and verified, this computer registers with `/v1/self/host` and the ordinary
+remote stack connects to that address instead of the build's shared relay
+(`remote/self_relay.rs`; `remote_status.relay` is `"quickConnect"`). "Allow remote control" is
+turned on. There is one socket, so the two relays are exclusive: setup refuses while signed in
+to PandaCode Connect, and GitHub sign-in refuses while Quick connect is on.
+
+### Pairing
+
+The link is `pandacode://quick-connect?v=1&relay=<https address>&token=<token>&host=<device
+id>&key=<public key>&name=<computer name>`. `token` is 256 random bits (base64url), valid five
+minutes, single use. Two codes are derived from it, so neither side that checks one learns the
+other (vector: `relay/test/fixtures/quick-connect-pairing.json`):
+
+```
+relayCode = base64url(SHA-256("pandacode quick connect relay v1\n" + token))
+hostCode  = base64url(SHA-256("pandacode quick connect host v1\n"  + token))
+```
+
+1. Desktop → relay: `POST /v1/self/pairings` with `SHA-256(relayCode)` (hex). The relay never
+   stores a usable code.
+2. Phone → relay: `POST /v1/self/pair` `{ code: relayCode, device }`. The relay spends the
+   pairing and registers the phone; unknown, used and expired codes get the same `401`. The
+   phone now holds its long-lived credential, an ordinary relay token.
+3. Phone → desktop, end-to-end encrypted to the `key` from the link: `pair.redeem`
+   `{ code: hostCode }`. The desktop's ledger (`pairing.rs`) checks expiry and single use and
+   grants the pairing's scope (default `full`); until then the phone is a `pending` device like
+   any other (`grants.rs`). So a phone is trusted here only if it scanned the code, whatever
+   the relay says.
+
+Revoking a phone deletes its relay registration (its credential stops working at once and its
+socket closes with `4001`), its grant and its row. Links and tokens are never logged or printed.
+
+### Connection choices and the older relay
+
+`mode` is an explicit setting: `quickConnect` (default), `sameWifi`, `tailscale`. Choosing one
+only stores it. Same Wi-Fi and Tailscale are reported `available: false`: both need a local
+network listener for the phone protocol, which this app does not have yet.
+`status.modes.tailscale.installed` comes from looking for the `tailscale` binary on disk;
+**nothing in the app runs `tailscale`**, at launch or otherwise.
+
+The GitHub-based shared relay (everything above this section) is hidden, not removed:
+`status.legacyConnect.visible` is false by default, true after
+`quick_connect_set_legacy_connect_visible { visible: true }`, and always true while this
+computer is signed in to it, so nobody is stranded by an update. Its commands and tests are
+unchanged.
+
+### What remains
+
+- The Connect phone UI (dialog, Settings → Connections rows, QR rendering, opening
+  `setup.signIn.openUrl`), on `src/quick-connect-types.ts` and the preview mock
+  `src/preview-quick-connect.ts`.
+- The mobile app: scan or open the link, use the link's relay address instead of the build's,
+  call `/v1/self/pair`, pin the host key from the link, send `pair.redeem` with the host code,
+  and keep several environments. It needs no GitHub sign-in for a paired relay.
+- The Node checksums (above) and a live smoke test of the pinned wrangler against Cloudflare.
+- Creating a missing workers.dev subdomain for the user (ViewCode does it through
+  Cloudflare's API with wrangler's token); here setup asks the person to create one.
+- A local listener for Same Wi-Fi, and `tailscale serve` on top of it behind one explicit
+  "Turn on" command with an injectable binary path.
+- Reconnecting on its own after the relay signs this computer out (today: turn it on again).
+- Push notifications through a relay of one's own: it has no APNs or FCM keys, so it stores
+  registrations and sends nothing.
+
 ## Tauri commands (UI contract)
 
 | Command | Args | Returns |
