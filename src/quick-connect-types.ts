@@ -17,7 +17,9 @@ export type QuickConnectSetup =
   | { status: 'unreachable'; problem: QuickConnectProblem; message: string; details?: string }
   | { status: 'failed'; message: string; details?: string; action?: 'install-node' }
   | { status: 'remove-failed'; message: string; details?: string };
-export interface QuickConnectDevice { deviceId: string; name: string; platform: string; fingerprint: string; scope: QuickConnectScope; pairedAt: number; online: boolean }
+/** A paired phone. `lastSeen` is null until the relay has seen it. `expiresAt` is 30 days after pairing: nothing extends it
+ *  (not use, not rotating the host secret); after it the phone is no longer listed and pairs again with a new code. Times in ms. */
+export interface QuickConnectDevice { deviceId: string; name: string; platform: string; fingerprint: string; scope: QuickConnectScope; pairedAt: number; online: boolean; lastSeen: number | null; expiresAt: number }
 /** `quick_connect_status`, the result of every other `quick_connect_*` command, and the `quick-connect://status` event. */
 export interface QuickConnectStatus {
   stage: QuickConnectStage;

@@ -50,6 +50,9 @@ pub(crate) struct Device {
     pub online: bool,
     #[serde(default)]
     pub last_seen: Value,
+    /// Quick connect only: when a paired phone's 30 days end (ms). Null everywhere else.
+    #[serde(default, skip_serializing_if = "Value::is_null")]
+    pub expires_at: Value,
 }
 
 impl Device {
@@ -681,7 +684,7 @@ mod tests {
     }
 
     pub(super) fn device(id: &str, name: &str, key: &str) -> Device {
-        Device { id: id.into(), name: name.into(), platform: String::new(), public_key: key.into(), host: true, online: true, last_seen: Value::Null }
+        Device { id: id.into(), name: name.into(), platform: String::new(), public_key: key.into(), host: true, online: true, last_seen: Value::Null, expires_at: Value::Null }
     }
 
     #[test]

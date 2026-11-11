@@ -278,11 +278,21 @@ fn a_redeploy_keeps_the_secret_unless_asked_to_rotate_it() {
 
     deploy(&fake);
     assert_eq!((fake.read_secret().unwrap(), fake.read("secret-stdin")), (first.clone(), first.clone()));
+    // A phone is paired, then the secret is rotated.
+    let phone = super::state::Device { id: "d".into(), name: "Phone".into(), platform: "ios".into(), fingerprint: "f".into(), scope: "full".into(), paired_at: 1 };
+    fake.config.lock().unwrap().apply(Event::Paired(phone.clone()));
     setup::run(&fake, Operation::Deploy(DeployOptions { rotate_secret: true, account_id: None }));
     let rotated = fake.read_secret().unwrap();
     assert_ne!(rotated, first);
     assert_eq!(fake.read("secret-stdin"), rotated);
-    assert_eq!(fake.attached.lock().unwrap().last().unwrap().1, rotated);
+    // This computer registers again with the new secret, at the same address.
+    assert_eq!(*fake.attached.lock().unwrap().last().unwrap(), (URL.to_string(), rotated));
+    // Rotation is not a removal: the phone stays paired here, nothing was detached or deleted,
+    // and the Worker was redeployed in place (same name, never `delete`).
+    assert_eq!((fake.stage(), fake.config.lock().unwrap().devices.clone()), (Stage::Paired, vec![phone]));
+    assert!(!fake.detached.load(Ordering::SeqCst));
+    assert!(!fake.commands().iter().any(|command| command.starts_with("delete")));
+    assert_eq!(fake.commands().iter().filter(|command| *command == "deploy --config --name pandacode-quick-connect").count(), 3);
 }
 
 #[test]

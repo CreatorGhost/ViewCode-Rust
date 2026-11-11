@@ -60,6 +60,19 @@ pub(crate) struct Device {
     pub paired_at: i64,
 }
 
+/// A pairing lasts 30 days from pairing, the lifetime of a ViewCode session
+/// (`DEFAULT_SESSION_TTL`). Nothing extends it: the phone pairs again with a new code. The
+/// relay enforces it (`SELF_DEVICE_TTL_SECONDS` in `relay/src/limits.ts`).
+pub(crate) const PAIRING_LIFETIME_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+
+impl Device {
+    /// When this pairing ends: the relay's own figure once presence has it, else counted
+    /// from when the phone paired here (the two differ by the seconds pairing takes).
+    pub(crate) fn expires_at(&self, relay: Option<i64>) -> i64 {
+        relay.unwrap_or(self.paired_at + PAIRING_LIFETIME_MS)
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub(crate) struct Config {
@@ -228,6 +241,15 @@ mod tests {
         assert_eq!(config.stage(), Stage::Paired);
         assert!(config.apply(Event::Revoked("one".into())));
         assert_eq!(config.stage(), Stage::Deployed);
+    }
+
+    #[test]
+    fn a_pairing_ends_thirty_days_after_it_was_made() {
+        let phone = device("one");
+        assert_eq!(PAIRING_LIFETIME_MS, 2_592_000_000);
+        assert_eq!(phone.expires_at(None), 1 + PAIRING_LIFETIME_MS);
+        // The relay's figure wins once presence carries it.
+        assert_eq!(phone.expires_at(Some(77)), 77);
     }
 
     #[test]

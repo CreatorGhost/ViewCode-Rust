@@ -105,11 +105,11 @@ fn tailscale_installed() -> bool {
 const NEEDS_LISTENER: &str = "Not available yet: this needs the app's local network listener, which is not built.";
 
 fn status(app: &tauri::AppHandle) -> Value {
-    let (attached, connected, shared, online) = (self_relay::attached(app), self_relay::connected(app), self_relay::shared_signed_in(app), self_relay::online(app));
+    let (attached, connected, shared, seen) = (self_relay::attached(app), self_relay::connected(app), self_relay::shared_signed_in(app), self_relay::presence(app));
     let state = quick(app);
     let inner = state.lock();
     let now = chrono::Utc::now().timestamp();
-    let devices: Vec<Value> = inner.config.devices.iter().map(|device| device_view(device, online.contains(&device.id))).collect();
+    let devices = device_views(&inner.config.devices, &seen, now_ms());
     json!({
         "stage": inner.config.stage(),
         "mode": inner.config.mode,
@@ -132,8 +132,31 @@ fn status(app: &tauri::AppHandle) -> Value {
     })
 }
 
-fn device_view(device: &Device, online: bool) -> Value {
-    json!({"deviceId": device.id, "name": device.name, "platform": device.platform, "fingerprint": device.fingerprint, "scope": device.scope, "pairedAt": device.paired_at, "online": online})
+/// The paired phones as the list shows them, as ViewCode's Authorized clients does: when
+/// each was last connected and when its pairing ends. A phone whose 30 days are over is not
+/// listed (it is no longer paired; `prune_lapsed` forgets it).
+fn device_views(devices: &[Device], seen: &std::collections::HashMap<String, self_relay::Seen>, now: i64) -> Vec<Value> {
+    devices
+        .iter()
+        .filter_map(|device| {
+            let presence = seen.get(&device.id).cloned().unwrap_or_default();
+            let expires_at = device.expires_at(presence.expires_at);
+            (expires_at > now).then(|| json!({"deviceId": device.id, "name": device.name, "platform": device.platform, "fingerprint": device.fingerprint, "scope": device.scope, "pairedAt": device.paired_at, "online": presence.online, "lastSeen": presence.last_seen, "expiresAt": expires_at}))
+        })
+        .collect()
+}
+
+/// Forgets phones whose pairing has ended: their rows and what they were allowed to do
+/// here. The relay has already stopped accepting them; this only tidies this computer.
+fn prune_lapsed(app: &tauri::AppHandle) {
+    let (seen, now) = (self_relay::presence(app), now_ms());
+    let lapsed: Vec<String> = quick(app).lock().config.devices.iter().filter(|device| device.expires_at(seen.get(&device.id).and_then(|seen| seen.expires_at)) <= now).map(|device| device.id.clone()).collect();
+    for id in lapsed {
+        crate::remote::grants::forget(app, &id);
+        if let Err(error) = record(app, Event::Revoked(id)) {
+            eprintln!("{error}");
+        }
+    }
 }
 
 fn emit(app: &tauri::AppHandle) {
@@ -299,11 +322,13 @@ pub(crate) fn paired(app: &tauri::AppHandle, id: &str, name: &str, platform: &st
 /// Everything the Connect phone UI shows. Reads memory only.
 #[tauri::command]
 pub async fn quick_connect_status(app: tauri::AppHandle) -> Value {
+    prune_lapsed(&app);
     status(&app)
 }
 
 /// "Connect with Cloudflare": tools, sign-in, deploy, secret, verify, connect. Also the
-/// redeploys (`rotateSecret` makes a new host secret, which signs every paired phone out).
+/// redeploys. `rotateSecret` makes a new host secret; paired phones stay paired, because
+/// their credentials are not signed with it.
 #[tauri::command]
 pub async fn quick_connect_start_setup(app: tauri::AppHandle, rotate_secret: Option<bool>) -> Result<Value> {
     launch(&app, Operation::Deploy(DeployOptions { rotate_secret: rotate_secret.unwrap_or(false), account_id: None }))
@@ -410,11 +435,13 @@ pub async fn quick_connect_pairing_cancel(app: tauri::AppHandle) -> Result<Value
     Ok(status(&app))
 }
 
-/// The phones paired through Quick connect, with whether each is online now.
+/// The phones paired through Quick connect: online now, last connected, and when each
+/// pairing ends (30 days after it was made).
 #[tauri::command]
 pub async fn quick_connect_devices(app: tauri::AppHandle) -> Vec<Value> {
-    let online = self_relay::online(&app);
-    quick(&app).lock().config.devices.iter().map(|device| device_view(device, online.contains(&device.id))).collect()
+    prune_lapsed(&app);
+    let seen = self_relay::presence(&app);
+    device_views(&quick(&app).lock().config.devices, &seen, now_ms())
 }
 
 /// Removes a paired phone: its relay registration (so its credential stops working at
@@ -466,4 +493,36 @@ pub async fn quick_connect_set_legacy_connect_visible(app: tauri::AppHandle, vis
     state::save(&state.dir, &config)?;
     emit(&app);
     Ok(status(&app))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use state::PAIRING_LIFETIME_MS;
+
+    fn phone(id: &str, paired_at: i64) -> Device {
+        Device { id: id.into(), name: "Phone".into(), platform: "ios".into(), fingerprint: "f".into(), scope: "full".into(), paired_at }
+    }
+
+    #[test]
+    fn the_device_list_shows_last_seen_and_expiry_and_drops_lapsed_pairings() {
+        let day = 24 * 60 * 60 * 1000;
+        let devices = [phone("fresh", 0), phone("relay-says", 0), phone("lapsed", 0)];
+        let seen = std::collections::HashMap::from([
+            ("fresh".to_string(), self_relay::Seen { online: true, last_seen: Some(5), expires_at: None }),
+            // The relay's end is later than this computer would have guessed: it wins.
+            ("lapsed".to_string(), self_relay::Seen { online: false, last_seen: Some(9), expires_at: Some(29 * day) }),
+            ("relay-says".to_string(), self_relay::Seen { online: false, last_seen: None, expires_at: Some(31 * day) }),
+        ]);
+        let listed = device_views(&devices, &seen, 30 * day - 1);
+        assert_eq!(listed.iter().map(|row| row["deviceId"].as_str().unwrap()).collect::<Vec<_>>(), ["fresh", "relay-says"]);
+        assert_eq!((listed[0]["online"].as_bool(), listed[0]["lastSeen"].as_i64(), listed[0]["expiresAt"].as_i64()), (Some(true), Some(5), Some(PAIRING_LIFETIME_MS)));
+        assert_eq!((listed[1]["lastSeen"].is_null(), listed[1]["expiresAt"].as_i64()), (true, Some(31 * day)));
+        // At day 30 exactly a pairing made at 0 is over; only the relay's later one is left.
+        assert_eq!(device_views(&devices, &seen, 30 * day).len(), 1);
+        // Before any presence frame, nothing is online and the end is counted from pairing.
+        let quiet = device_views(&devices, &Default::default(), day);
+        assert_eq!(quiet.len(), 3);
+        assert!(quiet.iter().all(|row| row["online"] == false && row["expiresAt"] == PAIRING_LIFETIME_MS));
+    }
 }

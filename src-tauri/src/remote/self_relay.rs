@@ -29,9 +29,20 @@ pub(crate) fn connected(app: &tauri::AppHandle) -> bool {
     config::self_relay_active() && remote(app).lock().connected
 }
 
-/// Ids of the devices presence lists as online.
-pub(crate) fn online(app: &tauri::AppHandle) -> std::collections::HashSet<String> {
-    remote(app).lock().devices.iter().filter(|device| device.online).map(|device| device.id.clone()).collect()
+/// What presence says about a device.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct Seen {
+    pub online: bool,
+    /// Unix milliseconds; none before the relay has seen it.
+    pub last_seen: Option<i64>,
+    /// When its pairing ends, as the relay keeps it (unix milliseconds).
+    pub expires_at: Option<i64>,
+}
+
+/// The devices in the latest presence frame, by id. Empty until one has arrived.
+pub(crate) fn presence(app: &tauri::AppHandle) -> std::collections::HashMap<String, Seen> {
+    let positive = |value: &Value| value.as_i64().filter(|ms| *ms > 0);
+    remote(app).lock().devices.iter().map(|device| (device.id.clone(), Seen { online: device.online, last_seen: positive(&device.last_seen), expires_at: positive(&device.expires_at) })).collect()
 }
 
 /// This computer as the pairing link names it: (device id, public key, name).

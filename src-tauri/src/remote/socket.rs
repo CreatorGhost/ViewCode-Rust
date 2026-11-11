@@ -1113,7 +1113,7 @@ mod tests {
         let swapped = crypto::pair_key(&new, "viewer", &crypto::public_key(&host), "host").unwrap();
         let body = crypto::seal(&swapped, "viewer", "host", b"{}").unwrap();
         assert!(crypto::open(&previous, "viewer", "host", &body).is_err());
-        let view = Device { id: "viewer".into(), name: String::new(), platform: String::new(), public_key: crypto::public_key(&new), host: false, online: true, last_seen: Value::Null }.view("host");
+        let view = Device { id: "viewer".into(), name: String::new(), platform: String::new(), public_key: crypto::public_key(&new), host: false, online: true, last_seen: Value::Null, expires_at: Value::Null }.view("host");
         assert!(view.get("trusted").is_none());
     }
 }

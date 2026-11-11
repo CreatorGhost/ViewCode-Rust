@@ -627,8 +627,8 @@ The **host secret** (256 random bits) is in `secret_store` (`pandacode-quick-con
 `host-secret`) and on the Worker as the secret `HOST_SECRET`. It reaches wrangler on stdin only,
 never a command line; it never reaches the webview, and every piece of wrangler output is
 redacted before it is kept or shown. Nothing is logged. A redeploy keeps it unless asked to
-rotate; rotating signs every paired phone out (their tokens are signed with a key derived from
-it).
+rotate. The host secret only authenticates this computer to its relay, so rotating it leaves
+every paired phone paired, as in ViewCode.
 
 ### Node.js and wrangler
 
@@ -660,8 +660,9 @@ are in the README privacy table.
 ### The self-hosted relay
 
 The same Worker as the shared relay, with `RELAY_MODE=self`: one Durable Object, the same
-frames, presence, limits and authenticated `/v1/*` routes. Tokens have the same format, signed
-with a key derived from the host secret, and last a year (refreshed as usual).
+frames, presence, limits and authenticated `/v1/*` routes. Tokens have the same format. They are
+signed with a key the deployment's Durable Object makes once and keeps (never the host secret,
+which a rotation replaces), as ViewCode signs sessions with its own `server-signing-key`.
 
 - `GET /v1/self/probe` → `{ ok, mode: "self", protocol }`
 - `POST /v1/self/host` `{ device }` → `{ token, account }`: registers this computer as the
@@ -701,6 +702,16 @@ hostCode  = base64url(SHA-256("pandacode quick connect host v1\n"  + token))
    grants the pairing's scope (default `full`); until then the phone is a `pending` device like
    any other (`grants.rs`). So a phone is trusted here only if it scanned the code, whatever
    the relay says.
+
+**How long a phone stays paired.** As a ViewCode session: 30 days from pairing
+(`DEFAULT_SESSION_TTL` there, `SELF_DEVICE_TTL_SECONDS` here), fixed. Using the phone does not
+extend it and neither does the token refresh (`POST /v1/token` returns a token that ends at the
+same moment); rotating the host secret does not shorten it. When it lapses the relay deletes
+the phone's row and closes its socket (`4001`), exactly as a revoke, so the phone shows it is
+no longer connected and pairs again with a new code, which starts a fresh 30 days. There is no
+warning beforehand and no other re-authentication. `quick_connect_devices` lists each phone
+with `online`, `lastSeen` and `expiresAt` (the relay's own figure, from presence), and stops
+listing one whose pairing is over. This computer's own registration has no fixed end.
 
 Revoking a phone deletes its relay registration (its credential stops working at once and its
 socket closes with `4001`), its grant and its row. Links and tokens are never logged or printed.

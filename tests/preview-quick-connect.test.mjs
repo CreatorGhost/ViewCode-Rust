@@ -40,6 +40,8 @@ test('setup, pairing, revoking and removal move through the stages', () => {
   assert.deepEqual(events.find(([name]) => name === 'quick-connect://paired')[1], { deviceId: phone.deviceId, name: 'Preview phone', scope: 'full' });
   assert.equal(invoke('quick_connect_status').stage, 'paired');
   assert.equal(invoke('quick_connect_devices').length, 1);
+  // A pairing ends 30 days after it was made.
+  assert.equal(phone.expiresAt - phone.pairedAt, 30 * 86_400_000);
   assert.throws(() => invoke('quick_connect_revoke_device', { deviceId: 'nobody' }), /not paired/);
   assert.equal(invoke('quick_connect_revoke_device', { deviceId: phone.deviceId }).stage, 'deployed');
 

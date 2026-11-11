@@ -48,7 +48,7 @@ export function createPreviewQuickConnect(emit: (name: string, payload: unknown)
   /** Test seam: what the phone does after scanning the link. */
   const pair = (name = 'Preview phone'): QuickConnectDevice => {
     if (!state.pairing) throw new Error('That pairing code is not valid or has expired.');
-    const device: QuickConnectDevice = { deviceId: `phone-${state.devices.length + 1}`, name, platform: 'ios', fingerprint: '5e1f0c9a2b7d4e63', scope: 'full', pairedAt: Date.now(), online: true };
+    const device: QuickConnectDevice = { deviceId: `phone-${state.devices.length + 1}`, name, platform: 'ios', fingerprint: '5e1f0c9a2b7d4e63', scope: 'full', pairedAt: Date.now(), online: true, lastSeen: Date.now(), expiresAt: Date.now() + 30 * 86_400_000 };
     state.devices.push(device);
     state.pairing = null;
     emit('quick-connect://paired', { deviceId: device.deviceId, name: device.name, scope: device.scope });
