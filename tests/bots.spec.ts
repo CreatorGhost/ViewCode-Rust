@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { pickFromPlus } from './composer-more-helper';
 
 /* Bots: a bot's conversations are ordinary task threads (same transcript, streaming and
  * composer, with the model picker), and its settings live in a modal. */
@@ -207,7 +208,7 @@ test.describe('bots', () => {
     await page.locator('.new-task-button').click();
     const chip = page.locator('#composer-bot');
     await expect(chip).toHaveText(/No bot/);
-    await chip.click();
+    await pickFromPlus(page, chip);
     await page.getByRole('menu', { name: 'Bot' }).getByRole('menuitemradio', { name: /Scout/ }).click();
     await expect(chip).toHaveText(/Scout/);
     const taskId = await page.locator('#prompt').getAttribute('data-session-id');
@@ -215,7 +216,7 @@ test.describe('bots', () => {
     await page.locator('#prompt').press('Enter');
     await expect(page.locator('#transcript .user-message').last().locator('.message-content')).toHaveText('Write the release notes');
     // The task stays in its project, now marked with its bot; its first message carried the bot's brief and skills.
-    await expect(page.locator('.composer-computer-fixed', { hasText: 'with Scout' })).toBeVisible();
+    await expect(page.locator('.composer-computer-fixed', { hasText: 'with Scout' })).toHaveCount(1);
     await expect(crumb(page)).toHaveCount(0);
     const briefs = await page.evaluate(() => (window as any).__botTaskBriefs);
     expect(briefs).toHaveLength(1);

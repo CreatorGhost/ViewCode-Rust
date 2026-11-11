@@ -105,9 +105,9 @@ test.describe('voice input', () => {
 
   for (const key of ['Enter', 'Space']) test(`recording leaves Attach ${key} activation intact`, async ({ page }) => {
     await open(page, 'delayed'); await start(page);
-    await page.getByRole('button', { name: 'Attach files for context', exact: true }).focus();
+    await page.getByRole('button', { name: 'Add files and tools', exact: true }).focus();
     await page.keyboard.press(key);
-    await expect(page.getByRole('dialog', { name: 'Attach', exact: true })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Add files and tools', exact: true })).toBeVisible();
     await expect(pill(page)).toHaveAttribute('data-phase', 'recording');
   });
 

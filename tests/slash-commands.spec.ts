@@ -246,7 +246,7 @@ test.describe('slash commands app integration', () => {
   test.beforeEach(async ({ page }) => { await installAppProbe(page); });
 
   test('inserts a local command first, then opens its control without a turn or conversation reset', async ({ page }) => {
-    await page.getByRole('button', { name: 'Attach files for context', exact: true }).click();
+    await page.getByRole('button', { name: 'Add files and tools', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Project files', exact: true }).click();
     await page.getByRole('button', { name: 'Attach README.md', exact: true }).click();
     await expect(page.locator('#attachments')).toContainText('README.md');
@@ -357,7 +357,7 @@ test.describe('slash commands app integration', () => {
   });
 
   test('passes rename arguments to the local action and keeps file attachments', async ({ page }) => {
-    await page.getByRole('button', { name: 'Attach files for context', exact: true }).click();
+    await page.getByRole('button', { name: 'Add files and tools', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Project files', exact: true }).click();
     await page.getByRole('button', { name: 'Attach README.md', exact: true }).click();
     await page.locator('#prompt').fill('/rename Search improvements');
@@ -405,7 +405,7 @@ test.describe('slash commands app integration', () => {
   });
 
   test('keeps attachments and draft when a maintenance command cannot accept context', async ({ page }) => {
-    await page.getByRole('button', { name: 'Attach files for context', exact: true }).click();
+    await page.getByRole('button', { name: 'Add files and tools', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Project files', exact: true }).click();
     await page.getByRole('button', { name: 'Attach README.md', exact: true }).click();
     await page.evaluate(() => { (window as any).__appSlashNoAttachments = true; });

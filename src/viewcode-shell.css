@@ -169,20 +169,22 @@ html .workspace .new-task-page .composer-area{max-width:648px}
 .conversation-pane .composer-area .composer .composer-actions,
 .conversation-pane .composer-area .composer>.composer-tray>.composer-tools{display:contents}
 .conversation-pane .composer-area .composer .composer-input>textarea{flex:0 0 100%;min-height:64px;padding:10px 8px 8px}
-/* The row: attach and the permission mode lead; the model, the mic and Send close it. */
+/* The row: `+` and the access mode lead; the model, the mic and Send close it. */
 .conversation-pane .composer-area .composer .composer-actions>*,
 .conversation-pane .composer-area .composer .composer-tools>*{flex:none;order:5}
 .conversation-pane .composer-area .composer .composer-actions>[data-action=attach]{order:1;width:32px;height:32px}
 .conversation-pane .composer-area .composer .composer-tools>.mode-picker{order:2}
 /* A wrapping row wraps before it shrinks, so the model's width is capped to what the row has left (the composer is a size container) and its name truncates instead. */
-.conversation-pane .composer-area .composer .composer-tools>.model-picker{order:6;flex:0 1 auto;min-width:0;max-width:max(44px,calc(100cqw - 440px));margin-left:auto}
+.conversation-pane .composer-area .composer .composer-tools>.model-picker{order:6;flex:0 1 auto;min-width:0;max-width:max(44px,calc(100cqw - 300px));margin-left:auto}
 .conversation-pane .composer-area .composer .composer-actions>.composer-pill{order:9;margin-left:6px}
 .conversation-pane .composer-area .composer .composer-actions>:not([data-action=attach],.composer-pill){order:8}
-/* Where it runs (computer, folder, branch, linked PR) is a quiet last row of the card. */
-.workspace .conversation-pane .composer-area .composer>.composer-tray>.composer-context:not(.bot-thread *){order:10;flex:0 0 100%;display:flex;align-items:center;gap:2px;min-height:0;margin:2px 0 0;padding:4px 0 0;border:0;border-top:1px solid var(--ds-border);border-radius:0;background:none}
-.workspace .conversation-pane .composer-area .composer-tray .composer-context>:is(.composer-computer,.composer-local,.branch-chip,.link-chip){height:28px;font-size:var(--ds-text-meta)}
-.workspace .conversation-pane .composer-area .composer-tray .composer-context .icon{--icon-size:var(--icon-sm);--icon-stroke:var(--icon-stroke-sm)}
-.conversation-pane .composer-tray :is(.model-picker,.mode-picker,.composer-team-button,.composer-saver-button,.composer-council-button){height:32px;font-size:var(--ds-text-ui)}
+/* Every other control (team, saver, council, computer, branch, linked PR) is parked: drawn by its own
+ * module, invisible, laid over `+`, whose menu lists and presses them (composer-more.ts). What one
+ * opens is placed from its box, so each fills the host, and the host sits on `+`. */
+.conversation-pane .composer-area .composer{position:relative}
+.conversation-pane .composer-area .composer .composer-parked{position:absolute;left:8px;bottom:8px;flex:none;width:32px;height:32px;overflow:hidden;visibility:hidden;pointer-events:none}
+.conversation-pane .composer-area .composer .composer-parked :is(button,[role=img],.branch-chip-fixed){position:absolute;inset:0;display:block!important;width:auto;height:auto;min-width:0;max-width:none;margin:0;padding:0;scale:1}
+.conversation-pane .composer-tray :is(.model-picker,.mode-picker){height:32px;font-size:var(--ds-text-ui)}
 /* The mode says its name, and both pickers show they open a menu. */
 .conversation-pane .composer-tray .mode-picker>.sr-only{position:static;width:auto;height:auto;margin:0;overflow:visible;clip-path:none}
 .conversation-pane .composer-tray :is(.model-picker,.mode-picker)>.icon:last-child{display:block;--icon-size:12px;color:var(--faint)}
@@ -190,7 +192,7 @@ html .workspace .new-task-page .composer-area{max-width:648px}
 @container composer (max-width:560px){
   .conversation-pane .composer-tray .mode-picker>.sr-only{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%)}
   .conversation-pane .composer-tray :is(.model-picker,.mode-picker)>.icon:last-child{display:none}
-  .conversation-pane .composer-area .composer .composer-tools>.model-picker{max-width:max(44px,calc(100cqw - 350px))}
+  .conversation-pane .composer-area .composer .composer-tools>.model-picker{max-width:max(44px,calc(100cqw - 200px))}
   .conversation-pane .composer-area .composer .composer-actions>.composer-pill{margin-left:2px}
 }
 /* Send: a round light button. */

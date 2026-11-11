@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { pickFromPlus } from './composer-more-helper';
 import { openInspectorTab } from './inspector-tab-helper';
 // The workspace view (Conversation, Board, GitHub) is picked from the sidebar's view menu.
 const showView = async (page: Page, name: string) => { await page.getByRole('button', { name: /^Workspace view: / }).click(); await page.getByRole('menuitemradio', { name, exact: true }).click(); };
@@ -3136,7 +3137,7 @@ async function observeWorktreeCommands(page: Page, hook = ''): Promise<void> {
 
 async function submitWorktree(page: Page, branch: string): Promise<void> {
   // The prompt bar's branch chip is the one worktree control; a started task spawns a sibling task.
-  await page.locator('#branch-chip').click();
+  await pickFromPlus(page, page.locator('#branch-chip'));
   await page.getByRole('dialog', { name: 'Branch and worktree', exact: true }).getByRole('menuitem', { name: /New task in a worktree/ }).click();
   const dialog = page.locator('#dialog');
   await dialog.getByRole('textbox', { name: 'Branch name', exact: true }).fill(branch);

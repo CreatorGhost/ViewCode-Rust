@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { pickFromPlus } from './composer-more-helper';
 
 /* PandaCode Connect on the preview's sample account (src/preview-remote.ts): sign in, allow
  * remote control, then start a new task on another computer from the context bar. */
@@ -55,22 +56,22 @@ async function signedInNewTask(page: Page) {
 }
 async function chooseStudio(page: Page) {
   const computer = page.locator('#composer-computer');
-  await computer.click();
+  await pickFromPlus(page, computer);
   await page.getByRole('menuitemradio', { name: 'Studio iMac' }).click();
-  await expect(computer).toHaveAccessibleName('Computer: Studio iMac');
+  await expect(computer).toHaveAttribute('aria-label', 'Computer: Studio iMac');
 }
 
 test('the computer choice offers setup before sign-in and one row per computer after', async ({ page }) => {
   await page.goto('/');
   await page.locator('.new-task-button').click();
   // Signed out, Run on still shows so other computers can be set up from it.
-  await page.locator('#composer-computer').click();
+  await pickFromPlus(page, page.locator('#composer-computer'));
   await page.getByRole('menu', { name: 'Run on' }).getByRole('menuitemradio', { name: 'Set up other computers…' }).click();
   await expect(page.getByRole('tabpanel', { name: 'Remote access' })).toBeVisible();
   await page.keyboard.press('Escape');
   const computer = await signedInNewTask(page);
-  await expect(computer).toHaveAccessibleName('Computer: This computer');
-  await computer.click();
+  await expect(computer).toHaveAttribute('aria-label', 'Computer: This computer');
+  await pickFromPlus(page, computer);
   const menu = page.getByRole('menu', { name: 'Run on' });
   await expect(menu.getByRole('menuitemradio', { name: 'This computer' })).toHaveAttribute('aria-checked', 'true');
   await expect(menu.getByRole('menuitemradio', { name: 'Studio iMac' })).toBeEnabled();
@@ -103,7 +104,7 @@ test('a new task starts on another computer and is an ordinary task with a locke
   await expect(locked).toHaveText('on Studio iMac');
   await expect(page.locator('#composer-computer')).toHaveCount(0);
   await expect(page.locator('#composer-area [data-action="branch-menu"]')).toHaveCount(0);
-  await expect(page.locator('#composer-area .branch-chip-fixed')).toBeVisible();
+  await expect(page.locator('#composer-area .branch-chip-fixed')).toHaveCount(1);
   await expect(page.locator('#inspector-content')).toContainText('Runs on Studio iMac');
   await expect(page.locator('#commit-form')).toHaveCount(0);
   // The composer stays the ordinary one.
@@ -183,7 +184,7 @@ test('picking another computer limits the picker to its catalog, and local is re
   await page.keyboard.press('Escape');
 
   const computer = page.locator('#composer-computer');
-  await computer.click();
+  await pickFromPlus(page, computer);
   await page.getByRole('menuitemradio', { name: 'This computer' }).click();
   const local = await openPicker(page);
   await expect(local.getByRole('tab', { name: 'Kimi Code', exact: true })).toBeVisible();
@@ -198,7 +199,7 @@ test('a model missing on the chosen computer is swapped, with a notice', async (
   await expect(picker.getByRole('tab', { name: 'Claude Code', exact: true })).toHaveAttribute('aria-selected', 'true');
   await expect(picker.locator('[role="option"][aria-current="true"]')).toHaveCount(1);
   await page.keyboard.press('Escape');
-  await page.locator('#composer-computer').click();
+  await pickFromPlus(page, page.locator('#composer-computer'));
   await page.getByRole('menuitemradio', { name: 'This computer' }).click();
   picker = await openPicker(page);
   await expect(picker.getByRole('tab', { name: 'Kimi Code', exact: true })).toHaveAttribute('aria-selected', 'true');

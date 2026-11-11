@@ -23,8 +23,8 @@ async function probe(page: Page): Promise<void> {
 }
 
 async function openSketch(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Attach files for context' }).click();
-  await page.getByRole('dialog', { name: 'Attach', exact: true }).getByRole('menuitem', { name: /Sketch a mockup…/ }).click();
+  await page.getByRole('button', { name: 'Add files and tools' }).click();
+  await page.getByRole('dialog', { name: 'Add files and tools', exact: true }).getByRole('menuitem', { name: /Sketch a mockup…/ }).click();
   await expect(dialog(page)).toBeVisible();
   await expect(canvas(page)).toBeVisible();
 }

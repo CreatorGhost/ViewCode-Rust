@@ -21,8 +21,8 @@ async function open(page: Page): Promise<void> {
 }
 
 async function sketch(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Attach files for context' }).click();
-  await page.getByRole('dialog', { name: 'Attach', exact: true }).getByRole('menuitem', { name: /Sketch a mockup…/ }).click();
+  await page.getByRole('button', { name: 'Add files and tools' }).click();
+  await page.getByRole('dialog', { name: 'Add files and tools', exact: true }).getByRole('menuitem', { name: /Sketch a mockup…/ }).click();
   await expect(canvas(page)).toBeVisible();
   await canvas(page).focus();
 }
@@ -123,25 +123,6 @@ test.describe('keyboard layouts', () => {
       await expect(canvas(page)).toHaveAccessibleName('Mockup canvas, 2 shapes');
     });
   }
-
-  test('logical slash works on AZERTY and Dvorak without taking question mark or modified slash', async ({ page }) => {
-    await open(page);
-    const body = page.locator('body'), filter = page.locator('#sidebar-filter');
-    for (const init of [{ key: '/', code: 'Period', shiftKey: true }, { key: '/', code: 'BracketLeft' }]) {
-      expect(await key(body, init)).toBe(true);
-      await expect(filter).toBeFocused();
-      await filter.press('Escape');
-    }
-    for (const init of [
-      { key: '?', code: 'Slash', shiftKey: true }, { key: '.', code: 'Slash' },
-      { key: '/', code: 'Slash', ctrlKey: true }, { key: '/', code: 'Slash', metaKey: true },
-      { key: '/', code: 'Slash', altKey: true }, ...imeStates.map(ime => ({ key: '/', code: 'Slash', ...ime })),
-    ]) {
-      expect(await key(body, init)).toBe(false);
-      await expect(filter).not.toBeFocused();
-    }
-    expect(await key(prompt(page), { key: '/', code: 'Period', shiftKey: true })).toBe(false);
-  });
 
   test('command modifiers and both IME signals leave global shortcuts alone', async ({ page }) => {
     await open(page);

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openPlus, pickFromPlus, plus, plusMenu } from './composer-more-helper';
 
 const button = (page: Page) => page.locator('.composer-council-button');
 const panel = (page: Page) => page.locator('.council-panel');
@@ -32,16 +33,16 @@ const strip = (page: Page) => page.locator('#composer .council-strip');
 const disclosure = (page: Page) => strip(page).locator('.council-strip-toggle');
 const ready = (page: Page) => expect(page.locator('html')).toHaveAttribute('data-ready', '');
 /** Past the quiet window after a thread first shows (motion plays only for changes after it). */
-const settle = async (page: Page) => { await ready(page); await expect(button(page)).toBeVisible(); await page.waitForTimeout(700); };
+const settle = async (page: Page) => { await ready(page); await expect(button(page)).toHaveCount(1); await page.waitForTimeout(700); };
 
 // One describe, so the WebKit config's title grep can select every Council test.
 test.describe('Council', () => {
 test('while off, a choice only sets what council starts with', async ({ page }) => {
   await open(page);
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await option(page, 'target', '8.5').click();
   await expect(option(page, 'target', '8.5')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#team-trigger')).toHaveAccessibleName('Team: off');
+  await expect(page.locator('#team-trigger')).toHaveAttribute('aria-label', 'Team: off');
   expect(await calls(page)).toEqual([]);
   await toggle(page).click();
   await expect.poll(() => calls(page)).toEqual([{ target: 8.5, maxRounds: 10, reviewers: 0 }]);
@@ -49,7 +50,7 @@ test('while off, a choice only sets what council starts with', async ({ page }) 
 
 test('a native error shows in the panel and the control returns to the true state', async ({ page }) => {
   await open(page, '/?council', { architect_set_council: 'Council refused by native.' });
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await expect(option(page, 'target', '9.5')).toHaveAttribute('aria-pressed', 'true');
   await option(page, 'target', '8.0').click();
   await expect(panel(page).getByRole('alert')).toHaveText('Council was not changed: Council refused by native.');
@@ -61,43 +62,45 @@ test('a native error shows in the panel and the control returns to the true stat
 
 test('a refused team leaves the switch off and says why', async ({ page }) => {
   await open(page, '/', { architect_configure: 'Pause the task goal first.' });
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await toggle(page).click();
   await expect(panel(page).getByRole('alert')).toHaveText('Council was not changed: Pause the task goal first.');
   await expect(toggle(page)).not.toBeChecked();
   expect(await calls(page)).toEqual([]);
 });
 
-test('Escape closes the panel and returns focus to the button', async ({ page }) => {
+test('Escape closes the panel and returns focus to +, which opened it', async ({ page }) => {
   await open(page);
-  await button(page).focus();
+  await plus(page).focus();
+  await page.keyboard.press('Enter');
+  await plusMenu(page).getByRole('menuitem', { name: 'Council: off', exact: true }).focus();
   await page.keyboard.press('Enter');
   await expect(toggle(page)).toBeFocused();
   await expect(button(page)).toHaveAttribute('aria-expanded', 'true');
   await page.keyboard.press('Escape');
   await expect(panel(page)).toHaveCount(0);
-  await expect(button(page)).toBeFocused();
+  await expect(plus(page)).toBeFocused();
   await expect(button(page)).toHaveAttribute('aria-expanded', 'false');
 });
 
 test('the open panel follows the thread, and a pending change stays with its own thread', async ({ page }) => {
   await open(page, '/', {}, 1500);
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await toggle(page).click();
   await expect(toggle(page)).toBeChecked();
   await page.locator('.sidebar').getByText('Refine the navigation').click();
   await expect(panel(page)).toHaveCount(0);
-  await expect(button(page)).toHaveAccessibleName('Council: off');
-  await button(page).click();
+  await expect(button(page)).toHaveAttribute('aria-label', 'Council: off');
+  await pickFromPlus(page, button(page));
   await expect(toggle(page)).not.toBeChecked();
   await page.keyboard.press('Escape');
   await page.locator('.sidebar').getByText('Make search feel instant').click();
-  await expect(button(page)).toHaveAccessibleName('Council: on, target 9.0', { timeout: 15_000 });
+  await expect(button(page)).toHaveAttribute('aria-label', 'Council: on, target 9.0', { timeout: 15_000 });
 });
 
 test('Tab wraps inside the panel', async ({ page }) => {
   await open(page);
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await expect(toggle(page)).toBeFocused();
   await page.keyboard.press('Shift+Tab');
   // The last control is the remembered "Turn on for new threads".
@@ -106,35 +109,35 @@ test('Tab wraps inside the panel', async ({ page }) => {
   await expect(toggle(page)).toBeFocused();
 });
 
-test('the panel follows its button when the window resizes', async ({ page }) => {
+test('the panel follows + (where its parked button sits) when the window resizes', async ({ page }) => {
   await open(page);
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await expect(panel(page)).toBeVisible();
   await page.setViewportSize({ width: 900, height: 800 });
   await expect.poll(async () => {
-    const [b, p] = await Promise.all([button(page).boundingBox(), panel(page).boundingBox()]);
+    const [b, p] = await Promise.all([plus(page).boundingBox(), panel(page).boundingBox()]);
     return Math.abs((b!.x + b!.width / 2) - Math.min(900 - 12 - p!.width / 2, Math.max(12 + p!.width / 2, p!.x + p!.width / 2))) < 2 && p!.x + p!.width <= 900 - 11 && p!.y + p!.height <= b!.y;
   }).toBe(true);
 });
 
 test('a refusal that lands after the panel closed is read aloud and shown on the next open', async ({ page }) => {
   await open(page, '/?council', { architect_set_council: 'Council refused by native.' }, 800);
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await option(page, 'target', '8.0').click();
   await page.keyboard.press('Escape');
   await expect(panel(page)).toHaveCount(0);
   await expect(page.locator('#composer-live')).toHaveText('Council was not changed: Council refused by native.');
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await expect(panel(page).getByRole('alert')).toHaveText('Council was not changed: Council refused by native.');
   await expect(option(page, 'target', '9.5')).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('Escape');
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await expect(panel(page).getByRole('alert')).toBeHidden();
 });
 
 test('an IME cancelling its composition keeps its Escape', async ({ page }) => {
   await open(page);
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await expect(panel(page)).toBeVisible();
   const kept = await page.evaluate(() => {
     const event = new KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true, cancelable: true });
@@ -147,31 +150,31 @@ test('an IME cancelling its composition keeps its Escape', async ({ page }) => {
 
 test("one thread's slow change does not hold up another's, and the copy says when a team turns on", async ({ page }) => {
   await open(page, '/?council', {}, 4000, 'session-1');
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await expect(panel(page).locator('#council-about')).not.toContainText('Starts a team');
   await option(page, 'target', '9.0').click();
   await page.keyboard.press('Escape');
   await page.locator('.sidebar').getByText('Refine the navigation').click();
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await expect(panel(page).locator('#council-about')).toHaveText('Reviewers score the work until all reach your target. Starts a team; these become your defaults.');
   await toggle(page).click();
   // Session 1's call is still waiting out its 4 s; this one does not queue behind it.
-  await expect(button(page)).toHaveAccessibleName('Council: on, target 9.0', { timeout: 3000 });
+  await expect(button(page)).toHaveAttribute('aria-label', 'Council: on, target 9.0', { timeout: 3000 });
 });
 
 test('turning Council on with no team redraws the composer once the team starts', async ({ page }) => {
   await open(page);
   // A redraw replaces the composer form (the prompt node itself is kept, for typing focus).
   await page.locator('#composer').evaluate(form => { form.dataset.before = 'yes'; });
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await toggle(page).click();
-  await expect(page.locator('#team-trigger')).toHaveAccessibleName(/: on$/);
+  await expect(page.locator('#team-trigger')).toHaveAttribute('aria-label', /: on$/);
   await expect(page.locator('#composer')).not.toHaveAttribute('data-before', 'yes');
 });
 
 test('the note says what the settings do while Council is off', async ({ page }) => {
   await open(page);
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   // The header's description says it, after what Council does.
   await expect(panel(page).locator('#council-about')).toContainText('these become your defaults');
   await expect(panel(page).locator('[data-field="maxRounds"] button')).toHaveText(['3', '5', '10', '25']);
@@ -181,7 +184,7 @@ test('the note says what the settings do while Council is off', async ({ page })
 
 test('a native value outside the segment shows as a selected extra option', async ({ page }) => {
   await open(page, '/?council=limit');
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await expect(panel(page).getByText('Max rounds', { exact: true })).toBeVisible();
   const extra = panel(page).locator('[data-field="maxRounds"] [data-extra]');
   await expect(extra).toHaveText('2');
@@ -193,19 +196,19 @@ test('a native value outside the segment shows as a selected extra option', asyn
 
 test('targets run from 7 to 10', async ({ page }) => {
   await open(page);
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await expect(panel(page).locator('[data-field="target"] button')).toHaveText(['7.0', '8.0', '8.5', '9.0', '9.5', '10.0']);
 });
 
 test('switching threads while the team starts says nothing went wrong', async ({ page }) => {
   await open(page, '/', {}, 0, '', { architect_profiles: 1500 });
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await toggle(page).click();
   await page.locator('.sidebar').getByText('Refine the navigation').click();
   await page.waitForTimeout(2500);
   await expect(page.locator('#composer-live')).not.toContainText('could not start');
   await page.locator('.sidebar').getByText('Make search feel instant').click();
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await expect(panel(page).getByRole('alert')).toBeHidden();
 });
 
@@ -215,7 +218,7 @@ test('a canceled no-team enable clears busy and optimistic state and allows retr
   await page.evaluate(() => {
     (window as any).__hold = { architect_profiles: new Promise<void>(resolve => { (window as any).__releaseProfiles = resolve; }) };
   });
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await toggle(page).click();
   await expect(button(page)).toHaveAttribute('aria-busy', 'true');
   await expect(toggle(page)).toBeChecked();
@@ -227,13 +230,13 @@ test('a canceled no-team enable clears busy and optimistic state and allows retr
   });
   await page.locator('.sidebar').getByText('Make search feel instant').click();
   await expect(button(page)).toHaveAttribute('aria-busy', 'false');
-  await expect(button(page)).toHaveAccessibleName('Council: off');
-  await button(page).click();
+  await expect(button(page)).toHaveAttribute('aria-label', 'Council: off');
+  await pickFromPlus(page, button(page));
   await expect(toggle(page)).not.toBeChecked();
   await expect(panel(page).getByRole('alert')).toBeHidden();
   expect(await calls(page)).toEqual([]);
   await toggle(page).click();
-  await expect(button(page)).toHaveAccessibleName('Council: on, target 9.0');
+  await expect(button(page)).toHaveAttribute('aria-label', 'Council: on, target 9.0');
   await expect(button(page)).toHaveAttribute('aria-busy', 'false');
   await expect(toggle(page)).toBeChecked();
   expect(await calls(page)).toEqual([{ target: 9.0, maxRounds: 10, reviewers: 0 }]);
@@ -241,7 +244,7 @@ test('a canceled no-team enable clears busy and optimistic state and allows retr
 
 test('copy: Auto is the lead picking reviewers, and an open round says so far', async ({ page }) => {
   await open(page, '/?council');
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await expect(panel(page).locator('#council-about')).toContainText('Uses more of your plan.');
   await expect(option(page, 'reviewers', 'Auto: the lead picks reviewers for the work')).toHaveAttribute('data-tip', 'Auto: the lead picks reviewers for the work');
   await expect(panel(page).locator('.council-lowest')).toHaveText(' · lowest so far 9.2');
@@ -249,7 +252,7 @@ test('copy: Auto is the lead picking reviewers, and an open round says so far', 
 
 test('"Turn on for new threads" starts Council with the first send of a new thread', async ({ page }) => {
   await open(page);
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await panel(page).getByLabel('Start new threads with Council on').check();
   expect(JSON.parse(await page.evaluate(() => localStorage.getItem('pandacode.council') ?? '{}')).newThreads).toBe(true);
   await page.keyboard.press('Escape');
@@ -264,7 +267,7 @@ test('"Turn on for new threads" starts Council with the first send of a new thre
 test('with Classic team setup, enabling Council on a thread with no team opens that setup', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('pandacode.teamClassic', 'true'));
   await open(page);
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await toggle(page).click();
   await expect(page.locator('.architect-setup-popover')).toBeVisible();
   await expect(panel(page)).toHaveCount(0);
@@ -274,7 +277,7 @@ test('with Classic team setup, enabling Council on a thread with no team opens t
 test('panel hierarchy: one description, labels in text ink, a footer checkbox for new threads, and it fits 1280x820', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 820 });
   await open(page, '/?council');
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   const intro = await panel(page).locator('#council-about').textContent();
   // What Council does, then what it costs: two sentences, one paragraph.
   expect(intro!.trim().split(/[.!?](\s|$)/).filter(part => part && part.trim()).length).toBe(2);
@@ -299,7 +302,7 @@ const composerSettled = (page: Page) => page.waitForFunction(() => {
 }, undefined, { polling: 300 });
 
 async function newThreadsOn(page: Page): Promise<void> {
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await panel(page).getByLabel('Start new threads with Council on').check();
   await page.keyboard.press('Escape');
   await page.locator('.new-task-button').click();
@@ -352,7 +355,7 @@ const ready = (page: Page) => expect(page.locator('html')).toHaveAttribute('data
 
 test('each segmented row is one Tab stop: arrows, Home and End move focus only, Enter or Space picks', async ({ page }) => {
   await open(page, '/?council');
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   for (const field of ['target', 'maxRounds', 'reviewers']) expect(await panel(page).locator(`[data-field="${field}"] button[tabindex="0"]`).count()).toBe(1);
   await option(page, 'target', '9.5').focus();
   await page.keyboard.press('ArrowRight');
@@ -371,27 +374,28 @@ test('each segmented row is one Tab stop: arrows, Home and End move focus only, 
 test('the panel places itself again when its content changes', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 640 });
   await open(page);
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await toggle(page).click();
   await expect(toggle(page)).toBeChecked();
-  const [p, b] = await Promise.all([panel(page).boundingBox(), button(page).boundingBox()]);
+  const [p, b] = await Promise.all([panel(page).boundingBox(), plus(page).boundingBox()]);
   expect(p!.y).toBeGreaterThanOrEqual(0);
   expect(p!.y + p!.height).toBeLessThanOrEqual(b!.y);
 });
 
-test('an open tooltip follows the composer button when its name changes', async ({ page }) => {
+test('the + menu names Council by its state, and follows it', async ({ page }) => {
   await open(page, '/?council');
-  await button(page).hover();
-  await expect(page.locator('.tip-bubble.tip-visible')).toHaveText('Council: Round 2 of 10 · reviewing');
+  await expect((await openPlus(page)).getByRole('menuitem', { name: 'Council: Round 2 of 10 · reviewing', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
   await page.evaluate(() => (window as any).__councilSeat({ round: 2, lens: 'User experience', score: 8.6 }));
   // Every seat of round 2 is scored now, so the round is complete (the mock moves on like native).
-  await expect(page.locator('.tip-bubble.tip-visible')).toHaveText('Council: Round 2 of 10 · fixing');
+  await expect(button(page)).toHaveAttribute('aria-label', 'Council: Round 2 of 10 · fixing');
+  await expect((await openPlus(page)).getByRole('menuitem', { name: 'Council: Round 2 of 10 · fixing', exact: true })).toBeVisible();
 });
 
 test('in forced colours a switch shows on and off', async ({ page }) => {
   await page.emulateMedia({ forcedColors: 'active' });
   await open(page, '/?council');
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   const on = await toggle(page).evaluate(node => getComputedStyle(node).backgroundColor);
   await toggle(page).click(); await expect(toggle(page)).not.toBeChecked();
   const off = await toggle(page).evaluate(node => getComputedStyle(node).backgroundColor);
@@ -412,7 +416,7 @@ const plays = (page: Page): Promise<{ starts: Record<string, number>; hidden: st
 
 test('Auto is explained, the off note is plain, and the button is busy while a switch is on its way', async ({ page }) => {
   await open(page, '/?council', {}, 1500);
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await expect(option(page, 'reviewers', 'Auto: the lead picks reviewers for the work')).toHaveAttribute('aria-pressed', 'true');
   await expect(option(page, 'reviewers', 'Auto: the lead picks reviewers for the work')).toHaveAttribute('data-tip', 'Auto: the lead picks reviewers for the work');
   await option(page, 'reviewers', '3').click();
@@ -422,7 +426,7 @@ test('Auto is explained, the off note is plain, and the button is busy while a s
 
 test('Tab and Shift+Tab stay inside the panel through every control, from any of them (WebKit too)', async ({ page }) => {
   await open(page, '/?council');
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await expect(toggle(page)).toBeFocused();
   const where = () => page.evaluate(() => { const active = document.activeElement as HTMLElement; return active.closest('.council-panel') ? (active.classList.contains('council-switch') ? 'switch' : active.classList.contains('council-new-threads') ? 'new' : active.closest<HTMLElement>('[data-field]')!.dataset.field!) : `outside:${active.tagName}`; });
   const order = ['switch', 'target', 'maxRounds', 'reviewers', 'new'];
@@ -447,14 +451,14 @@ test('at 900×420 the composer panel fits above its button without scrolling', a
   await page.setViewportSize({ width: 900, height: 420 });
   await open(page, '/?council');
   await composerSettled(page);
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await expect(panel(page)).toBeVisible();
   expect(await panel(page).evaluate(node => node.scrollHeight <= node.clientHeight)).toBe(true);
 });
 
 test('with Council on and nothing reviewed yet, the panel says so quietly', async ({ page }) => {
   await open(page, '/');
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await toggle(page).click();
   await expect(toggle(page)).toBeChecked();
   await expect(panel(page).locator('.council-idle')).toHaveText('No changes to review yet');
@@ -464,7 +468,7 @@ test('with Council on and nothing reviewed yet, the panel says so quietly', asyn
 
 test('panel readability: the footer is meta size, and the panel is near-opaque over the card', async ({ page }) => {
   await open(page, '/?council=asking');
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   const [foot, meta] = await panel(page).locator('.council-new').evaluate(node => { const probe = document.createElement('span'); probe.style.fontSize = 'var(--ds-text-meta)'; node.append(probe); const sizes = [getComputedStyle(node).fontSize, getComputedStyle(probe).fontSize]; probe.remove(); return sizes; });
   expect(foot).toBe(meta);
   const alpha = await panel(page).evaluate(node => { const n = getComputedStyle(node).backgroundColor.match(/[\d.]+/g)!.map(Number); return n.length > 3 ? n[3] : 1; });
@@ -473,10 +477,10 @@ test('panel readability: the footer is meta size, and the panel is near-opaque o
 
 test('turning Council on and a refusal are read aloud, even with the panel open', async ({ page }) => {
   await open(page);
-  await button(page).click(); await toggle(page).click();
+  await pickFromPlus(page, button(page)); await toggle(page).click();
   await expect(page.locator('#composer-live')).toContainText('Council is on. Target 9.0.');
   await open(page, '/?council', { architect_set_council: 'Council refused by native.' });
-  await button(page).click();
+  await pickFromPlus(page, button(page));
   await option(page, 'target', '8.0').click();
   await expect(panel(page).locator('.council-error')).toBeVisible();
   await expect(page.locator('#composer-live')).toContainText('Council was not changed: Council refused by native.');
@@ -511,7 +515,7 @@ for (const [kind, state, score, extra] of [
 test('no strip while Council is off, or on with no round yet', async ({ page }) => {
   await open(page, '/');
   await expect(strip(page)).toHaveCount(0);
-  await button(page).click(); await toggle(page).click();
+  await pickFromPlus(page, button(page)); await toggle(page).click();
   await expect(button(page)).toHaveAttribute('data-on', '');
   await expect(strip(page)).toHaveCount(0);
 });
@@ -579,7 +583,7 @@ test('asking: Accept and finish, then the settled strip can be dismissed until t
   // Still dismissed after the composer draws again (another thread and back).
   await page.locator('.sidebar').getByText('Refine the navigation').click();
   await page.locator('.sidebar').getByText('Make search feel instant').click();
-  await expect(button(page)).toBeVisible();
+  await expect(button(page)).toHaveCount(1);
   await expect(strip(page)).toHaveCount(0);
 });
 
@@ -647,16 +651,16 @@ for (const used of [25, 30]) test(`at ${used} used rounds there is no empty Rais
 test('the tray button is settings only: no score badge, a cue dot when asking or settled', async ({ page }) => {
   await open(page, '/?council');
   await expect(button(page).locator('b')).toHaveCount(0);
-  await expect(button(page)).toHaveAccessibleName('Council: Round 2 of 10 · reviewing');
+  await expect(button(page)).toHaveAttribute('aria-label', 'Council: Round 2 of 10 · reviewing');
   const dot = () => button(page).locator('.council-glyph').evaluate(node => getComputedStyle(node, '::after').content !== 'none');
   await expect.poll(dot).toBe(false);
   await open(page, '/?council=asking');
-  await expect(button(page)).toHaveAccessibleName('Council needs you');
+  await expect(button(page)).toHaveAttribute('aria-label', 'Council needs you');
   await expect.poll(dot).toBe(true);
   await open(page, '/?council=passed');
   await expect.poll(dot).toBe(true);
   await open(page, '/?council=accepted');
-  await expect(button(page)).toHaveAccessibleName(/^Council: Accepted/);
+  await expect(button(page)).toHaveAttribute('aria-label', /^Council: Accepted/);
   await expect.poll(dot).toBe(false);
 });
 

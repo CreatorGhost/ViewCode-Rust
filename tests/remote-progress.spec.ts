@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { pickFromPlus } from './composer-more-helper';
 
 /* The strip above a New task's composer while it starts on another computer
  * (src/remote-progress.ts), driven by the preview host's stages (src/preview-remote.ts). */
@@ -105,7 +106,7 @@ async function sendToStudio(page: Page, text: string) {
   await expect(panel.getByRole('button', { name: 'Sign out' })).toBeVisible();
   await page.getByRole('button', { name: /^back/i }).click();
   await page.locator('.new-task-button').click();
-  await page.locator('#composer-computer').click();
+  await pickFromPlus(page, page.locator('#composer-computer'));
   await page.getByRole('menuitemradio', { name: 'Studio iMac' }).click();
   await page.getByRole('textbox', { name: 'Message your coding agent' }).fill(text);
   await page.getByRole('button', { name: 'Send message' }).click();

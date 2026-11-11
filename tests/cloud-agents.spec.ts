@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { pickFromPlus } from './composer-more-helper';
 
 /* Cloud agents in the preview (src/preview.ts, src/preview-vm.ts): connect a sandbox provider,
  * pick it in a New task's "Run on" menu, and watch the cloud machine get ready. */
@@ -32,10 +33,10 @@ async function startOnE2b(page: Page, text: string) {
   await newTask(page);
   await connectE2b(page);
   const computer = page.locator('#composer-computer');
-  await expect(computer).toHaveAccessibleName('Computer: This computer');
-  await computer.click();
+  await expect(computer).toHaveAttribute('aria-label', 'Computer: This computer');
+  await pickFromPlus(page, computer);
   await page.getByRole('menuitemradio', { name: 'Cloud · E2B' }).click();
-  await expect(computer).toHaveAccessibleName('Computer: Cloud · E2B');
+  await expect(computer).toHaveAttribute('aria-label', 'Computer: Cloud · E2B');
   await page.getByRole('textbox', { name: 'Message your coding agent' }).fill(text);
   await page.getByRole('button', { name: 'Send message' }).click();
 }
@@ -44,7 +45,7 @@ const strip = (page: Page) => page.locator('#composer-area .cloud-strip');
 test('the Run on menu lists cloud providers without Connect sign-in', async ({ page }) => {
   await newTask(page);
   await connectE2b(page);
-  await page.locator('#composer-computer').click();
+  await pickFromPlus(page, page.locator('#composer-computer'));
   const menu = page.getByRole('menu', { name: 'Run on' });
   await expect(menu.getByRole('menuitemradio', { name: 'This computer' })).toHaveAttribute('aria-checked', 'true');
   await expect(menu.getByRole('menuitemradio', { name: 'Cloud · E2B' })).toBeEnabled();

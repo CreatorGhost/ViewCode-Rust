@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openPlus, pickFromPlus } from './composer-more-helper';
 
 // Settings → Agent teams: the classic Team setup switch, and named agent teams that appear in the
 // model picker and orchestrate only their own models.
@@ -62,7 +63,7 @@ const teamTrigger = (page: Page) => page.locator('#team-trigger');
 const teamItem = (page: Page, name: string) => page.getByRole('menuitemradio', { name, exact: true });
 /** Picks a Team menu item; the menu stays open, applying, until the save settles. */
 async function chooseTeam(page: Page, name: string): Promise<void> {
-  await teamTrigger(page).click();
+  await pickFromPlus(page, teamTrigger(page));
   await teamItem(page, name).click();
 }
 const gateModels = (page: Page) => page.evaluate(() => {
@@ -74,7 +75,6 @@ test('Team gives immediate feedback while cold model discovery and saving are pe
   await install(page);
   const team = teamTrigger(page), prompt = page.locator('#prompt');
   await prompt.fill('Review this project');
-  const idleBackground = await team.evaluate(el => getComputedStyle(el).backgroundColor);
   await gateModels(page);
   await page.evaluate(() => {
     const state = (window as any).__agentTeams;
@@ -82,8 +82,9 @@ test('Team gives immediate feedback while cold model discovery and saving are pe
   });
   await chooseTeam(page, 'Balanced team');
   await expect(team).toHaveAttribute('aria-busy', 'true', { timeout: 500 });
-  await expect(team.locator('.support-spinner')).toBeVisible();
-  expect(await team.evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(idleBackground);
+  // Team is parked behind +: the open Team menu shows the change is being applied, and the control keeps its spinner for its row.
+  await expect(team.locator('.support-spinner')).toHaveCount(1);
+  await expect(page.getByRole('dialog', { name: 'Team', exact: true }).getByRole('status')).toHaveText('Applying…');
   await expect.poll(async () => (await calls(page, 'list_provider_models')).length).toBeGreaterThan(0);
   expect(await calls(page, 'architect_configure')).toHaveLength(0);
   for (const theme of ['light', 'dark']) {
@@ -95,9 +96,9 @@ test('Team gives immediate feedback while cold model discovery and saving are pe
   await prompt.press('Enter');
   await expect(prompt).toHaveValue('Review this project');
   expect(await calls(page, 'send_message')).toHaveLength(0);
-  await page.setViewportSize({ width: 600, height: 940 });
-  await expect(team.locator('.support-spinner')).toBeVisible();
-  await page.setViewportSize({ width: 1440, height: 940 });
+  // While it is pending, Team's row in the + menu says so.
+  await expect((await openPlus(page)).getByRole('menuitem', { name: (await team.getAttribute('aria-label'))!, exact: true })).toHaveAccessibleDescription('Working…');
+  await page.keyboard.press('Escape');
   await page.evaluate(() => (window as any).__agentTeams.releaseModels());
   await expect.poll(async () => (await calls(page, 'architect_configure')).length).toBe(1);
   await expect(team).toHaveAttribute('aria-busy', 'true');
@@ -247,9 +248,9 @@ test('a named agent team is a choice in the model picker and lists only its mode
   await expect(modelButton(page)).toContainText('Reviewers');
   await expect(modelButton(page)).toContainText('2 models');
   // The Team button names the agent team, and its menu checks it.
-  await expect(page.locator('#team-trigger')).toHaveAccessibleName('Reviewers: on');
+  await expect(page.locator('#team-trigger')).toHaveAttribute('aria-label', 'Reviewers: on');
   await expect(page.locator('#team-trigger')).toHaveAttribute('data-on', '');
-  await page.locator('#team-trigger').click();
+  await pickFromPlus(page, page.locator('#team-trigger'));
   await expect(page.getByRole('menuitemradio', { checked: true })).toHaveText(/Reviewers/);
   await expect(page.getByRole('menuitemradio', { name: 'Reviewers', exact: true })).toHaveAccessibleDescription('Agent team');
   for (const kind of ['Cheap team', 'Balanced team', 'Best team']) await expect(page.getByRole('menuitemradio', { name: kind, exact: true })).toHaveAccessibleDescription('Replaces Reviewers');
@@ -264,27 +265,27 @@ test('a named agent team is a choice in the model picker and lists only its mode
   await picker(page).locator('.model-menu-option:not(.model-menu-team):not([disabled])').first().click();
   await expect(picker(page)).toBeHidden();
   expect((await calls(page, 'architect_configure')).at(-1).args).toMatchObject({ config: null });
-  await expect(page.locator('#team-trigger')).toHaveAccessibleName('Team: off');
+  await expect(page.locator('#team-trigger')).toHaveAttribute('aria-label', 'Team: off');
   await expect(page.locator('#team-trigger')).not.toHaveAttribute('data-on');
   await expect(modelButton(page)).not.toContainText('Reviewers');
   // No team in the Team menu removes an agent team too.
   await modelButton(page).click();
   await picker(page).getByRole('tab', { name: /^Teams/ }).click();
   await picker(page).getByRole('option', { name: 'Agent team · Reviewers', exact: true }).click();
-  await expect(page.locator('#team-trigger')).toHaveAccessibleName('Reviewers: on');
-  await page.locator('#team-trigger').click();
+  await expect(page.locator('#team-trigger')).toHaveAttribute('aria-label', 'Reviewers: on');
+  await pickFromPlus(page, page.locator('#team-trigger'));
   await page.getByRole('menuitemradio', { name: 'No team', exact: true }).click();
-  await expect(page.locator('#team-trigger')).toHaveAccessibleName('Team: off');
+  await expect(page.locator('#team-trigger')).toHaveAttribute('aria-label', 'Team: off');
   expect((await calls(page, 'architect_configure')).at(-1).args).toMatchObject({ config: null });
   await expect(modelButton(page)).not.toContainText('Reviewers');
   // A team kind replaces the named team with an automatic one.
   await modelButton(page).click();
   await picker(page).getByRole('tab', { name: /^Teams/ }).click();
   await picker(page).getByRole('option', { name: 'Agent team · Reviewers', exact: true }).click();
-  await expect(page.locator('#team-trigger')).toHaveAccessibleName('Reviewers: on');
-  await page.locator('#team-trigger').click();
+  await expect(page.locator('#team-trigger')).toHaveAttribute('aria-label', 'Reviewers: on');
+  await pickFromPlus(page, page.locator('#team-trigger'));
   await page.getByRole('menuitemradio', { name: 'Best team', exact: true }).click();
-  await expect(page.locator('#team-trigger')).toHaveAccessibleName('Best team: on');
+  await expect(page.locator('#team-trigger')).toHaveAttribute('aria-label', 'Best team: on');
   const replaced = (await calls(page, 'architect_configure')).at(-1).args.config;
   expect(replaced.auto).toBe(true);
   expect(replaced.rosterOnly).toBeFalsy();

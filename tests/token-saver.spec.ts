@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { pickFromPlus } from './composer-more-helper';
 
 // Sent messages are captured; the preview never runs an agent for them.
 const sent = (page: Page): Promise<string[]> => page.evaluate(() => ((window as any).__saverSent ?? []).map((entry: any) => entry.text));
@@ -33,7 +34,7 @@ async function send(page: Page, text: string): Promise<void> {
 test('packs ride along once, fold in the transcript, and the switch-off is said once', async ({ page }) => {
   await open(page);
   await expect(saver(page)).toHaveAttribute('aria-pressed', 'false');
-  await saver(page).click();
+  await pickFromPlus(page, saver(page));
   const panel = page.getByRole('dialog', { name: 'Token saver' });
   await expect(panel).toBeVisible();
   await panel.getByRole('switch', { name: /Caveman/ }).click();
@@ -59,7 +60,7 @@ test('packs ride along once, fold in the transcript, and the switch-off is said 
   await send(page, 'And the docs');
   expect((await sent(page)).at(-1)).toBe('And the docs');
 
-  await saver(page).click();
+  await pickFromPlus(page, saver(page));
   await panel.getByRole('button', { name: 'Turn all off' }).click();
   await page.keyboard.press('Escape');
   await expect(saver(page)).toHaveAttribute('aria-pressed', 'false');
@@ -71,7 +72,7 @@ test('packs ride along once, fold in the transcript, and the switch-off is said 
 
 test('turning on a missing tool installs it, and a thread can become the default', async ({ page }) => {
   await open(page);
-  await saver(page).click();
+  await pickFromPlus(page, saver(page));
   const panel = page.getByRole('dialog', { name: 'Token saver' });
   const rtk = panel.getByRole('switch', { name: /RTK compression/ });
   await expect(rtk).toHaveAttribute('aria-checked', 'false');
@@ -98,7 +99,7 @@ test('turning on a missing tool installs it, and a thread can become the default
 test('a nearly full context offers one-click tightening in the panel', async ({ page }) => {
   // The preview thread reports a mostly full context window, like a long real thread.
   await open(page, 'usedTokens: 820000, contextWindow: 1000000');
-  await saver(page).click();
+  await pickFromPlus(page, saver(page));
   const panel = page.getByRole('dialog', { name: 'Token saver' });
   const hint = panel.locator('.saver-hint');
   await expect(hint).toContainText('Context 82% full');
@@ -116,13 +117,13 @@ test('a nearly full context offers one-click tightening in the panel', async ({ 
 
 test('the panel shows measured usage since the packs changed', async ({ page }) => {
   await open(page);
-  await saver(page).click();
+  await pickFromPlus(page, saver(page));
   const panel = page.getByRole('dialog', { name: 'Token saver' });
   await panel.getByRole('switch', { name: /Caveman/ }).click();
   await expect(panel.locator('.saver-measured')).toHaveCount(0);
   await page.keyboard.press('Escape');
   await send(page, 'Trim the replies');
-  await saver(page).click();
+  await pickFromPlus(page, saver(page));
   const measured = panel.locator('.saver-measured');
   await expect(measured).toContainText('Since the packs changed');
   await expect(measured).toContainText('91.2K in');
