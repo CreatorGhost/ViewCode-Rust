@@ -328,8 +328,9 @@ test('layout preferences keep controls readable at 160 percent in wide and narro
     const header = await page.locator('.workspace-header').boundingBox();
     expect(actions).not.toBeNull();
     expect(header).not.toBeNull();
-    // The project name no longer shows at the top; the dock floats below the header or sits in its row.
-    await expect(page.locator('.breadcrumb')).toBeHidden();
+    // The project name no longer shows at the top, only the thread's title; the dock sits in the header's row.
+    await expect(page.locator('.breadcrumb [data-action="select-project"]')).toBeHidden();
+    await expect(page.locator('.breadcrumb .crumb-title')).toBeVisible();
     expect(actions!.x + actions!.width).toBeLessThanOrEqual(header!.x + header!.width + .5);
     expect(actions!.x + actions!.width).toBeLessThanOrEqual(width + .5);
     const projectLabel = page.locator('.breadcrumb > button');
@@ -376,7 +377,8 @@ test('layout preferences keep controls readable at 160 percent in wide and narro
   // A wide sidebar can leave only 330px for the conversation at this viewport.
   await separator(page).focus();
   await page.keyboard.press('End');
-  await expect.poll(() => sidebarWidth(page)).toBe(430);
+  // The widest the 760px window allows: its width less the 56px rail and the conversation's 330px minimum.
+  await expect.poll(() => sidebarWidth(page)).toBe(374);
   await expect(page.locator('.brand #view-menu')).toBeVisible();
   await expect(page.locator('.header-leading #view-menu')).toHaveCount(0);
   const compactActions = (await page.locator('#action-dock').boundingBox())!;
@@ -409,7 +411,7 @@ test('layout preferences collapse the sidebar, reclaim its width, and restore bo
   await expect(toggle).toBeFocused();
   expect(await toggleNode!.evaluate(node => node === document.querySelector('#sidebar-toggle'))).toBe(true);
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await expect.poll(async () => (await page.locator('.main-pane').boundingBox())!.width).toBeCloseTo(mainBefore.width + 350, 0); // the collapsed pane runs full-bleed to the left edge
+  await expect.poll(async () => (await page.locator('.main-pane').boundingBox())!.width).toBeCloseTo(mainBefore.width + 350 + 56, 0); // the collapsed pane runs full-bleed to the left edge: the sidebar's 350px and the rail's 56px
   expect(await page.evaluate(() => localStorage.getItem('pandacode.sidebarCollapsed'))).toBe('true');
   expect(await storedWidth(page)).toBe(chosenWidth);
   await page.reload({ waitUntil: 'domcontentloaded' });
@@ -529,11 +531,11 @@ test('layout preferences keep the left sidebar button clear of Mac controls and 
     await expect.poll(() => sidebarWidth(page)).toBe(width);
     const button = (await toggle.boundingBox())!;
     const sidebar = (await page.locator('.sidebar').boundingBox())!;
-    expect(button.x - sidebar.x).toBeGreaterThanOrEqual(104);
-    // The narrowest sidebar keeps its panda; wider sidebars show the whole wordmark.
+    // The traffic lights sit over the project rail and the sidebar's first 48px; the button clears them from the window's edge.
+    expect(button.x).toBeGreaterThanOrEqual(104);
+    // The project rail takes the traffic lights' first 56px, so even the narrowest sidebar has room for the whole wordmark.
     const name = page.locator('.brand-name .desktop-brand-word');
-    if (width === 190) await expect(name).toBeHidden();
-    else {
+    {
       await expect(name).toBeVisible();
       const brand = (await name.boundingBox())!;
       expect(button.x + button.width).toBeLessThanOrEqual(brand.x);
@@ -554,18 +556,19 @@ test('layout preferences keep the left sidebar button clear of Mac controls and 
 
 test('layout preferences constrain a saved wide sidebar when browser styles first load', async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 940 });
-  await page.addInitScript(() => localStorage.setItem('pandacode.sidebarWidth', '440'));
+  // 380px fits beside the 56px rail at 1100px until the Browser's wider inspector opens.
+  await page.addInitScript(() => localStorage.setItem('pandacode.sidebarWidth', '380'));
   await open(page);
-  await expect.poll(() => sidebarWidth(page)).toBe(440);
+  await expect.poll(() => sidebarWidth(page)).toBe(380);
   await page.getByRole('button', { name: 'Open browser', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Browser URL', exact: true })).toBeVisible();
   const inspectorRight = () => page.locator('#inspector').evaluate(node => node.getBoundingClientRect().right + parseFloat(getComputedStyle(node).marginRight));
   await expect.poll(inspectorRight).toBeCloseTo(1100, 0);
-  expect(await sidebarWidth(page)).toBeLessThan(440);
-  expect(await storedWidth(page)).toBe('440');
+  expect(await sidebarWidth(page)).toBeLessThan(380);
+  expect(await storedWidth(page)).toBe('380');
   await openInspectorTab(page, 'tab-files');
   await page.locator('#inspector [data-action="tab-files"]').click();
-  await expect.poll(() => sidebarWidth(page)).toBe(440);
+  await expect.poll(() => sidebarWidth(page)).toBe(380);
 });
 
 test('layout preferences resize the right sidebar live and retain its width across tabs, tasks, and reload', async ({ page }) => {

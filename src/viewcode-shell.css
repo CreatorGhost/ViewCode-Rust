@@ -1,0 +1,230 @@
+/* ViewCode shell. Loaded after the redesign sheets, so these rules win at equal specificity.
+ *
+ * Three columns on the frame tone: a 56px rail (project tiles, usage rings, the shell's icon
+ * buttons), the thread column (the sidebar: New thread, Search, the scope label, flat thread rows)
+ * and the inset main pane. The rail is outside the grid (the workspace pads its left edge for it),
+ * so the sidebar's track, its resize handle and every breakpoint keep their widths. It goes with
+ * the sidebar: collapsed, the board and the GitHub view hide both, and at ≤650px the sidebar is
+ * already an icon rail, so this one steps aside and `.sidebar-bottom` returns to the sidebar
+ * (`placeSidebarBottom` in main.ts).
+ * Only tokens: --ds-*, the palette and state tones. No literal colours. */
+
+/* ---------- Rail ---------- */
+.workspace{--rail-width:56px;position:relative;padding-left:var(--rail-width)}
+.workspace:is(.sidebar-collapsed,.board-view,.github-view){padding-left:0}
+.project-rail{position:absolute;left:0;top:0;bottom:0;z-index:1;width:var(--rail-width);display:flex;flex-direction:column;align-items:center;gap:14px;min-height:0;padding:12px 0 10px}
+.project-rail[hidden]{display:none}
+/* The traffic lights sit over the rail's top. */
+html[data-native-platform=macos] .project-rail{padding-top:calc(var(--titlebar-height) + 4px)}
+html[data-native-platform=macos] .workspace:not(.sidebar-collapsed,.board-view,.github-view)>.sidebar>.brand{padding-left:max(14px,calc(var(--traffic-light-gutter) - var(--rail-width)))}
+
+.rail-projects{display:flex;flex-direction:column;align-items:center;gap:8px;flex:none}
+.rail-tile{--tile-tone:var(--ds-tone-remote);--press:.94;position:relative;flex:none;display:grid;place-items:center;width:36px;height:36px;padding:0;border-radius:10px;
+  background:color-mix(in srgb,var(--tile-tone) 18%,var(--ds-raised));color:color-mix(in srgb,var(--tile-tone) 60%,var(--text));box-shadow:inset 0 0 0 1px var(--ds-border);
+  font-size:var(--ds-text-ui);font-weight:var(--weight-medium);line-height:1;
+  transition:background-color var(--ds-ease-out) ease-out,color var(--ds-ease-out) ease-out,scale var(--spring-fast-duration,200ms) var(--spring-fast,ease-out)}
+.rail-tile[data-tint="0"]{--tile-tone:var(--ds-tone-remote)}
+.rail-tile[data-tint="1"]{--tile-tone:var(--ds-tone-plan)}
+.rail-tile[data-tint="2"]{--tile-tone:var(--ds-tone-edit)}
+.rail-tile[data-tint="3"]{--tile-tone:var(--ds-tone-full)}
+.rail-tile[data-tint="4"]{--tile-tone:var(--ds-tone-team)}
+.rail-tile[data-tint="5"]{--tile-tone:var(--ds-tone-saver)}
+.rail-tile[data-tint="6"]{--tile-tone:var(--ds-tone-worktree)}
+.rail-tile:hover{background:color-mix(in srgb,var(--tile-tone) 30%,var(--ds-raised));color:var(--text);transition-duration:var(--ds-ease-in),var(--ds-ease-in),var(--spring-fast-duration,200ms)}
+.rail-tile:not(:disabled):active{scale:var(--press)}
+/* The chosen project: a light fill and a bar at the rail's edge. The open thread's project keeps a short one. */
+.rail-tile[aria-pressed=true]{background:var(--ds-primary-bg);color:var(--ds-primary-fg);box-shadow:none}
+.rail-tile::before{content:"";position:absolute;left:-10px;top:50%;width:3px;height:18px;border-radius:0 2px 2px 0;background:var(--text);translate:0 -50%;opacity:0;transition:opacity var(--ds-ease-out) ease-out}
+.rail-tile[data-open]::before{height:8px}
+.rail-tile:is([aria-pressed=true],[data-open])::before{opacity:1;transition-duration:var(--ds-ease-in)}
+.rail-more{background:var(--ds-fill);color:var(--muted);font-size:var(--ds-text-chip);font-variant-numeric:tabular-nums}
+.rail-more:is(:hover,[aria-expanded=true]){background:var(--ds-fill-hover);color:var(--text)}
+
+/* Usage rings: the arc is the plan's most used window, the agent's mark sits in the middle. */
+.rail-usage{display:flex;flex-direction:column;align-items:center;gap:6px;flex:0 1 auto;min-height:0;margin-block:auto;overflow:hidden}
+.rail-usage:empty{display:none}
+.rail-ring{--press:.94;flex:none;display:flex;flex-direction:column;align-items:center;gap:3px;width:44px;padding:5px 0 4px;border-radius:var(--ds-radius-control);color:var(--faint);font-size:var(--ds-text-chip);line-height:1;font-variant-numeric:tabular-nums;
+  transition:background-color var(--ds-ease-out) ease-out,color var(--ds-ease-out) ease-out,scale var(--spring-fast-duration,200ms) var(--spring-fast,ease-out)}
+.rail-ring:hover{background:var(--ds-row-hover);color:var(--text);transition-duration:var(--ds-ease-in),var(--ds-ease-in),var(--spring-fast-duration,200ms)}
+.rail-ring:not(:disabled):active{scale:var(--press)}
+.rail-ring-dial{position:relative;display:grid;place-items:center;width:28px;height:28px}
+.rail-ring-dial>svg{position:absolute;inset:0;width:100%;height:100%;fill:none;stroke-width:2.5}
+.rail-ring-track{stroke:var(--ds-track-strong)}
+.rail-ring-arc{stroke:var(--ds-row-ink,var(--text));stroke-linecap:round}
+.rail-ring[data-level=warn] .rail-ring-arc{stroke:var(--ds-warn)}
+.rail-ring[data-level=danger] .rail-ring-arc{stroke:var(--ds-danger)}
+.rail-ring[data-level=warn] .rail-ring-label{color:var(--ds-warn)}
+.rail-ring[data-level=danger] .rail-ring-label{color:var(--ds-danger)}
+.rail-ring .rail-ring-logo{width:12px;height:12px;border-radius:3px;font-size:9px}
+
+/* The shell's icon buttons, as a column at the rail's foot. */
+.project-rail .sidebar-bottom{flex:none;flex-direction:column;align-items:center;gap:2px;margin:0;padding:0}
+.project-rail .sidebar-bottom>button{flex:none;width:32px;height:32px;padding:0}
+.project-rail .sidebar-bottom>#theme-toggle{margin-left:0}
+.project-rail .sidebar-bots{padding:0}
+.project-rail .sidebar-bots:empty{display:none}
+.project-rail .sidebar-bots-bar{position:relative;justify-content:center;width:32px;height:32px;padding:0;gap:0;border:0;border-radius:var(--ds-radius-control);background:none;box-shadow:none;color:var(--muted)}
+.project-rail .sidebar-bots-bar:hover{background:var(--ds-row-hover);color:var(--text)}
+.project-rail .sidebar-bots-bar[aria-pressed=true]{background:var(--ds-fill-hover);color:var(--text)}
+.project-rail .sidebar-bots-bar>.icon:first-child{--icon-size:var(--icon-sm);--icon-stroke:var(--icon-stroke-sm);color:inherit}
+.project-rail .sidebar-bots-bar>:is(span:not(.sidebar-bots-unread),small,.icon:last-child){position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.project-rail .sidebar-bots-bar>.sidebar-bots-unread{position:absolute;top:5px;right:5px;margin:0}
+
+@media(max-height:620px){.rail-usage{display:none}}
+@media(max-width:650px){
+  .workspace{padding-left:0}
+  .project-rail{display:none}
+}
+
+/* ---------- Thread column ---------- */
+/* New thread and Search: plain rows on the frame, the shortcut at the right. */
+.workspace>.sidebar .sidebar-actions{margin:0 8px 6px;padding:0;gap:1px;border:0;border-radius:0;background:none;box-shadow:none}
+.workspace>.sidebar .sidebar-actions>button,
+html[data-theme] .workspace>.sidebar .sidebar-actions>.new-task-button{height:32px;padding:0 10px;gap:10px;border-radius:var(--ds-radius-control);font-size:var(--ds-text-ui);color:var(--ds-row-ink,var(--text))}
+.workspace>.sidebar .sidebar-actions>button>.icon{--icon-size:var(--icon-sm);--icon-stroke:var(--icon-stroke-sm)}
+
+/* The scope label: the chosen project's name (or All projects), muted, with the list's tools. */
+.workspace>.sidebar .sidebar-projects{height:28px;margin-top:6px;padding:0 8px 0 18px}
+.workspace>.sidebar .project-filter{font-size:var(--ds-text-chip);font-weight:var(--weight-medium);color:var(--faint)}
+.workspace>.sidebar .project-filter:is(:hover,[aria-expanded=true]){color:var(--text)}
+.workspace>.sidebar .project-filter>.task-app-icon{display:none}
+.workspace>.sidebar .sidebar-projects>.icon-button{width:24px;height:24px;color:var(--faint)}
+.workspace>.sidebar .sidebar-search{height:30px;margin:2px 8px 6px;border-color:transparent;background:var(--ds-fill)}
+
+/* Sections sit straight on the frame: no cards, a small muted heading. */
+.workspace>.sidebar .task-group:not(.completed-group){padding:0;border:0;border-radius:0;background:none;box-shadow:none}
+.workspace>.sidebar .completed-group::before{border:0;background:var(--frame,var(--sidebar));box-shadow:none;inset:0}
+.workspace>.sidebar .group-heading{height:28px;padding:0 10px;font-size:var(--ds-text-chip);font-weight:var(--weight-medium);color:var(--faint)}
+.workspace>.sidebar .group-heading>span{font-size:var(--ds-text-chip);color:var(--faint)}
+.workspace>.sidebar .task-group>.task-list{gap:1px}
+
+/* Rows: a status dot, the title, a PR or issue chip, then the age. */
+.workspace>.sidebar .task-item.task-oneline{height:32px;padding:0 10px 0 8px;border-radius:var(--ds-radius-control)}
+.workspace>.sidebar .task-item:not(.task-oneline){border-radius:var(--ds-radius-control)}
+.workspace>.sidebar .task-title{font-size:var(--ds-text-ui)}
+.workspace>.sidebar .task-age{font-size:var(--ds-text-chip)}
+/* One-line rows lead with the indicator; a row with no state shows a quiet dot, so every row has one. */
+.workspace>.sidebar .task-item.task-oneline>.task-line>.task-indicator{order:-1;margin:0 4px 0 4px}
+.workspace>.sidebar .task-item.task-oneline>.task-line>.task-indicator:not(.running,.attention,.failed,.limited,.unread){background:var(--ds-glyph-faint)}
+/* The age closes the row; the harness mark sits before it. */
+.workspace>.sidebar .task-item.task-oneline>.task-line>:is(.task-age,.task-indicator+.task-age){order:3;margin-left:0;min-width:3ch}
+.workspace>.sidebar .task-item.task-oneline>.task-line>.wake-glyph{order:2}
+.workspace>.sidebar .task-row-oneline:is(:hover,:focus-within)>.task-item>.task-line:first-child>.task-indicator{visibility:visible}
+/* The leading dot already marks the open row; the accent bar would crowd it. */
+.workspace>.sidebar .task-row-oneline::before{display:none}
+/* The open thread: a quiet filled row. */
+.workspace>.sidebar .task-item.selected,
+html[data-theme] .workspace[data-wallpaper]>.sidebar .task-item.selected{background:var(--ds-fill-hover);box-shadow:none}
+.workspace>.sidebar .task-row:has(>.task-item.selected),
+html[data-theme] .workspace[data-wallpaper]>.sidebar .task-row:has(>.task-item.selected){--row-bg:color-mix(in srgb,var(--text) 9%,var(--frame,var(--sidebar)))}
+/* The linked PR or issue is a chip: muted while open, red when it needs attention. */
+.workspace>.sidebar .task-link,.workspace>.sidebar .task-link.issue{padding:1px 5px;border-radius:5px;background:var(--ds-fill);color:var(--faint);font-size:var(--ds-text-chip)}
+.workspace>.sidebar .task-link[data-attention]{background:color-mix(in srgb,var(--ds-danger) 14%,transparent);color:var(--ds-danger)}
+.workspace>.sidebar .folder-more{height:28px;padding:0 10px;font-size:var(--ds-text-chip);color:var(--faint)}
+.workspace>.sidebar .folder-more:hover{color:var(--text)}
+
+/* ---------- Main pane header: the title, then the dock as a row of small icons ---------- */
+.breadcrumb>.crumb-title,.breadcrumb>.crumb-title:last-child{max-width:none;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-weight:var(--weight-medium)}
+/* The project crumb stays hidden as before (styles.css); only the thread's title shows. */
+html .breadcrumb:has(>.crumb-title){display:flex!important}
+.breadcrumb:has(>.crumb-title)>:not(.crumb-title){display:none}
+@media(min-width:651px){
+  .workspace:not(.board-view,.github-view){--dock-item:28px;--dock-pad:0px;--dock-rule:0px}
+  .workspace:not(.board-view,.github-view) .action-dock{position:relative;top:auto;right:auto;flex-direction:row;background:none;backdrop-filter:none;-webkit-backdrop-filter:none;box-shadow:none;border-radius:var(--ds-radius-control)}
+  .workspace:not(.board-view,.github-view) .action-dock-group+.action-dock-group::before{width:1px;height:18px;margin:0 6px}
+  html .workspace:not(.board-view,.github-view) .action-dock button,.workspace:not(.board-view,.github-view) .action-dock-indicator{border-radius:var(--ds-radius-control)}
+  html .workspace:not(.board-view,.github-view) .action-dock{outline:0}
+  /* As at ≤650px (action-dock.css): with the title and the row in the header, the transcript starts below it. */
+  html .workspace:not(.board-view,.github-view) .conversation-pane:not(.new-task-page,.channel-thread):not(:has(>:is(.task-details-heading,.jev-activity):not([hidden]))){--header-under:0px;--header-fade-under:0px;--transcript-top:12px}
+}
+/* Find in thread with no room left in the header: its bar floats over the pane's top (thread-find.ts), and the first row rests below it. */
+html .workspace:not(.board-view,.github-view) .conversation-pane.find-docked:not(.new-task-page,.channel-thread):not(:has(>:is(.task-details-heading,.jev-activity):not([hidden]))){--transcript-top:54px}
+
+/* ---------- New thread page: headline, where it runs, then the composer, centred together ---------- */
+.conversation-pane.new-task-page{justify-content:center}
+.conversation-pane.new-task-page>.transcript{flex:0 0 auto;padding-block:0 18px;overflow:visible}
+.new-task-page .new-task-welcome{margin-block:0;padding:0}
+.new-task-page .new-task-mark{display:none}
+.new-task-page .new-task-welcome h1{font-size:clamp(1.5rem,2.4vw,1.9rem);font-weight:var(--weight-medium);letter-spacing:-.02em}
+.new-task-agent{color:var(--accent-ink,var(--accent))}
+html[data-theme=dark] .new-task-agent{color:var(--accent)}
+/* Over a scene (the sky, a wallpaper) the accent alone can drop under 4.5:1, so it leans on the text ink (tests/sky.spec.ts measures it). */
+.workspace[data-scene] .new-task-agent{color:color-mix(in srgb,var(--accent-ink,var(--accent)) 45%,var(--text))}
+html[data-theme=dark] .workspace[data-scene] .new-task-agent{color:color-mix(in srgb,var(--accent) 45%,var(--text))}
+.new-task-where{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:6px;margin:10px 0 0;color:var(--muted);font-size:var(--ds-text-ui)}
+.new-task-where .icon{--icon-size:var(--icon-sm);--icon-stroke:var(--icon-stroke-sm);flex:none;color:var(--faint)}
+.new-task-where>.new-task-sep{color:var(--faint)}
+.new-task-where>.welcome-project{color:var(--muted);text-decoration:none;font-weight:var(--weight-regular)}
+.new-task-where>.welcome-project:hover{color:var(--text)}
+.new-task-branch{display:inline-flex;align-items:center;gap:6px;min-width:0}
+.new-task-branch>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:28ch}
+.side-thread .conversation-pane.new-task-page>.transcript{flex:1 1 auto}
+html .workspace .new-task-page .composer-area{max-width:648px}
+
+/* ---------- Composer: one card; the prompt, then one row of controls ---------- */
+.conversation-pane .composer-area .composer{flex-direction:row;flex-wrap:wrap;align-items:center;gap:2px;padding:6px 8px 8px}
+.conversation-pane .composer-area .composer>*{flex:0 0 100%;min-width:0}
+.conversation-pane .composer-area .composer>.composer-input,
+.conversation-pane .composer-area .composer>.composer-tray,
+.conversation-pane .composer-area .composer .composer-actions,
+.conversation-pane .composer-area .composer>.composer-tray>.composer-tools{display:contents}
+.conversation-pane .composer-area .composer .composer-input>textarea{flex:0 0 100%;min-height:64px;padding:10px 8px 8px}
+/* The row: attach and the permission mode lead; the model, the mic and Send close it. */
+.conversation-pane .composer-area .composer .composer-actions>*,
+.conversation-pane .composer-area .composer .composer-tools>*{flex:none;order:5}
+.conversation-pane .composer-area .composer .composer-actions>[data-action=attach]{order:1;width:32px;height:32px}
+.conversation-pane .composer-area .composer .composer-tools>.mode-picker{order:2}
+/* A wrapping row wraps before it shrinks, so the model's width is capped to what the row has left (the composer is a size container) and its name truncates instead. */
+.conversation-pane .composer-area .composer .composer-tools>.model-picker{order:6;flex:0 1 auto;min-width:0;max-width:max(44px,calc(100cqw - 440px));margin-left:auto}
+.conversation-pane .composer-area .composer .composer-actions>.composer-pill{order:9;margin-left:6px}
+.conversation-pane .composer-area .composer .composer-actions>:not([data-action=attach],.composer-pill){order:8}
+/* Where it runs (computer, folder, branch, linked PR) is a quiet last row of the card. */
+.workspace .conversation-pane .composer-area .composer>.composer-tray>.composer-context:not(.bot-thread *){order:10;flex:0 0 100%;display:flex;align-items:center;gap:2px;min-height:0;margin:2px 0 0;padding:4px 0 0;border:0;border-top:1px solid var(--ds-border);border-radius:0;background:none}
+.workspace .conversation-pane .composer-area .composer-tray .composer-context>:is(.composer-computer,.composer-local,.branch-chip,.link-chip){height:28px;font-size:var(--ds-text-meta)}
+.workspace .conversation-pane .composer-area .composer-tray .composer-context .icon{--icon-size:var(--icon-sm);--icon-stroke:var(--icon-stroke-sm)}
+.conversation-pane .composer-tray :is(.model-picker,.mode-picker,.composer-team-button,.composer-saver-button,.composer-council-button){height:32px;font-size:var(--ds-text-ui)}
+/* The mode says its name, and both pickers show they open a menu. */
+.conversation-pane .composer-tray .mode-picker>.sr-only{position:static;width:auto;height:auto;margin:0;overflow:visible;clip-path:none}
+.conversation-pane .composer-tray :is(.model-picker,.mode-picker)>.icon:last-child{display:block;--icon-size:12px;color:var(--faint)}
+/* A narrow composer keeps the row whole: the mode goes back to its icon and the chevrons go. */
+@container composer (max-width:560px){
+  .conversation-pane .composer-tray .mode-picker>.sr-only{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%)}
+  .conversation-pane .composer-tray :is(.model-picker,.mode-picker)>.icon:last-child{display:none}
+  .conversation-pane .composer-area .composer .composer-tools>.model-picker{max-width:max(44px,calc(100cqw - 350px))}
+  .conversation-pane .composer-area .composer .composer-actions>.composer-pill{margin-left:2px}
+}
+/* Send: a round light button. */
+.conversation-pane .composer-area .composer .composer-pill{min-width:32px;height:32px;border-radius:50%;background:var(--ds-primary-bg);box-shadow:none}
+html[data-theme=dark] .conversation-pane .composer-area .composer .composer-pill{background:var(--ds-primary-bg)}
+html[data-theme] .workspace .conversation-pane .composer-area .composer-pill>.send-button{width:32px;height:32px;color:var(--ds-primary-fg)}
+html[data-theme] .workspace .conversation-pane .composer-area .composer-pill>.send-button:not(:disabled):hover{background:color-mix(in srgb,var(--ds-primary-fg) 12%,transparent)}
+html[data-theme] .workspace .conversation-pane .composer-area .composer-pill>.send-button.stop-button{color:var(--ds-danger)}
+/* Nothing to send yet: the arrow rests, as before, on the same fill. */
+html .composer:has(#prompt:placeholder-shown):not(:has(#attachments>*)) .composer-pill>.send-button:not(.stop-button){color:color-mix(in srgb,var(--ds-primary-fg) 60%,var(--ds-primary-bg))}
+.conversation-pane .composer-area .composer .composer-pill:has(>:is(.remote-checking,.remote-composer-retry)){border-radius:var(--ds-radius-control);background:none}
+.conversation-pane .composer-area .composer .composer-pill>.send-button .icon{--icon-size:16px}
+/* The card carries the focus edge now that the prompt has no box of its own. */
+.workspace .conversation-pane .composer-area .composer:has(#prompt:focus),.workspace[data-scene] .conversation-pane .composer-area .composer:has(#prompt:focus){border-color:var(--ds-border-strong)}
+:root[data-keyboard-focus] .workspace .conversation-pane .composer-area .composer:has(#prompt:focus-visible){border-color:var(--focus);box-shadow:0 0 0 1px var(--focus),var(--ds-shadow-card)}
+
+@media(prefers-contrast:more){
+  .rail-tile{box-shadow:inset 0 0 0 1px var(--border)}
+  .rail-tile[aria-pressed=true]{background:var(--text);color:var(--bg)}
+  .rail-ring-track{stroke:var(--border)}
+  .rail-ring-arc{stroke:var(--text)}
+  .workspace>.sidebar .task-item.selected,html[data-theme] .workspace[data-wallpaper]>.sidebar .task-item.selected{box-shadow:inset 0 0 0 1px var(--text)}
+  .workspace>.sidebar .task-link{box-shadow:inset 0 0 0 1px var(--border)}
+}
+@media(forced-colors:active){
+  .rail-tile{background:ButtonFace;color:ButtonText;box-shadow:none;outline:1px solid ButtonText;outline-offset:-1px}
+  .rail-tile:focus-visible{outline:2px solid Highlight;outline-offset:2px}
+  @media(min-width:651px){html .workspace:not(.board-view,.github-view) .action-dock{border:0;background:none}}
+  .rail-tile[aria-pressed=true]{background:Highlight;color:HighlightText;forced-color-adjust:none}
+  .rail-tile::before{background:CanvasText}
+  .rail-ring-track{stroke:GrayText}
+  .rail-ring-arc{stroke:CanvasText}
+  .workspace>.sidebar .task-item.selected{outline:1px solid Highlight;outline-offset:-1px}
+  .conversation-pane .composer-area .composer .composer-pill{background:ButtonFace;box-shadow:inset 0 0 0 1px ButtonText}
+  html[data-theme] .workspace .conversation-pane .composer-area .composer-pill>.send-button{color:ButtonText}
+}
+@media(prefers-reduced-motion:reduce){.rail-tile,.rail-tile::before,.rail-ring{transition:none}}

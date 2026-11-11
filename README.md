@@ -381,8 +381,8 @@ The website lives in [website/](website/): `npm run site:dev` and
 
 ## Use
 
-Open a project folder, then click **New task** or press `⌘/Ctrl N`. A centered
-"What should we build in …?" page opens in the last active project with the
+Open a project folder, then click **New thread** or press `⌘/Ctrl N`. A centered
+"What should <agent> build?" page opens in the last active project with the
 message box focused. Choose the harness and model from the searchable picker in
 the message box; new tasks remember your last choice. The **+** button attaches
 images, documents, folders, project files or a mockup. Open **Changes** to

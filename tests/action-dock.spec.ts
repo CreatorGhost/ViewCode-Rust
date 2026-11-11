@@ -32,10 +32,10 @@ async function open(page: Page, width = 1440, height = 940): Promise<void> {
 }
 
 test.describe('action dock', () => {
-  test('floats as a vertical stack under the header, beside the inspector or at the window edge', async ({ page }) => {
+  test('sits in the header as a row of small icons, at the main pane\'s right edge', async ({ page }) => {
     await open(page);
     const toolbar = dock(page);
-    await expect(toolbar).toHaveAttribute('aria-orientation', 'vertical');
+    await expect(toolbar).toHaveAttribute('aria-orientation', 'horizontal');
     // The header keeps only its leading items; every action lives in the dock.
     await expect(page.locator('.workspace-header .header-actions button')).toHaveCount(0);
     for (const name of ['Toggle inspector', /^Toggle terminal/, 'Open browser', 'Project moodboards', 'Deploy', 'Task actions']) {
@@ -44,30 +44,32 @@ test.describe('action dock', () => {
     const items = await toolbar.locator('button:visible').evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().toJSON() as DOMRect));
     expect(items.length).toBeGreaterThanOrEqual(6);
     for (let index = 1; index < items.length; index++) {
-      expect(Math.abs(items[index].left - items[0].left)).toBeLessThan(1);
-      expect(items[index].top).toBeGreaterThanOrEqual(items[index - 1].bottom);
+      expect(Math.abs(items[index].top - items[0].top)).toBeLessThan(1);
+      expect(items[index].left).toBeGreaterThanOrEqual(items[index - 1].right);
     }
-    for (const item of items) { expect(item.width).toBe(38); expect(item.height).toBe(38); }
+    for (const item of items) { expect(item.width).toBe(28); expect(item.height).toBe(28); }
 
     const box = await rect(page, '#action-dock');
     const header = await rect(page, '.workspace-header');
     const inspector = await rect(page, '#inspector');
-    expect(box.top).toBeGreaterThanOrEqual(header.bottom);
-    // The dock floats at the inset main pane's right edge, which stops short of the inspector panel.
+    expect(box.top).toBeGreaterThanOrEqual(header.top);
+    expect(box.bottom).toBeLessThanOrEqual(header.bottom);
+    // The row ends inside the inset main pane, which stops short of the inspector panel.
     const main = await rect(page, '.main-pane');
     expect(box.right).toBeLessThanOrEqual(main.right);
     expect(main.right).toBeLessThan(inspector.left);
-    expect(main.right - box.right).toBeLessThan(16);
-    // It hovers over the thread, and stays clear of the composer.
-    expect(overlaps(box, await rect(page, '#composer'))).toBe(false);
-    const glass = await toolbar.evaluate(node => getComputedStyle(node).backdropFilter);
-    expect(glass).toContain('blur');
+    // The thread's title leads the same header and never runs under the row.
+    const title = await rect(page, '#breadcrumb .crumb-title');
+    expect(title.width).toBeGreaterThan(0);
+    expect(title.right).toBeLessThanOrEqual(box.left);
+    // A row has no card of its own.
+    expect(await toolbar.evaluate(node => getComputedStyle(node).backdropFilter)).toBe('none');
 
     await toolbar.getByRole('button', { name: 'Toggle inspector', exact: true }).click();
     await expect(page.locator('#inspector')).toBeHidden();
     const closed = await rect(page, '#action-dock');
-    expect(page.viewportSize()!.width - closed.right).toBeLessThan(16 + 8);
-    expect(overlaps(closed, await rect(page, '#composer'))).toBe(false);
+    expect(closed.right).toBeLessThanOrEqual((await rect(page, '.main-pane')).right);
+    expect(closed.bottom).toBeLessThanOrEqual((await rect(page, '.workspace-header')).bottom);
   });
 
   test('is one Tab stop with arrow-key roving, and panels show their active state', async ({ page }) => {
@@ -86,12 +88,12 @@ test.describe('action dock', () => {
     await expect(terminal).toBeFocused();
     await expect(terminal).toHaveAttribute('tabindex', '0');
     await expect(inspector).toHaveAttribute('tabindex', '-1');
-    // The label pops out on the dock's left for keyboard focus.
+    // The label pops out under the row for keyboard focus.
     const tip = page.locator('.action-dock-tip');
     await expect(tip).toBeVisible();
     await expect(tip).toHaveText(/^Toggle terminal/);
     // Polled: the bubble springs into place, and a loaded machine may read it mid-spring.
-    await expect.poll(async () => (await rect(page, '.action-dock-tip')).right - (await rect(page, '#action-dock')).left).toBeLessThanOrEqual(0);
+    await expect.poll(async () => (await rect(page, '.action-dock-tip')).top - (await rect(page, '#action-dock')).bottom).toBeGreaterThanOrEqual(0);
     await page.keyboard.press('End');
     await expect(more).toBeFocused();
     await page.keyboard.press('ArrowDown');
@@ -178,27 +180,28 @@ test.describe('action dock', () => {
   test('one shared pill slides between hovered items and fades out on leave', async ({ page }) => {
     await open(page);
     const pill = page.locator('.action-dock-indicator');
-    const at = () => pill.evaluate(node => { const box = node.getBoundingClientRect(); return { top: Math.round(box.top), opacity: getComputedStyle(node).opacity }; });
+    // The dock is a row, so the pill travels sideways.
+    const at = () => pill.evaluate(node => { const box = node.getBoundingClientRect(); return { left: Math.round(box.left), opacity: getComputedStyle(node).opacity }; });
     await expect(pill).toHaveCount(1);
     expect((await at()).opacity).toBe('0');
     await page.locator('#terminal-toggle').hover();
     const terminal = await rect(page, '#terminal-toggle');
-    await expect.poll(async () => (await at()).top).toBe(Math.round(terminal.top));
+    await expect.poll(async () => (await at()).left).toBe(Math.round(terminal.left));
     await expect.poll(async () => (await at()).opacity).toBe('1');
     // Moving on slides the same pill (it passes through the space between), never a second fill.
     await page.locator('#task-menu-trigger').hover();
     const between = await at();
     const menu = await rect(page, '#task-menu-trigger');
     expect(between.opacity).not.toBe('0');
-    expect(between.top).toBeLessThan(Math.round(menu.top));
-    await expect.poll(async () => (await at()).top).toBe(Math.round(menu.top));
+    expect(between.left).toBeLessThan(Math.round(menu.left));
+    await expect.poll(async () => (await at()).left).toBe(Math.round(menu.left));
     expect(await page.locator('#terminal-toggle').evaluate(node => getComputedStyle(node, '::after').content)).toBe('none');
     // Keyboard focus moves it too; leaving the dock fades it out.
     await page.mouse.move(10, 10);
     await expect.poll(async () => (await at()).opacity).toBe('0');
     await page.locator('#inspector-toggle').focus();
     await page.keyboard.press('ArrowDown');
-    await expect.poll(async () => (await at()).top).toBe(Math.round(terminal.top));
+    await expect.poll(async () => (await at()).left).toBe(Math.round(terminal.left));
   });
 
   test('the tooltip waits on hover, then follows instantly, resizing to each label', async ({ page }) => {
@@ -218,7 +221,7 @@ test.describe('action dock', () => {
     expect(delay).toBeGreaterThanOrEqual(340);
     expect(delay).toBeLessThan(600);
     const short = (await rect(page, '.action-dock-tip')).width;
-    expect((await rect(page, '.action-dock-tip')).right).toBeLessThanOrEqual((await rect(page, '#action-dock')).left);
+    expect((await rect(page, '.action-dock-tip')).top).toBeGreaterThanOrEqual((await rect(page, '#action-dock')).bottom);
     expect(await tip.evaluate(node => getComputedStyle(node).backdropFilter)).toContain('blur');
     // Warm: the next item shows at once and the bubble widens for its longer label.
     await page.locator('#inspector-toggle').hover();
@@ -244,25 +247,14 @@ test.describe('action dock', () => {
     await expect(tip).toBeHidden();
   });
 
-  test('centres between the header and the composer, stays put for file tabs, and keeps the Bots channel clear', async ({ page }) => {
+  test('keeps its place for file tabs and the terminal, and keeps the Bots channel clear', async ({ page }) => {
     await open(page);
     const box = await rect(page, '#action-dock');
-    const header = await rect(page, '.workspace-header');
-    const composer = await rect(page, '#composer-area');
-    expect(box.top - header.bottom).toBeGreaterThanOrEqual(12);
-    expect(composer.top - box.bottom).toBeGreaterThanOrEqual(12);
-    expect(Math.abs((box.top - header.bottom) - (composer.top - box.bottom))).toBeLessThan(2);
-    // Opening the terminal shrinks the space, and the dock follows.
+    // The terminal and file tabs change the thread's space, not the header's row.
     await page.locator('#terminal-toggle').click();
     await expect(page.locator('#terminal-drawer')).toBeVisible();
-    await expect.poll(async () => (await rect(page, '#composer-area')).top - (await rect(page, '#action-dock')).bottom).toBeGreaterThanOrEqual(12);
+    expect(Math.round((await rect(page, '#action-dock')).top)).toBe(Math.round(box.top));
     await page.locator('#terminal-toggle').click();
-    // File tabs open in the inspector, so the dock keeps its place in the conversation.
-    await openInspectorTab(page, 'Files');
-    await page.getByRole('tab', { name: 'Files', exact: true }).click();
-    await page.locator('#inspector [data-action="open-file"][data-path="README.md"]').click();
-    await expect(page.locator('#inspector #file-tabs')).toBeVisible();
-    await expect.poll(async () => Math.round((await rect(page, '#action-dock')).top - header.bottom)).toBe(Math.round(box.top - header.bottom));
     // A shared bot channel's header row sits below the workspace header, clear of the dock.
     await page.goto('/?bots=sample');
     const bar = page.locator('.sidebar-bots-bar');
@@ -299,31 +291,8 @@ test.describe('action dock', () => {
     }
   });
 
-  test('only the card takes the pointer, and a wheel over it scrolls the thread', async ({ page }) => {
-    await open(page);
-    const box = await rect(page, '#action-dock');
-    const hit = (x: number, y: number) => page.evaluate(([px, py]) => {
-      const node = document.elementFromPoint(px, py);
-      return node?.closest('#action-dock') ? 'dock' : node?.closest('#transcript') ? 'transcript' : node?.tagName;
-    }, [x, y]);
-    const middleX = box.left + box.width / 2, middleY = box.top + box.height / 2;
-    expect(await hit(middleX, middleY)).toBe('dock');
-    for (const [x, y] of [[box.left - 2, middleY], [box.right + 2, middleY], [middleX, box.top - 2], [middleX, box.bottom + 2]]) expect(await hit(x, y)).toBe('transcript');
-
-    const transcript = page.locator('#transcript');
-    const top = () => transcript.evaluate(node => node.scrollTop);
-    // Room to scroll either way, whatever the sample thread's length.
-    await transcript.evaluate(node => { const room = document.createElement('div'); room.style.height = '3000px'; node.append(room); node.scrollTop = 1200; });
-    await page.mouse.move(middleX, middleY);
-    const before = await top();
-    await page.mouse.wheel(0, -200);
-    await expect.poll(top).toBeCloseTo(before - 200, 0);
-    await page.mouse.wheel(0, 120);
-    await expect.poll(top).toBeCloseTo(before - 80, 0);
-  });
-
-  test('a wheel over the row in the header leaves the thread alone', async ({ page }) => {
-    await open(page, 620);
+  for (const width of [620, 1440]) test(`a wheel over the row in the header leaves the thread alone at ${width}px`, async ({ page }) => {
+    await open(page, width);
     const transcript = page.locator('#transcript');
     await transcript.evaluate(node => { const room = document.createElement('div'); room.style.height = '3000px'; node.append(room); });
     // A real wheel over the thread releases the bottom pin first; a scripted scrollTop would be re-pinned.
@@ -382,15 +351,16 @@ test.describe('action dock', () => {
     const box = await rect(page, '#inspector-toggle');
     await page.mouse.move(box.left + box.width / 2, box.top + box.height / 2);
     await expect(tip).toHaveText(/^Toggle inspector/);
-    // The update prompt appears: the dock springs taller and re-centres, so another item passes under the pointer.
+    // The update prompt appears: the row springs wider from its right end, so the items slide left under the pointer.
     await page.locator('#update-status').evaluate(node => { (node as HTMLElement).hidden = false; });
     await expect.poll(() => dockAnimations(page)).toBe(0);
     await page.waitForTimeout(450);
     const under = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('#action-dock button')?.id ?? '', { x: box.left + box.width / 2, y: box.top + box.height / 2 });
     expect(under).not.toBe('inspector-toggle');
     await expect(tip).toBeHidden();
-    // Real movement over the new item opens its label as usual.
-    await page.mouse.move(box.left + box.width / 2 + 1, box.top + box.height / 2);
+    // Real movement onto an item opens its label as usual (what slid under the pointer may be the prompt itself, which names itself).
+    const next = await rect(page, '#terminal-toggle');
+    await page.mouse.move(next.left + next.width / 2, next.top + next.height / 2, { steps: 3 });
     await expect(tip).toBeVisible();
   });
 
@@ -400,23 +370,22 @@ test.describe('action dock', () => {
     const update = page.locator('#update-status');
     const group = page.locator('.action-dock-group[data-group="status"]');
     await expect(group).toBeHidden();
-    const before = (await rect(page, '#action-dock')).height;
+    const before = (await rect(page, '#action-dock')).width;
     const separator = async () => (await dockStarted(page)).filter(started => started.startsWith('action-dock-group') && started.endsWith('::before')).length;
     await recordDock(page);
     await update.evaluate(node => { (node as HTMLElement).hidden = false; });
     await expect.poll(separator).toBeGreaterThan(0);
     await expect.poll(() => dockAnimations(page)).toBe(0);
     const grown = await rect(page, '#action-dock');
-    expect(grown.height).toBeGreaterThan(before + 38);
-    // Re-centred around its new height, still clear of header and composer.
-    expect(grown.top - (await rect(page, '.workspace-header')).bottom).toBeGreaterThanOrEqual(12);
-    expect((await rect(page, '#composer-area')).top - grown.bottom).toBeGreaterThanOrEqual(12);
+    expect(grown.width).toBeGreaterThan(before + 28);
+    // Still inside the header.
+    expect(grown.bottom).toBeLessThanOrEqual((await rect(page, '.workspace-header')).bottom);
     await recordDock(page);
     await update.evaluate(node => { (node as HTMLElement).hidden = true; });
     // The group stays laid out until its separator and item have folded away.
     await expect.poll(separator).toBeGreaterThan(0);
     await expect(group).toBeHidden();
-    await expect.poll(async () => Math.round((await rect(page, '#action-dock')).height)).toBe(Math.round(before));
+    await expect.poll(async () => Math.round((await rect(page, '#action-dock')).width)).toBe(Math.round(before));
   });
 
   test('moves into the header as a row on narrow windows and the board', async ({ page }) => {
@@ -454,7 +423,7 @@ test.describe('action dock', () => {
     test(`keeps a solid fallback under increased contrast and reduced transparency in ${theme}`, async ({ page, browserName }) => {
       await page.addInitScript(value => localStorage.setItem('pandacode.theme', value), theme);
       await open(page);
-      const material = () => dock(page).evaluate(node => ({ filter: getComputedStyle(node).backdropFilter, solid: !/(, | \/ )0?\.\d+\)$/.test(getComputedStyle(node).backgroundColor) }));
+      const material = () => page.locator('#agents-flyout').evaluate(node => ({ filter: getComputedStyle(node).backdropFilter, solid: !/(, | \/ )0?\.\d+\)$/.test(getComputedStyle(node).backgroundColor) }));
       expect(await material()).toEqual({ filter: 'blur(16px) saturate(1.15)', solid: false });
       await page.emulateMedia({ contrast: 'more' });
       await expect.poll(material).toEqual({ filter: 'none', solid: true });
@@ -535,7 +504,7 @@ test.describe('action dock', () => {
       await expect(agents(page)).toBeVisible();
     });
 
-    test('hover opens the panel left of the dock, which stays while the pointer is on it and closes after it leaves', async ({ page }) => {
+    test('hover opens the panel under the dock\'s row, which stays while the pointer is on it and closes after it leaves', async ({ page }) => {
       await open(page);
       await subagent(page, 'a', 'running');
       await agents(page).hover();
@@ -543,9 +512,8 @@ test.describe('action dock', () => {
       await expect(agents(page)).toHaveAttribute('aria-expanded', 'true');
       // Hovering never steals focus from the prompt.
       await expect(subagents(page).locator(':focus')).toHaveCount(0);
-      const panel = await rect(page, '#agents-flyout'), dock = await rect(page, '#action-dock'), item = await rect(page, '#agents-toggle');
-      expect(panel.right).toBeLessThanOrEqual(dock.left);
-      expect(Math.abs(panel.top - item.top)).toBeLessThanOrEqual(2);
+      const panel = await rect(page, '#agents-flyout'), dock = await rect(page, '#action-dock');
+      expect(panel.top).toBeGreaterThanOrEqual(dock.bottom);
       // Across the gap and onto the panel: it stays.
       await page.mouse.move(panel.right - 30, panel.top + 20, { steps: 6 });
       await page.waitForTimeout(500);

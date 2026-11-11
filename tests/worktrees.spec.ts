@@ -41,7 +41,7 @@ test('one branch control: the prompt bar chip names the checkout and there is no
 test('an unstarted task converts in place and keeps its draft, title, and selection', async ({ page }) => {
   await probe(page);
   await page.locator('.new-task-button').click();
-  await expect(page.getByRole('heading', { name: /^What should we build in/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^What should .+ build\?$/ })).toBeVisible();
   await expect(page.locator('#prompt')).not.toHaveAttribute('data-session-id', 'session-1');
   const taskId = await page.locator('#prompt').getAttribute('data-session-id');
   await prompt(page).fill('Fix the login redirect loop when the session expires');

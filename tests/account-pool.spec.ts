@@ -770,14 +770,14 @@ const switchNote = (page: Page) => page.locator('#transcript details.account-swi
 async function startPoolTurn(page: Page): Promise<string> {
   await page.evaluate(() => { (window as any).__holdPoolTurn = true; });
   await page.locator('.new-task-button').click();
-  await expect(page.getByRole('heading', { name: /^What should we build in/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^What should .+ build\?$/ })).toBeVisible();
   const prompt = page.getByRole('textbox', { name: 'Message your coding agent', exact: true });
   await expect(prompt).toBeEnabled(); await prompt.fill('Controlled account switch'); await prompt.press('Enter');
   await expect.poll(() => page.evaluate(() => (window as any).__latestPoolRun ?? '')).not.toBe('');
   await expect(page.getByRole('button', { name: 'Stop task', exact: true })).toBeVisible();
   const id = await page.evaluate(() => (window as any).__latestPoolRun);
   await expect(page.locator('#prompt')).toHaveAttribute('data-session-id', id);
-  await expect(page.getByRole('heading', { name: /^What should we build in/ })).toBeHidden();
+  await expect(page.getByRole('heading', { name: /^What should .+ build\?$/ })).toBeHidden();
   return id;
 }
 

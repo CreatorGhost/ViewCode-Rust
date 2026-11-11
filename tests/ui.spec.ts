@@ -66,7 +66,7 @@ async function disableWallpapers(page: Page): Promise<void> {
   await expect(page.locator('.workspace-wallpaper img')).toHaveCount(0);
   await closeSettings(page);
 }
-const newTaskHeading = (page: Page) => page.getByRole('heading', { name: /^What should we build in/ });
+const newTaskHeading = (page: Page) => page.getByRole('heading', { name: /^What should .+ build\?$/ });
 const taskProjectPicker = (page: Page) => page.getByRole('dialog', { name: 'Choose project', exact: true });
 const toolByName = (page: Page, name: string) => page.locator(`details.tool-activity[data-tool-name="${name}"]`)
   .or(page.locator('details.tool-activity:not([data-tool-name])').filter({ has: page.locator('summary').filter({ hasText: name }) }));
@@ -207,8 +207,8 @@ test('Arabic composer lines and streaming replies keep their direction after res
     await route.fulfill({ response, body: previewBody(body) });
   });
   await page.reload();
-  await page.getByRole('button', { name: 'New task ⌘ N', exact: true }).click();
-  await expect(page.getByRole('heading', { name: /^What should we build in/ })).toBeVisible();
+  await page.getByRole('button', { name: 'New thread ⌘ N', exact: true }).click();
+  await expect(page.getByRole('heading', { name: /^What should .+ build\?$/ })).toBeVisible();
   const draft = 'مرحبا بالعالم!\nHello, world!\nمرحبا (PandaCode)؟\n<img src=x onerror="window.__owned=1">';
   await prompt(page).fill(draft);
   await expect(prompt(page)).toHaveAttribute('dir', 'auto');
@@ -1133,7 +1133,7 @@ test('finds and selects projects beyond the first hundred filter options', async
   await expect(selected).toBeFocused();
   await page.keyboard.press('Escape');
   await page.locator('.new-task-button').click();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in Fixture project 119?');
+  await expect(page.locator('#welcome-project')).toHaveText('Fixture project 119');
   await expect(openTaskProject(page)).toHaveText('Fixture project 119');
 });
 
@@ -2589,11 +2589,12 @@ test('a new task is listed after its first prompt and an untouched one is discar
 });
 
 test('opens a new conversation in the active project without listing it', async ({ page }) => {
-  const projectName = await page.locator('#breadcrumb').innerText();
+  // The header shows the thread's title; the (hidden) project crumb still names the project.
+  const projectName = (await page.locator('#breadcrumb [data-action="select-project"]').textContent())!;
   await page.locator('.new-task-button').click();
   await expect(page.getByRole('dialog')).not.toBeVisible();
   await expect(newTaskHeading(page)).toBeVisible();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+  await expect(page.locator('#welcome-project')).toHaveText('orbit');
   await expect(prompt(page)).toBeFocused();
   await expect(prompt(page)).toHaveValue('');
   await expect(page.locator('.user-message,.agent-message')).toHaveCount(0);
@@ -2610,7 +2611,8 @@ test('opens a new conversation in the active project without listing it', async 
   expect(headingBounds.y + headingBounds.height).toBeLessThan(mainBounds.y + mainBounds.height * 0.65);
   expect(composerBounds.y - headingBounds.y - headingBounds.height).toBeGreaterThanOrEqual(0);
   expect(mainBounds.y + mainBounds.height - composerBounds.y - composerBounds.height).toBeGreaterThanOrEqual(0);
-  expect(mainBounds.y + mainBounds.height - composerBounds.y - composerBounds.height).toBeLessThan(140);
+  // The composer follows the headline and its project line, centred with them rather than anchored to the pane's bottom.
+  expect(composerBounds.y - headingBounds.y - headingBounds.height).toBeLessThan(120);
   await expect(page.getByRole('button', { name: 'Change task project', exact: true })).toHaveCount(1);
   await page.screenshot({ path: '/private/tmp/pandacode-new-task.png' });
   await page.getByRole('button', { name: /^Model: / }).click();
@@ -2652,7 +2654,7 @@ test('changes the empty task project while keeping its draft, harness, model, an
   await picker.getByRole('searchbox', { name: 'Search projects', exact: true }).fill('panda');
   await picker.getByRole('option', { name: /^pandacode — / }).click();
   await expect(picker).toHaveCount(0);
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in pandacode?');
+  await expect(page.locator('#welcome-project')).toHaveText('pandacode');
   await expect(prompt(page)).toHaveAttribute('data-session-id', sessionId!);
   await expect(openTaskProject(page)).toHaveText('pandacode');
   await expect(page.locator('#welcome-project')).toHaveText('pandacode');
@@ -2666,7 +2668,7 @@ test('changes the empty task project while keeping its draft, harness, model, an
   await page.reload();
   expect(await page.evaluate(() => localStorage.getItem('pandacode.project'))).toBe('project-2');
   await page.locator('.new-task-button').click();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in pandacode?');
+  await expect(page.locator('#welcome-project')).toHaveText('pandacode');
 });
 
 test('searches task projects by keyboard and cancels or reselects without changing the task', async ({ page }) => {
@@ -2686,7 +2688,7 @@ test('searches task projects by keyboard and cancels or reselects without changi
   await search.press('Escape');
   await expect(picker).toHaveCount(0);
   await expect(trigger).toBeFocused();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+  await expect(page.locator('#welcome-project')).toHaveText('orbit');
   await expect(prompt(page)).toHaveValue('A draft that stays with this empty task');
   await trigger.click();
   await search.fill('/Users/you/Projects/orbit');
@@ -2694,13 +2696,13 @@ test('searches task projects by keyboard and cancels or reselects without changi
   await search.press('Enter');
   await expect(picker).toHaveCount(0);
   await expect(prompt(page)).toHaveAttribute('data-session-id', sessionId!);
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+  await expect(page.locator('#welcome-project')).toHaveText('orbit');
   await expect(prompt(page)).toHaveValue('A draft that stays with this empty task');
   await trigger.click();
   await search.fill('panda');
   await search.press('Enter');
   await expect(picker).toHaveCount(0);
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in pandacode?');
+  await expect(page.locator('#welcome-project')).toHaveText('pandacode');
   await expect(prompt(page)).toHaveAttribute('data-session-id', sessionId!);
   await expect(prompt(page)).toHaveValue('A draft that stays with this empty task');
 });
@@ -2724,7 +2726,7 @@ test('opens a new folder from the task project picker without discarding its dra
   await dialog.getByRole('textbox', { name: 'Project folder', exact: true }).fill('/tmp/new-task-folder');
   await dialog.getByRole('button', { name: 'Open project', exact: true }).click();
   await expect(dialog).not.toBeVisible();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in new-task-folder?');
+  await expect(page.locator('#welcome-project')).toHaveText('new-task-folder');
   await expect(prompt(page)).toHaveAttribute('data-session-id', sessionId!);
   await expect(openTaskProject(page)).toHaveText('new-task-folder');
   await expect(page.locator('#welcome-project')).toHaveText('new-task-folder');
@@ -2747,7 +2749,7 @@ test('applies a delayed project switch after leaving and reselecting the same em
   });
   await page.reload();
   await page.locator('.new-task-button').click();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+  await expect(page.locator('#welcome-project')).toHaveText('orbit');
   const sessionId = await draftTaskId(page);
   await prompt(page).fill('Retain this draft when I return before the project write finishes');
   await page.evaluate(() => { (window as any).__pandacodeDelayConfigure = true; });
@@ -2767,7 +2769,7 @@ test('applies a delayed project switch after leaving and reselecting the same em
   await page.locator('.new-task-button').click();
   await expect(prompt(page)).toHaveAttribute('data-session-id', sessionId!);
   await expect(prompt(page)).toHaveValue('Retain this draft when I return before the project write finishes');
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in pandacode?');
+  await expect(page.locator('#welcome-project')).toHaveText('pandacode');
   await expect(prompt(page)).toHaveAttribute('data-session-id', sessionId!);
   await expect(openTaskProject(page)).toHaveText('pandacode');
   await expect(page.locator('#welcome-project')).toHaveText('pandacode');
@@ -2795,7 +2797,7 @@ for (const delayedCommand of ['add_project', 'list_projects']) {
     });
     await page.reload();
     await page.locator('.new-task-button').click();
-    await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+    await expect(page.locator('#welcome-project')).toHaveText('orbit');
     const sessionId = await draftTaskId(page);
     await prompt(page).fill('Keep this task and draft after canceling its folder request');
     await page.getByRole('button', { name: 'Change task project', exact: true }).first().click();
@@ -2822,7 +2824,7 @@ for (const delayedCommand of ['add_project', 'list_projects']) {
     await closeSettings(page);
     await expect(prompt(page)).toHaveAttribute('data-session-id', sessionId!);
     await expect(openTaskProject(page)).toHaveText('orbit');
-    await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+    await expect(page.locator('#welcome-project')).toHaveText('orbit');
     await expect(prompt(page)).toHaveValue('Keep this task and draft after canceling its folder request');
   });
 }
@@ -2883,7 +2885,7 @@ test('restores the last active project and creates new conversations there', asy
   await expect(projectFilter(page)).toHaveText('pandacode');
   await page.locator('.new-task-button').click();
   await expect(newTaskHeading(page)).toBeVisible();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in pandacode?');
+  await expect(page.locator('#welcome-project')).toHaveText('pandacode');
   await expect(prompt(page)).toBeFocused();
 });
 
@@ -3153,7 +3155,7 @@ test('creates a worktree task under its original project with an icon and fresh 
   await expect.poll(() => savedPermission(page)).toBe('full');
   await prompt(page).fill('Keep this draft in the original checkout');
   await submitWorktree(page, 'codex/worktree-task');
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+  await expect(page.locator('#welcome-project')).toHaveText('orbit');
   const selected = page.locator('.task-item.selected');
   const taskId = await selected.getAttribute('data-id');
   expect(taskId).not.toBe('session-1');
@@ -3177,7 +3179,7 @@ test('creates a worktree task under its original project with an icon and fresh 
   await expect(page.locator('.task-item.selected .task-worktree')).toBeVisible();
   await expect(page.locator('.composer-local')).toHaveText('Worktree');
   await page.locator('.new-task-button').click();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+  await expect(page.locator('#welcome-project')).toHaveText('orbit');
   await expect(page.locator('.task-item.selected .task-worktree')).toHaveCount(0);
   await expect(page.locator('.composer-local')).toHaveText('Local');
   await expect(page.locator('#welcome-project')).toBeEnabled();
@@ -3519,12 +3521,18 @@ test('a first visit keeps the old rows (inert, briefly) until the page or the lo
   }
 });
 
-test('the prompt sits in the same place in every thread', async ({ page }) => {
+test('the prompt sits in the same place in every thread with messages, and is centred on an empty one', async ({ page }) => {
   await expect(page.locator('#composer')).toBeVisible();
-  const bottoms: number[] = [];
+  const bottoms: number[] = [], centred: boolean[] = [];
   // Measured once surfaces have settled: panes arrive with a short spring.
   const settled = () => page.evaluate(() => document.getAnimations().filter(animation => animation.timeline instanceof DocumentTimeline && animation.playState === 'running' && Number.isFinite(Number(animation.effect?.getComputedTiming().endTime))).length);
-  const measure = async () => { await expect(page.locator('#composer')).toBeVisible(); await expect.poll(settled).toBe(0); bottoms.push(Math.round((await page.locator('#composer').boundingBox())!.y + (await page.locator('#composer').boundingBox())!.height)); };
+  // An empty thread is the New thread page: headline, project line and composer sit together in the pane's middle.
+  const measure = async () => {
+    await expect(page.locator('#composer')).toBeVisible(); await expect.poll(settled).toBe(0);
+    const box = (await page.locator('#composer').boundingBox())!, pane = (await page.locator('.conversation-pane').boundingBox())!;
+    if (await page.locator('.conversation-pane.new-task-page').count()) centred.push(box.y > pane.y + pane.height * .3 && box.y + box.height < pane.y + pane.height * .85);
+    else bottoms.push(Math.round(box.y + box.height));
+  };
   const ids = await page.locator('#navigation .task-item').evaluateAll(rows => rows.map(row => (row as HTMLElement).dataset.id!));
   expect(ids.length).toBeGreaterThan(1);
   for (const id of ids) {
@@ -3533,11 +3541,14 @@ test('the prompt sits in the same place in every thread', async ({ page }) => {
     await expect(page.locator('#transcript .history-notice')).toHaveCount(0);
     await measure();
   }
-  // A brand-new task, which has no context count yet, lines up too.
+  // A brand-new task is an empty thread too.
   await page.keyboard.press('ControlOrMeta+n');
   await expect(page.locator('.new-task-welcome')).toBeVisible();
   await measure();
+  expect(bottoms.length).toBeGreaterThan(1);
   expect(new Set(bottoms).size, `prompt bottoms: ${bottoms.join(', ')}`).toBe(1);
+  expect(centred.length).toBeGreaterThan(0);
+  expect(centred.every(Boolean)).toBe(true);
 });
 
 test('streaming keeps the transcript at the bottom after sending and leaves a reader who scrolled up', async ({ page }) => {
