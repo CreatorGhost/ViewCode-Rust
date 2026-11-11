@@ -240,7 +240,9 @@ fn a_turn_authenticates_opens_a_session_with_host_tools_and_streams() {
     cfg.model = "gpt-5.4[context=1m,fast=true]".into();
     cfg.reasoning_effort = Some("high".into());
     let mut p = Protocol::new(cfg);
-    p.mcp_server = Some(json!({"type":"http","name":"pandacode","url":"http://127.0.0.1:4100/mcp","headers":[]}));
+    // The run's MCP host, as the stdio bridge Cursor is given (`mcp_host::Server::stdio_config`).
+    p.mcp_server = Some(json!({"name":"pandacode","command":"/Applications/App.app/Contents/MacOS/app","args":[super::mcp_bridge::FLAG],"env":[
+        {"name":super::mcp_bridge::AUTHORITY,"value":"127.0.0.1:4100"},{"name":super::mcp_bridge::AUTHORIZATION,"value":"Bearer run-token"}]}));
     // The capability asks Cursor for base models with per-model options.
     let initialize = p.initial();
     assert_eq!(initialize["method"], "initialize");
@@ -255,6 +257,7 @@ fn a_turn_authenticates_opens_a_session_with_host_tools_and_streams() {
     assert_eq!(step.write[0]["method"], "session/new");
     assert_eq!(step.write[0]["params"]["cwd"], "/tmp");
     assert_eq!(step.write[0]["params"]["mcpServers"][0]["name"], "pandacode", "the per-run MCP host reaches Cursor");
+    assert_eq!(step.write[0]["params"]["mcpServers"][0]["args"], json!(["--pandacode-mcp-bridge"]));
     // Already in agent mode, so the model is next: the base model, then each option, then the effort.
     let step = p.receive(response(2, session("agent"))).unwrap();
     assert!(step.events.iter().any(|event| event.kind == "session" && event.text == SESSION));
@@ -500,12 +503,19 @@ fn a_silent_turn_is_given_up_on_unless_a_tool_or_a_request_explains_the_silence(
 }
 
 #[test]
-fn host_tools_are_optional_unless_a_team_needs_them() {
+fn the_stdio_bridge_needs_no_capability_and_an_http_server_stays_optional() {
     let without_http = || {
         let mut frame = capabilities();
         frame["result"]["agentCapabilities"]["mcpCapabilities"] = json!({});
         frame
     };
+    // Every ACP agent takes a stdio server, advertised or not.
+    let mut p = Protocol::new(config("cursor"));
+    p.mcp_server = Some(json!({"name":"pandacode","command":"app","args":[super::mcp_bridge::FLAG],"env":[]}));
+    p.receive(without_http()).unwrap();
+    let step = p.receive(response(7, json!({}))).unwrap();
+    assert_eq!(step.write[0]["params"]["mcpServers"][0]["command"], "app");
+    // The HTTP form (a cloud run) still depends on what the agent advertises.
     let mut p = Protocol::new(config("cursor"));
     p.mcp_server = Some(json!({"type":"http","name":"pandacode"}));
     p.mcp_required = false;

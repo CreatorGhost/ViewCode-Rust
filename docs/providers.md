@@ -1084,9 +1084,15 @@ question form; the answer goes back keyed by question id (one label, or a list w
 the question allows several), and Stop answers an open question with no answers.
 
 **PandaCode tools.** The per-run MCP host is passed in `session/new` (and
-`session/load`) as an HTTP MCP server, like every other ACP harness. A Cursor team
-policy can block servers a client supplies: Cursor then accepts the server and ignores
-it, so the tools are simply missing in that workspace.
+`session/load`) as a **stdio** MCP server, the way ViewCode passes its tools to every
+ACP agent: stdio is the one transport every ACP agent must support, while an HTTP
+server is optional and often dropped. The server is PandaCode's own executable started
+with `--pandacode-mcp-bridge` (`providers/mcp_bridge.rs`); it gets the run's loopback
+address and token in its environment, forwards each JSON-RPC line to the MCP host as
+one HTTP request, prints the answer, dials 127.0.0.1 only and exits when its input
+closes. A cloud run, whose harness is on another machine, keeps the HTTP form. A Cursor
+team policy can block servers a client supplies: Cursor then accepts the server and
+ignores it, so the tools are simply missing in that workspace.
 
 **Resume, stop, steering.** The session id is saved with the task and reopened with
 `session/load` (Cursor advertises `loadSession`); history the CLI replays while loading

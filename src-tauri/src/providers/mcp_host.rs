@@ -139,6 +139,14 @@ impl Server {
     pub(super) fn kimi_config(&self) -> Value {
         json!({"type":"http","name":SERVER_NAME,"url":format!("http://{}/mcp",self.authority),"headers":[{"name":"Authorization","value":format!("Bearer {}",self.token)}]})
     }
+    /// The same host as an ACP stdio server: this app's own executable as a bridge
+    /// (`mcp_bridge.rs`). `None` when the executable's path is unknown.
+    pub(super) fn stdio_config(&self) -> Option<Value> {
+        let program = std::env::current_exe().ok()?;
+        Some(json!({"name":SERVER_NAME,"command":program.to_string_lossy(),"args":[super::mcp_bridge::FLAG],"env":[
+            {"name":super::mcp_bridge::AUTHORITY,"value":self.authority},
+            {"name":super::mcp_bridge::AUTHORIZATION,"value":format!("Bearer {}",self.token)}]}))
+    }
     pub(super) fn codex_config(&self) -> Value {
         json!({SERVER_NAME:{"url":format!("http://{}/mcp",self.authority),"http_headers":{"Authorization":format!("Bearer {}",self.token)},"enabled":true,"required":self.required(),"startup_timeout_sec":if self.required() {15} else {3},"tool_timeout_sec":360}})
     }
@@ -1032,6 +1040,64 @@ mod tests {
         );
         assert!(server.claude_config()["mcpServers"][SERVER_NAME].is_object());
         assert_eq!(server.kimi_config()["type"], "http");
+    }
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_stdio_bridge_reaches_this_host_with_the_runs_token() {
+        use super::super::mcp_bridge;
+        let server = server().await;
+        // What an ACP agent is handed: this executable as a stdio server, with the run's address and token.
+        let config = server.stdio_config().unwrap();
+        assert_eq!(config["name"], SERVER_NAME);
+        assert_eq!(config["args"], json!([mcp_bridge::FLAG]));
+        assert!(config.get("type").is_none(), "a stdio server has no type field in ACP");
+        let env = |name: &str| config["env"].as_array().unwrap().iter().find(|entry| entry["name"] == name).unwrap()["value"].as_str().unwrap().to_owned();
+        let (authority, authorization) = (env(mcp_bridge::AUTHORITY), env(mcp_bridge::AUTHORIZATION));
+        // The bridge's own loop, fed the lines an MCP client writes.
+        let input = concat!(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"agent\",\"version\":\"1\"}}}\n",
+            "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n",
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}\n",
+        );
+        #[derive(Clone, Default)]
+        struct Sink(Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for Sink {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let sink = Sink::default();
+        let printed = sink.clone();
+        tokio::task::spawn_blocking(move || {
+            for call in mcp_bridge::run(input.as_bytes(), sink, &authority, &authorization) {
+                call.join().unwrap();
+            }
+        })
+        .await
+        .unwrap();
+        let text = String::from_utf8(printed.0.lock().unwrap().clone()).unwrap();
+        let answers: Vec<Value> = text.lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+        assert_eq!(answers.len(), 2, "the notification prints nothing: {text}");
+        let answer = |id: u64| answers.iter().find(|answer| answer["id"] == id).unwrap();
+        assert_eq!(answer(1)["result"]["protocolVersion"], "2025-06-18");
+        assert!(answer(2)["result"]["tools"].as_array().is_some_and(|tools| !tools.is_empty()));
+        // Without the run's token the host refuses, and the call fails rather than hangs.
+        let authority = env(mcp_bridge::AUTHORITY);
+        let refused = tokio::task::spawn_blocking(move || {
+            let sink = Sink::default();
+            let printed = sink.clone();
+            for call in mcp_bridge::run("{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}\n".as_bytes(), sink, &authority, "Bearer wrong") {
+                call.join().unwrap();
+            }
+            let bytes = printed.0.lock().unwrap().clone();
+            serde_json::from_slice::<Value>(&bytes).unwrap()
+        })
+        .await
+        .unwrap();
+        assert_eq!(refused["error"]["code"], -32000);
     }
     #[tokio::test]
     async fn rejects_auth_origin_host_smuggling_and_oversized_frames() {

@@ -51,6 +51,7 @@ mod github_copilot;
 mod devin;
 pub(crate) mod hermes;
 pub(crate) mod cursor;
+pub(crate) mod mcp_bridge;
 #[cfg(test)]
 mod cursor_stream_tests;
 mod glm;
@@ -3741,7 +3742,12 @@ async fn run_process_with_tools(
     protocol.image_blocks = image_blocks;
     protocol.host = host;
     // Cline already has the server from its settings file, not from `session/new`.
-    protocol.mcp_server = mcp.as_ref().filter(|_| cline_settings.is_none()).map(mcp_host::Server::kimi_config);
+    protocol.mcp_server = mcp.as_ref().filter(|_| cline_settings.is_none()).map(|server| {
+        // Cursor gets the tools as a stdio server, as ViewCode gives them: the one MCP
+        // transport every ACP agent supports. A cloud run's harness is on another machine.
+        let stdio = protocol.config.provider == "cursor" && !crate::cloud_agents::transport::is_cloud(&protocol.config.session_id);
+        stdio.then(|| server.stdio_config()).flatten().unwrap_or_else(|| server.kimi_config())
+    });
     protocol.mcp_required = mcp.as_ref().is_some_and(mcp_host::Server::required);
     protocol.codex_mcp_servers = mcp
         .as_ref()

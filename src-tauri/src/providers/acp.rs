@@ -312,7 +312,8 @@ impl Protocol {
                             "This harness does not advertise image input. Remove the images or update the harness.".into()
                         });
                     }
-                    if self.mcp_server.is_some() && capabilities["mcpCapabilities"]["http"] != true
+                    // A stdio server (Cursor's bridge) needs no capability: every ACP agent takes one.
+                    if self.mcp_server.as_ref().is_some_and(|server| server.get("command").is_none()) && capabilities["mcpCapabilities"]["http"] != true
                     {
                         if self.mcp_required {
                             return Err("This harness does not advertise HTTP MCP support required for PandaCode tools. Update its ACP server.".into());
