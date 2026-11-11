@@ -87,7 +87,9 @@ embedded editor engine.
   Windows builds route with a simpler keyword heuristic. See
   [model routing](docs/model-routing.md).
 - **`/btw` side threads.** Ask a question on the side while the agent keeps working,
-  in a By the way tab that can read the main thread. See [/btw](docs/btw.md).
+  in a By the way tab. A side chat starts with what the thread has said so far, runs on its
+  own agent, stays out of the task list and is archived after a day idle. See
+  [side chats](docs/side-chat.md).
 - **Schedules.** You or an agent can wake a thread later, on a repeat or after another
   thread finishes. See [schedules](docs/schedules.md).
 - **Bots.** Put an agent behind Telegram, Slack, Discord, WhatsApp or a local web

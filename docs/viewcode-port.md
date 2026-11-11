@@ -52,7 +52,7 @@ Status: **Same** as ViewCode, **Partly** there (what is missing), or **Missing**
 | 16 | GitLab, Forgejo, Gitea, Bitbucket, Azure DevOps | Missing | GitHub only, through `gh`. |
 | 17 | Cookie import, default browser, SnapShot, prompt links, question attachments | Missing | The browser pane is incognito; no URL handler; no window capture; answers to agent questions take JSON only. |
 | 18 | Merged-PR rule | Missing | No automatic settling at all; merges only update `task_links.state`. |
-| 19 | ViewCode look | Partly | Data model lacks a generic parent link and thread kind on sessions, and project colour. The shell restyle is in progress on its own branch. |
+| 19 | ViewCode look | Partly | Sessions have a generic thread kind and parent link since schema 40 (`sessions.kind`, `sessions.parent_session_id`; only side chats set them so far); it still lacks project colour. The shell restyle is in progress on its own branch. |
 | 20 | Outside agents | Missing | The MCP host is per run, loopback, with a per-run token. No long-lived endpoint, sign-in, scopes or stdio bridge. |
 
 ### B. Compare and close gaps
@@ -62,7 +62,7 @@ Status: **Same** as ViewCode, **Partly** there (what is missing), or **Missing**
 | 21 | Mid-chat switch with handoff | Partly | Fixed 64 KiB / 200 messages instead of a budget from the model's window; long messages are cut; no references to omitted history; no error when it cannot fit; no native Codex history; resume is not kept per account; a provider switch deletes the goal. |
 | 22 | Fork from a user message | Partly | No refusal for unfinished turns; tool activity is copied; the fork shares the source checkout. |
 | 23 | Child agents and messaging | Partly (different model) | Children exist only inside a configured team. No spawn tool for ordinary chats, no per-child worktree, no reply routing by run, no hop limit, no held mail or discard, pause and resume act on the whole team. |
-| 24 | Side chats and expiry | Partly | `/btw` lives in the webview (`localStorage`). No thread kind, no 24-hour expiry, not hidden from lists, live context instead of a snapshot. |
+| 24 | Side chats and expiry | Partly (desktop only) | A side chat is a real session (`kind='side'`, `parent_session_id`, schema 40) opened with a bounded snapshot of its thread, on its own agent process, hidden from lists, search and phones, showing only its own messages, archived after 24 hours idle by the backend ([docs/side-chat.md](side-chat.md)). The panel streams through the main transcript's event path and renderer. Gaps: no entry point in the mobile app (phones only never see side chats), no keybinding or command-palette entry, no Ask in side chat on a text selection, the panel is an inspector tab (no dock of its own, no resize handle), and the snapshot is always the bounded copy (ViewCode forks native provider history when the parent has a stable run). |
 | 25 | Goals and Run goal | Partly, close to missing | Codex-only and Codex-driven. No provider-neutral goal, no per-turn injection, no agent goal tools, no Run goal message, erased on provider switch. |
 | 26 | Usage, rings, auto resume | Partly | Resume is opt-in per task and its timer runs in the webview. No throttle versus limit split, no once-per-failure rule, no keep-awake, no pooling across accounts, no banked resets. |
 | 27 | Queue and steering | Same | On desktop the queue is drained by the webview, so a hold is not backend state; steering carries no attachments. |
