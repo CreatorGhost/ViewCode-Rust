@@ -2611,7 +2611,8 @@ test('opens a new conversation in the active project without listing it', async 
   expect(headingBounds.y + headingBounds.height).toBeLessThan(mainBounds.y + mainBounds.height * 0.65);
   expect(composerBounds.y - headingBounds.y - headingBounds.height).toBeGreaterThanOrEqual(0);
   expect(mainBounds.y + mainBounds.height - composerBounds.y - composerBounds.height).toBeGreaterThanOrEqual(0);
-  expect(mainBounds.y + mainBounds.height - composerBounds.y - composerBounds.height).toBeLessThan(140);
+  // The composer follows the headline and its project line, centred with them rather than anchored to the pane's bottom.
+  expect(composerBounds.y - headingBounds.y - headingBounds.height).toBeLessThan(120);
   await expect(page.getByRole('button', { name: 'Change task project', exact: true })).toHaveCount(1);
   await page.screenshot({ path: '/private/tmp/pandacode-new-task.png' });
   await page.getByRole('button', { name: /^Model: / }).click();
