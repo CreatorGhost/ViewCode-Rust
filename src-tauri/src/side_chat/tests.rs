@@ -115,7 +115,7 @@ fn side_chats_are_hidden_from_lists_and_search() {
     let side = open(&store, &parent.id, "why an index?", 1_000).unwrap();
     store.message(&side.id, "user", "a zebra question").unwrap();
     let listed = store.sessions().unwrap().into_iter().map(|task| task.id).collect::<Vec<_>>();
-    assert_eq!(listed, [parent.id.clone()]);
+    assert_eq!(listed, std::slice::from_ref(&parent.id));
     // Neither its title, its own messages nor the copied ones are found.
     for query in ["why an index", "zebra"] {
         assert!(store.search_tasks(&parent.project_id, query, 10).unwrap().is_empty(), "{query}");
@@ -123,7 +123,7 @@ fn side_chats_are_hidden_from_lists_and_search() {
     let found = store.search_tasks(&parent.project_id, "search instant", 10).unwrap();
     assert_eq!(found.iter().map(|hit| hit["taskId"].as_str().unwrap()).collect::<Vec<_>>(), [parent.id.as_str()]);
     // Only its thread lists it.
-    assert_eq!(list(&store, &parent.id).unwrap().into_iter().map(|task| task.id).collect::<Vec<_>>(), [side.id.clone()]);
+    assert_eq!(list(&store, &parent.id).unwrap().into_iter().map(|task| task.id).collect::<Vec<_>>(), std::slice::from_ref(&side.id));
     assert!(list(&store, &side.id).unwrap().is_empty());
     // Opened as a full thread it is an ordinary, listed task that keeps its lineage.
     let full = promote(&store, &side.id, 2_000).unwrap();
