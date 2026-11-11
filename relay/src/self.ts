@@ -5,7 +5,9 @@
  * device gets its token differs:
  *
  * - The desktop proves the host secret (`Authorization: Bearer <HOST_SECRET>`) and registers
- *   itself as the deployment's admin device (`POST /v1/self/host`).
+ *   itself as the deployment's admin device (`POST /v1/self/host`). The host secret does
+ *   nothing else: device tokens are signed with a key the deployment makes once and keeps
+ *   in its Durable Object, so rotating the host secret leaves every paired phone paired.
  * - The desktop offers a one-time pairing (`POST /v1/self/pairings`); a phone redeems it
  *   without any account (`POST /v1/self/pair`) and gets an ordinary relay token.
  *
@@ -13,7 +15,7 @@
  * Durable Object in `account.ts` supplies the storage behind `PairingStore`.
  */
 import { readJsonCapped } from "./body.ts";
-import { MAX_FRAME_BYTES, SELF_TOKEN_TTL_SECONDS } from "./limits.ts";
+import { MAX_FRAME_BYTES, SELF_DEVICE_TTL_SECONDS, TOKEN_TTL_SECONDS } from "./limits.ts";
 import { isKnownRoute } from "./routes.ts";
 import { signToken, verifyToken, type TokenClaims } from "./token.ts";
 import { parseDevice } from "./validate.ts";
@@ -53,15 +55,45 @@ export async function sha256Hex(text: string): Promise<string> {
   return hex(await crypto.subtle.digest("SHA-256", enc.encode(text)));
 }
 
-async function hmac(secret: string, message: string): Promise<ArrayBuffer> {
-  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  return crypto.subtle.sign("HMAC", key, enc.encode(message));
+/** 256 random bits (hex): the deployment's token-signing key, made once by its Durable Object. */
+export function newSigningKey(): string {
+  return hex(crypto.getRandomValues(new Uint8Array(32)).buffer);
 }
 
-/** The key relay tokens are signed with: derived, so a token never doubles as the host secret. */
-export async function sessionSecret(hostSecret: string): Promise<string> {
-  return hex(await hmac(hostSecret, "pandacode-relay self session v1"));
+export const isSigningKey = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{64}$/.test(v);
+
+/** One per isolate: the key never changes for the life of a deployment, so it is asked for once. */
+export interface KeyCache {
+  key?: Promise<string>;
 }
+const isolateKeys: KeyCache = {};
+
+/** The signing key, from the Durable Object. A failed read is not remembered. */
+export function signingKey(account: AccountFetch, cache: KeyCache): Promise<string> {
+  cache.key ??= account(internal("/internal/self/key", undefined, "GET"))
+    .then(async (res) => {
+      const { key } = (await res.json().catch(() => ({}))) as { key?: unknown };
+      if (!res.ok || !isSigningKey(key)) throw new Error("no signing key");
+      return key;
+    })
+    .catch((error) => {
+      cache.key = undefined;
+      throw error;
+    });
+  return cache.key;
+}
+
+// ---- How long a paired device stays paired ----
+
+/** When a device that pairs now lapses (unix seconds). The desktop's own row has no fixed end (0). */
+export const deviceExpiry = (nowS: number): number => nowS + SELF_DEVICE_TTL_SECONDS;
+
+/** A paired device's credential has lapsed. Rows without a fixed end (the desktop, the shared relay) never do. */
+export const credentialExpired = (row: { expires_at: number }, nowS: number): boolean => row.expires_at > 0 && row.expires_at <= nowS;
+
+/** A token's lifetime in seconds: up to the device's fixed end, never past it; the usual 30 days without one. */
+export const tokenLifetime = (expiresAt: unknown, nowS: number): number =>
+  typeof expiresAt === "number" && expiresAt > 0 ? Math.max(1, expiresAt - nowS) : TOKEN_TTL_SECONDS;
 
 /** Whether the request carries the host secret. Fixed-length digests are compared without an early exit. */
 export async function hostAuthorized(hostSecret: string, authorization: string | null): Promise<boolean> {
@@ -166,8 +198,8 @@ async function capped(request: Request): Promise<Record<string, unknown> | Respo
 /** A token for `device` after the Durable Object accepted it (its reply carries the row's `gen`). */
 async function sign(secret: string, res: Response, device: string, nowS: number): Promise<string | Response> {
   if (!res.ok) return res;
-  const { gen } = (await res.json().catch(() => ({}))) as { gen?: unknown };
-  return signToken(secret, SELF_ACCOUNT, device, nowS, typeof gen === "number" ? gen : undefined, SELF_TOKEN_TTL_SECONDS);
+  const { gen, expiresAt } = (await res.json().catch(() => ({}))) as { gen?: unknown; expiresAt?: unknown };
+  return signToken(secret, SELF_ACCOUNT, device, nowS, typeof gen === "number" ? gen : undefined, tokenLifetime(expiresAt, nowS));
 }
 
 async function issue(secret: string, res: Response, device: string, nowS: number): Promise<Response> {
@@ -186,12 +218,17 @@ export function forwardAs(request: Request, claims: TokenClaims): Request {
   return new Request(request, { headers });
 }
 
-export async function handleSelf(request: Request, env: SelfEnv, account: AccountFetch, nowMs: number = Date.now()): Promise<Response> {
+export async function handleSelf(request: Request, env: SelfEnv, account: AccountFetch, nowMs: number = Date.now(), keys: KeyCache = isolateKeys): Promise<Response> {
   // Deployed but the secret is not stored yet (or is too short): say nothing useful.
   if (!selfConfigured(env)) return fail(500, "server error");
   const path = new URL(request.url).pathname;
   const nowS = Math.floor(nowMs / 1000);
-  const secret = await sessionSecret(env.HOST_SECRET);
+  let secret: string;
+  try {
+    secret = await signingKey(account, keys);
+  } catch {
+    return fail(500, "server error");
+  }
 
   if (path === "/v1/self/pair") {
     if (request.method !== "POST") return fail(405, "method not allowed");

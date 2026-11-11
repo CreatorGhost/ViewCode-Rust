@@ -58,8 +58,13 @@ how a device gets its token differs (`src/self.ts`, contract in
 
 - `HOST_SECRET` (a Worker secret, at least 32 characters, stored by the desktop right after the
   deploy) replaces GitHub sign-in. Until it is stored every request gets `500 server error`.
-  Tokens are signed with a key derived from it, last a year and refresh like any token.
-  Rotating the secret signs every device out.
+  It only authenticates the desktop. Device tokens are signed with a key the deployment's
+  Durable Object makes once and keeps (`self:signing-key`), so rotating the host secret leaves
+  every paired phone paired.
+- A paired device stays paired for 30 days from pairing (`SELF_DEVICE_TTL_SECONDS`, the lifetime
+  of a ViewCode session). Use and `POST /v1/token` never extend it: a refreshed token ends at the
+  same moment. When it lapses the row is deleted and its socket closed (`4001`), exactly as a
+  revoke; the phone pairs again with a new code. The desktop's own row has no fixed end.
 - `GET /v1/self/probe`, `POST /v1/self/host`, `POST|DELETE /v1/self/pairings` take
   `Authorization: Bearer <HOST_SECRET>`. `host` registers the desktop as the deployment's
   admin device; `pairings` offers `{ codeHash, ttlSeconds ≤ 300 }` or cancels the waiting ones.
