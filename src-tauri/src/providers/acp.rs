@@ -1,5 +1,5 @@
 //! ACP v1 transport for OpenCode, Kilo, Antigravity, Grok Build, Command Code, Cline,
-//! GitHub Copilot CLI and Devin. Kimi retains its provider-specific mode mapping.
+//! GitHub Copilot CLI, Devin and Cursor. Kimi retains its provider-specific mode mapping.
 use super::*;
 use crate::slash_commands::claude::Pipe;
 
@@ -72,6 +72,7 @@ pub(super) fn configure(command: &mut Command, config: &RunConfig) {
         "cline" => super::cline::configure(command, config),
         "kilo" => super::kilo::configure(command),
         "devin" => super::devin::configure(command),
+        "cursor" => super::cursor::configure(command, config),
         "hermes" => super::hermes::configure(command, config),
         "antigravity" => antigravity_args(command),
         _ => {
@@ -215,6 +216,10 @@ impl Protocol {
     pub(super) fn acp(&mut self, value: Value) -> Result<Step, String> {
         let mut step = Step::default();
         let grok = self.config.provider == "grok";
+        let cursor = self.config.provider == "cursor";
+        if cursor {
+            self.cursor.last_frame = Some(tokio::time::Instant::now());
+        }
         if self.acp_live_answered(&value, &mut step) {
             return Ok(step);
         }
@@ -236,6 +241,11 @@ impl Protocol {
             }
             if self.config.provider == "devin" && value["error"]["code"] == -32000 {
                 return Err(super::devin::SIGN_IN.into());
+            }
+            if cursor {
+                if let Some(message) = super::cursor::request_failure(&value) {
+                    return Err(message);
+                }
             }
             if self.config.provider == "hermes" {
                 let err_str = value["error"]["data"].as_str()
@@ -265,6 +275,7 @@ impl Protocol {
                 Some(4) => "mode selection",
                 Some(5) => "model selection",
                 Some(6) => "reasoning selection",
+                Some(id) if cursor && super::cursor::OPTION_IDS.contains(&id) => "model option selection",
                 _ => "request",
             };
             return Err(format!("{}: {}", self.config.provider, rpc_error(&value, stage)));
@@ -332,6 +343,11 @@ impl Protocol {
                         let method = cached_auth_method(result).ok_or(GROK_SIGN_IN)?;
                         self.acp_pending_session = Some(session);
                         step.write.push(json!({"jsonrpc":"2.0","id":7,"method":"authenticate","params":{"methodId":method}}));
+                    } else if cursor {
+                        // As ViewCode does: an auth-required answer to a session call
+                        // is not reliable, so the CLI's own login is claimed up front.
+                        self.acp_pending_session = Some(session);
+                        step.write.push(super::cursor::authenticate());
                     } else {
                         step.write.push(session);
                     }
@@ -350,6 +366,9 @@ impl Protocol {
                         return Err("ACP did not return a session ID".into());
                     }
                     self.acp_config = result.clone();
+                    if cursor {
+                        super::cursor::normalize(&mut self.acp_config);
+                    }
                     if let Some(bytes) = self.early_kimi_commands.take() {
                         if let Ok(frame) = serde_json::from_slice::<Value>(&bytes) {
                             if frame["params"]["sessionId"] == self.remote_id {
@@ -377,6 +396,14 @@ impl Protocol {
                     self.acp_update_config(result);
                     self.acp_model(&mut step)?;
                 }
+                5 if cursor => {
+                    self.acp_update_config(result);
+                    self.cursor_options(0, &mut step)?;
+                }
+                id if cursor && super::cursor::OPTION_IDS.contains(&id) => {
+                    self.acp_update_config(result);
+                    self.cursor_options((id - super::cursor::OPTION_IDS.start) as usize + 1, &mut step)?;
+                }
                 5 => {
                     self.acp_update_config(result);
                     self.acp_effort(&mut step)?;
@@ -402,6 +429,20 @@ impl Protocol {
         }
         if self.config.provider == "devin" && super::devin::subagent_usage(&value) {
             return Ok(step);
+        }
+        if cursor && value.get("id").is_some() {
+            // Cursor's own requests: a question for the user, and the plan it proposes.
+            match field(&value, "method") {
+                "cursor/ask_question" => {
+                    self.cursor_question(&value, &mut step);
+                    return Ok(step);
+                }
+                "cursor/create_plan" => {
+                    self.cursor_plan(&value, &mut step);
+                    return Ok(step);
+                }
+                _ => {}
+            }
         }
         if value["method"] == "session/request_permission" {
             if value["params"]["sessionId"]
@@ -497,7 +538,9 @@ impl Protocol {
                 }
                 return Ok(step);
             }
-            if self.config.provider == "hermes" && self.config.mode == "plan" {
+            // Cursor's Plan mode is read-only by design; a request to change state in
+            // a Plan task is declined here rather than offered to the user.
+            if matches!(self.config.provider.as_str(), "hermes" | "cursor") && self.config.mode == "plan" {
                 let tool = &value["params"]["toolCall"];
                 let kind = field(tool, "kind");
                 let read_only = matches!(kind, "read" | "search" | "fetch" | "think");
@@ -599,6 +642,9 @@ impl Protocol {
     fn acp_update_config(&mut self, result: &Value) {
         if result["configOptions"].is_array() {
             self.acp_config["configOptions"] = result["configOptions"].clone();
+            if self.config.provider == "cursor" {
+                super::cursor::normalize(&mut self.acp_config);
+            }
         }
     }
 
@@ -683,6 +729,8 @@ impl Protocol {
             &[super::kilo::mode_id(&self.config.mode)]
         } else if self.config.provider == "devin" {
             &[super::devin::mode_id(&self.config.mode)]
+        } else if self.config.provider == "cursor" {
+            &[super::cursor::mode_id(&self.config.mode)]
         } else if self.config.provider == "hermes" {
             match self.config.mode.as_str() {
                 "auto" => &["accept_edits", "default"],
@@ -761,6 +809,9 @@ impl Protocol {
                 .iter()
                 .find_map(|id| modes.iter().find(|mode| mode["id"] == *id))
             {
+                if self.config.provider == "cursor" && self.acp_config["modes"]["currentModeId"] == mode["id"] {
+                    return self.acp_model(step);
+                }
                 step.write.push(json!({"jsonrpc":"2.0","id":4,"method":"session/set_mode","params":{"sessionId":self.remote_id,"modeId":mode["id"]}}));
                 return Ok(());
             }
@@ -810,10 +861,10 @@ impl Protocol {
         };
         Ok(())
     }
-    /// Devin keeps each setting on its saved session, so a resumed task skips
-    /// the round trip for any value it already has.
+    /// Devin and Cursor keep each setting on the saved session, so a resumed
+    /// task skips the round trip for any value it already has.
     fn unchanged(&self, option: &Value, value: &str) -> bool {
-        self.config.provider == "devin" && option["currentValue"] == value
+        matches!(self.config.provider.as_str(), "devin" | "cursor") && option["currentValue"] == value
     }
     /// Devin's permission requests carry only the tool call ID and options, and
     /// several allow options grant standing access, so the generic path (which
@@ -845,6 +896,9 @@ impl Protocol {
     fn acp_model(&mut self, step: &mut Step) -> Result<(), String> {
         if self.config.provider == "devin" && !self.image_blocks.is_empty() && super::devin::rejects_images(&self.acp_config, &self.config.model) {
             return Err("This Devin model does not accept images. Choose another model, or remove the images and describe them.".into());
+        }
+        if self.config.provider == "cursor" {
+            return self.cursor_model(step);
         }
         if self.config.model.is_empty() || self.config.model == "default" {
             return self.acp_effort(step);
@@ -883,7 +937,7 @@ impl Protocol {
         }
         Ok(())
     }
-    fn acp_effort(&mut self, step: &mut Step) -> Result<(), String> {
+    pub(super) fn acp_effort(&mut self, step: &mut Step) -> Result<(), String> {
         if let Some(effort) = &self.config.reasoning_effort {
             let option = options(&self.acp_config, "thought_level").or_else(|| options(&self.acp_config, "effort"));
             match option {
