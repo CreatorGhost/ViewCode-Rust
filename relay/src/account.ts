@@ -1,20 +1,23 @@
 import { DurableObject } from "cloudflare:workers";
-import { deleteAccountState } from "./account-delete.ts";
+import { deleteAccountState, deleteSelfState, SIGNING_KEY } from "./account-delete.ts";
 import { type Bucket, fullBucket, take } from "./bucket.ts";
 import { type Env, fail, json } from "./env.ts";
 import { type DeviceView, errorFrame, forwardFrame, parseClientFrame, presenceFrame, undeliverableFrame } from "./frames.ts";
 import { MAX_DEVICES, MAX_PUSH_TOKENS_PER_DEVICE, RATE_LIMITED_PARSE_CHARS } from "./limits.ts";
 import { hostChanged, isStale, keyChanged, tokenCurrent } from "./policy.ts";
 import { deliverPush, parseNotifyBody, parsePushRegistration, shouldNotify, type NotifyBody } from "./push.ts";
-import { isUuid, parseDevice } from "./validate.ts";
+import { credentialExpired, deviceExpiry, isSigningKey, mayAdminister, mayPairAs, mayRevoke, newSigningKey, offerPairing, redeemPairing, relayMode, type PairingRow, type PairingStore } from "./self.ts";
+import { type DeviceInput, isUuid, parseDevice } from "./validate.ts";
 
 interface Attachment extends Bucket {
   device: string;
+  /** When the device's credential lapses (unix seconds); 0 or absent for none. */
+  exp?: number;
   /** Join time; counts as the last activity until the first ping is answered. */
   joinedAt: number;
 }
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 5;
 
 interface Row {
   id: string;
@@ -25,6 +28,10 @@ interface Row {
   last_seen: number;
   registered_at: number;
   gen: number;
+  /** 1 for the desktop that proved the host secret of a self-hosted deployment; 0 everywhere else. */
+  admin: number;
+  /** Unix seconds after which a paired device of a self-hosted deployment is no longer paired; 0 = no fixed end. */
+  expires_at: number;
   [column: string]: SqlStorageValue;
 }
 
@@ -79,13 +86,25 @@ export class Account extends DurableObject<Env> {
           device_id TEXT NOT NULL, platform TEXT NOT NULL, token TEXT NOT NULL, created_at INTEGER NOT NULL,
           PRIMARY KEY (device_id, token))`);
     }
+    // admin + pairings (schema 4): self-hosted deployments (relay/src/self.ts). Unused by the shared relay.
+    if (!sql.exec<{ name: string }>("PRAGMA table_info(devices)").toArray().some((c) => c.name === "admin")) {
+      sql.exec("ALTER TABLE devices ADD COLUMN admin INTEGER NOT NULL DEFAULT 0");
+    }
+    // expires_at (schema 5): a paired device's fixed end on a self-hosted deployment.
+    if (!sql.exec<{ name: string }>("PRAGMA table_info(devices)").toArray().some((c) => c.name === "expires_at")) {
+      sql.exec("ALTER TABLE devices ADD COLUMN expires_at INTEGER NOT NULL DEFAULT 0");
+    }
+    sql.exec("CREATE TABLE IF NOT EXISTS pairings (code_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL, used_at INTEGER)");
     if (version >= 0) sql.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   }
 
   async fetch(request: Request): Promise<Response> {
     const { pathname } = new URL(request.url);
     if (pathname === "/internal/register") return this.register(await request.json());
+    // Reached only from the Worker's self-hosted routes, after it checked the host secret or shaped the pairing.
+    if (pathname.startsWith("/internal/self/")) return this.selfRoute(pathname, request);
     // Every request is checked against the registered devices, so a revoked token stops working at once.
+    if (this.expire()) this.broadcastPresence();
     const device = request.headers.get("x-device-id") ?? "";
     const row = this.row(device);
     if (!row) return fail(401, "device is not registered");
@@ -94,21 +113,91 @@ export class Account extends DurableObject<Env> {
       return fail(401, "token was issued before the device registered");
     }
 
-    if (pathname === "/v1/account") return request.method === "DELETE" ? this.deleteAccount() : fail(405, "method not allowed");
+    if (pathname === "/v1/account") {
+      if (request.method !== "DELETE") return fail(405, "method not allowed");
+      return mayAdminister(this.mode, row) ? this.deleteAccount() : fail(403, "only the host computer can do that");
+    }
     if (pathname === "/v1/connect") return this.join(request, device);
     // The Worker signs the fresh token after this 200; reaching here means the device is still registered.
-    if (pathname === "/v1/token") return request.method === "POST" ? json({ ok: true, gen: row.gen }) : fail(405, "method not allowed");
+    // A paired device's refreshed token ends when the device does: refreshing never extends a pairing.
+    if (pathname === "/v1/token") return request.method === "POST" ? json({ ok: true, gen: row.gen, expiresAt: row.expires_at }) : fail(405, "method not allowed");
     if (pathname === "/v1/push/devices") return request.method === "POST" ? this.pushRegister(request, device) : fail(405, "method not allowed");
     if (pathname === "/v1/devices" && request.method === "GET") {
       if (this.reap()) this.broadcastPresence();
       return json({ devices: this.devices() });
     }
     const id = /^\/v1\/devices\/([^/]+)$/.exec(pathname)?.[1];
-    if (id && request.method === "DELETE") return this.revoke(id);
+    if (id && request.method === "DELETE") {
+      return mayRevoke(this.mode, row, id.toLowerCase()) ? this.revoke(id) : fail(403, "only the host computer can remove another device");
+    }
     return fail(id || pathname === "/v1/devices" ? 405 : 404, id || pathname === "/v1/devices" ? "method not allowed" : "not found");
   }
 
-  private register(input: unknown): Response {
+  private get mode(): "shared" | "self" {
+    return relayMode(this.env);
+  }
+
+  private pairings(): PairingStore {
+    const sql = this.ctx.storage.sql;
+    return {
+      get: (hash) => sql.exec<PairingRow & Record<string, SqlStorageValue>>("SELECT * FROM pairings WHERE code_hash = ?", hash).toArray()[0],
+      insert: (row) => void sql.exec("INSERT INTO pairings (code_hash, expires_at, used_at) VALUES (?, ?, ?)", row.code_hash, row.expires_at, row.used_at),
+      markUsed: (hash, at) => void sql.exec("UPDATE pairings SET used_at = ? WHERE code_hash = ?", at, hash),
+      prune: (before) => void sql.exec("DELETE FROM pairings WHERE expires_at < ?", before),
+      pending: (now) => sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM pairings WHERE used_at IS NULL AND expires_at > ?", now).one().n,
+      cancel: () => void sql.exec("DELETE FROM pairings WHERE used_at IS NULL"),
+    };
+  }
+
+  private async selfRoute(pathname: string, request: Request): Promise<Response> {
+    if (this.mode !== "self") return fail(404, "not found");
+    const now = Date.now();
+    if (pathname === "/internal/self/key") return json({ key: await this.signingKey() });
+    if (pathname === "/internal/self/host") return this.register(await request.json(), 1);
+    if (pathname === "/internal/self/pairings") {
+      if (request.method === "DELETE") {
+        this.pairings().cancel();
+        return json({ ok: true });
+      }
+      const error = offerPairing(this.pairings(), (await request.json()) as PairingRow, now);
+      return error ? fail(409, error) : json({ ok: true });
+    }
+    if (pathname === "/internal/self/pair") {
+      const { codeHash, device } = (await request.json()) as { codeHash: string; device: DeviceInput };
+      // Checked before the code is spent: a refused device must not burn the pairing.
+      const existing = this.row(device.id);
+      if (!mayPairAs(existing) || keyChanged(existing?.public_key, device.publicKey)) return fail(409, "device key changed");
+      if (!existing && this.rows().length >= MAX_DEVICES) return fail(403, `device limit reached (${MAX_DEVICES})`);
+      if (redeemPairing(this.pairings(), codeHash, now) !== "ok") return fail(401, "pairing code is not valid or has expired");
+      return this.register(device, 0, deviceExpiry(Math.floor(now / 1000)));
+    }
+    return fail(404, "not found");
+  }
+
+  /** The deployment's token-signing key: made on first use, then never changed (not by a host-secret rotation either). */
+  private async signingKey(): Promise<string> {
+    const stored = await this.ctx.storage.get(SIGNING_KEY);
+    if (isSigningKey(stored)) return stored;
+    const key = newSigningKey();
+    await this.ctx.storage.put(SIGNING_KEY, key);
+    return key;
+  }
+
+  /** Paired devices whose 30 days are over stop being devices: row gone, socket closed like a revoke. */
+  private expire(): boolean {
+    if (this.mode !== "self") return false;
+    const now = Math.floor(Date.now() / 1000);
+    const lapsed = this.ctx.storage.sql.exec<{ id: string }>("SELECT id FROM devices WHERE expires_at > 0 AND expires_at <= ?", now).toArray();
+    for (const { id } of lapsed) {
+      this.ctx.storage.sql.exec("DELETE FROM devices WHERE id = ?", id);
+      this.ctx.storage.sql.exec("DELETE FROM push_tokens WHERE device_id = ?", id);
+      this.buckets.delete(id);
+      for (const ws of this.ctx.getWebSockets(id)) this.close(ws, 4001, "expired");
+    }
+    return lapsed.length > 0;
+  }
+
+  private register(input: unknown, admin = 0, expiresAt = 0): Response {
     const d = parseDevice(input);
     if (typeof d === "string") return fail(400, d);
     const existing = this.row(d.id);
@@ -118,11 +207,12 @@ export class Account extends DurableObject<Env> {
     // so that device's other valid tokens keep working; they carry the same key and are the same device.
     const gen = crypto.getRandomValues(new Uint32Array(1))[0];
     this.ctx.storage.sql.exec(
-      `INSERT INTO devices (id, name, platform, public_key, last_seen, registered_at, gen) VALUES (?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET name = excluded.name, platform = excluded.platform`,
-      d.id, d.name, d.platform, d.publicKey, Date.now(), Math.floor(Date.now() / 1000), gen,
+      // A device that pairs again gets a fresh 30 days; any other re-registration leaves the end where it was (0).
+      `INSERT INTO devices (id, name, platform, public_key, last_seen, registered_at, gen, admin, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET name = excluded.name, platform = excluded.platform, expires_at = excluded.expires_at`,
+      d.id, d.name, d.platform, d.publicKey, Date.now(), Math.floor(Date.now() / 1000), gen, admin, expiresAt,
     );
-    return json({ ok: true, gen: this.row(d.id)?.gen ?? gen });
+    return json({ ok: true, gen: this.row(d.id)?.gen ?? gen, expiresAt });
   }
 
   private revoke(raw: string): Response {
@@ -186,14 +276,15 @@ export class Account extends DurableObject<Env> {
   }
 
   private async deleteAccount(): Promise<Response> {
-    await deleteAccountState(this.ctx, (ws, code, reason) => this.close(ws, code, reason));
+    await (this.mode === "self" ? deleteSelfState : deleteAccountState)(this.ctx, (ws, code, reason) => this.close(ws, code, reason));
     return json({ ok: true });
   }
 
   private join(request: Request, device: string): Response {
     if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") return fail(426, "WebSocket upgrade required");
     const hostParam = new URL(request.url).searchParams.get("host");
-    const host = hostParam === "1" ? 1 : hostParam === "0" ? 0 : null;
+    // On a self-hosted deployment only the desktop that proved the host secret hosts.
+    const host = hostParam === "1" ? (mayAdminister(this.mode, this.row(device) ?? { admin: 0 }) ? 1 : 0) : hostParam === "0" ? 0 : null;
     const now = Date.now();
     // Seed from the old socket before closing it, so a reconnect after hibernation does not refill the burst.
     const old = this.ctx.getWebSockets(device);
@@ -202,7 +293,7 @@ export class Account extends DurableObject<Env> {
     for (const ws of old) this.close(ws, 4000, "replaced by a newer connection");
     const pair = new WebSocketPair();
     this.ctx.acceptWebSocket(pair[1], [device]);
-    pair[1].serializeAttachment({ device, ...bucket, joinedAt: now } satisfies Attachment);
+    pair[1].serializeAttachment({ device, ...bucket, joinedAt: now, exp: this.row(device)?.expires_at ?? 0 } satisfies Attachment);
     this.ctx.storage.sql.exec("UPDATE devices SET last_seen = ?, host = COALESCE(?, host) WHERE id = ?", now, host, device);
     this.broadcastPresence();
     return new Response(null, { status: 101, webSocket: pair[0] });
@@ -212,9 +303,14 @@ export class Account extends DurableObject<Env> {
     const att = ws.deserializeAttachment() as Attachment | null;
     if (!att) return ws.close(1011, "missing attachment");
     const now = Date.now();
+    // An open socket does not outlive its device's credential (the attachment carries the end, so this costs no query).
+    if (credentialExpired({ expires_at: att.exp ?? 0 }, Math.floor(now / 1000))) {
+      if (this.expire()) this.broadcastPresence();
+      return;
+    }
     const spent = take(this.buckets.get(att.device) ?? att, now);
     this.buckets.set(att.device, spent.bucket);
-    ws.serializeAttachment({ device: att.device, joinedAt: att.joinedAt, ...spent.bucket } satisfies Attachment);
+    ws.serializeAttachment({ device: att.device, joinedAt: att.joinedAt, exp: att.exp, ...spent.bucket } satisfies Attachment);
 
     // Parsed before the bucket check so a small rate-limited send can still name its `to` and `ref`; a large one is not parsed at all.
     if (!spent.ok && (typeof message !== "string" || message.length > RATE_LIMITED_PARSE_CHARS)) return this.send(ws, errorFrame("rate limit exceeded"));
@@ -224,7 +320,9 @@ export class Account extends DurableObject<Env> {
     }
     if (frame.kind === "invalid") return this.send(ws, errorFrame(frame.error));
     if (frame.kind === "host") {
-      if (!hostChanged(this.row(att.device)?.host, frame.enabled)) return;
+      const sender = this.row(att.device);
+      if (frame.enabled && !mayAdminister(this.mode, sender ?? { admin: 0 })) return this.send(ws, errorFrame("only the host computer hosts"));
+      if (!hostChanged(sender?.host, frame.enabled)) return;
       this.ctx.storage.sql.exec("UPDATE devices SET host = ? WHERE id = ?", frame.enabled ? 1 : 0, att.device);
       return this.broadcastPresence();
     }
@@ -296,11 +394,13 @@ export class Account extends DurableObject<Env> {
   private devices(): DeviceView[] {
     return this.rows().map((r) => {
       const online = this.online(r.id);
-      return { id: r.id, name: r.name, platform: r.platform, publicKey: r.public_key, host: online && r.host === 1, online, lastSeen: r.last_seen };
+      const view: DeviceView = { id: r.id, name: r.name, platform: r.platform, publicKey: r.public_key, host: online && r.host === 1, online, lastSeen: r.last_seen };
+      return r.expires_at > 0 ? { ...view, expiresAt: r.expires_at * 1000 } : view;
     });
   }
 
   private broadcastPresence(): void {
+    this.expire();
     this.reap();
     const frame = presenceFrame(this.devices());
     const now = Date.now();

@@ -1,4 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { toggleTheme } from './rail-helper';
+import { pickFromPlus } from './composer-more-helper';
 import { openInspectorTab } from './inspector-tab-helper';
 // The workspace view (Conversation, Board, GitHub) is picked from the sidebar's view menu.
 const showView = async (page: Page, name: string) => { await page.getByRole('button', { name: /^Workspace view: / }).click(); await page.getByRole('menuitemradio', { name, exact: true }).click(); };
@@ -66,7 +68,7 @@ async function disableWallpapers(page: Page): Promise<void> {
   await expect(page.locator('.workspace-wallpaper img')).toHaveCount(0);
   await closeSettings(page);
 }
-const newTaskHeading = (page: Page) => page.getByRole('heading', { name: /^What should we build in/ });
+const newTaskHeading = (page: Page) => page.getByRole('heading', { name: /^What should .+ build\?$/ });
 const taskProjectPicker = (page: Page) => page.getByRole('dialog', { name: 'Choose project', exact: true });
 const toolByName = (page: Page, name: string) => page.locator(`details.tool-activity[data-tool-name="${name}"]`)
   .or(page.locator('details.tool-activity:not([data-tool-name])').filter({ has: page.locator('summary').filter({ hasText: name }) }));
@@ -207,8 +209,8 @@ test('Arabic composer lines and streaming replies keep their direction after res
     await route.fulfill({ response, body: previewBody(body) });
   });
   await page.reload();
-  await page.getByRole('button', { name: 'New task ⌘ N', exact: true }).click();
-  await expect(page.getByRole('heading', { name: /^What should we build in/ })).toBeVisible();
+  await page.getByRole('button', { name: 'New thread ⌘ N', exact: true }).click();
+  await expect(page.getByRole('heading', { name: /^What should .+ build\?$/ })).toBeVisible();
   const draft = 'مرحبا بالعالم!\nHello, world!\nمرحبا (PandaCode)؟\n<img src=x onerror="window.__owned=1">';
   await prompt(page).fill(draft);
   await expect(prompt(page)).toHaveAttribute('dir', 'auto');
@@ -263,7 +265,9 @@ test('identifies sample data and renders the desktop workspace without runtime e
   page.on('pageerror', error => errors.push(error.message));
   await page.reload();
   await expect(page).toHaveTitle('PandaCode');
-  await expect(page.locator('.brand')).toHaveText('PandaCode');
+  // The sidebar header holds only its controls: no wordmark.
+  await expect(page.locator('.sidebar>.brand')).toHaveText('');
+  await expect(page.locator('.sidebar>.brand .brand-name')).toHaveCount(0);
   await expect(page.getByText('Browser preview · sample data', { exact: true })).toBeVisible();
   await expect(page.locator('.task-item.selected .task-title')).toHaveText('Make search feel instant');
   await expect(page.locator('#task-heading')).toHaveCount(0);
@@ -468,8 +472,8 @@ test('retains loaded history when a completed tool-heavy turn spans multiple pag
 });
 
 test('defaults to dark mode and remembers explicit light and dark preferences after reload', async ({ page }) => {
-  const toggle = page.getByRole('button', { name: 'Dark mode', exact: true });
-  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  // The theme has no rail button: it switches from Go to anything (or Settings → Appearance).
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect(page.locator('html')).toHaveCSS('color-scheme', 'dark');
   expect(await page.evaluate(() => localStorage.getItem('pandacode.theme'))).toBeNull();
   expect((await appearanceSurfaces(page)).mainContrast).toBeGreaterThanOrEqual(4.5);
@@ -479,25 +483,23 @@ test('defaults to dark mode and remembers explicit light and dark preferences af
   await expect(menu.getByRole('combobox', { name: 'Search harnesses and models', exact: true })).toBeFocused();
   await page.screenshot({ path: '/private/tmp/pandacode-dark-models.png', animations: 'disabled' });
   await page.keyboard.press('Escape');
-  await toggle.focus();
-  await page.keyboard.press('Space');
-  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.locator('html')).toHaveCSS('color-scheme', 'light');
-  expect(await page.evaluate(() => localStorage.getItem('pandacode.theme'))).toBe('light');
-  await page.reload();
-  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await toggleTheme(page);
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   await expect(page.locator('html')).toHaveCSS('color-scheme', 'light');
-  // Wallpapers are off by default: the main pane is a clear window onto the sky.
-  await expect(page.locator('.workspace')).toHaveAttribute('data-scene', 'sky');
-  await expect(page.locator('.main-pane')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   expect(await page.evaluate(() => localStorage.getItem('pandacode.theme'))).toBe('light');
-  await toggle.focus();
-  await page.keyboard.press('Space');
-  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await expect(page.locator('html')).toHaveCSS('color-scheme', 'light');
+  // Wallpapers and live scenes are off by default: the main pane is a plain panel with nothing behind it.
+  await expect(page.locator('.workspace')).not.toHaveAttribute('data-scene');
+  await expect(page.locator('.main-pane')).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  expect(await page.evaluate(() => localStorage.getItem('pandacode.theme'))).toBe('light');
+  await toggleTheme(page);
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   expect(await page.evaluate(() => localStorage.getItem('pandacode.theme'))).toBe('dark');
   await page.reload();
-  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   expect(await page.evaluate(() => localStorage.getItem('pandacode.theme'))).toBe('dark');
 });
@@ -506,7 +508,6 @@ test('uses dark mode for missing or invalid preferences without writing a prefer
   await page.evaluate(() => localStorage.setItem('pandacode.theme', 'invalid'));
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await expect(page.getByRole('button', { name: 'Dark mode', exact: true })).toHaveAttribute('aria-pressed', 'true');
   expect(await page.evaluate(() => localStorage.getItem('pandacode.theme'))).toBe('invalid');
   await page.evaluate(() => localStorage.removeItem('pandacode.theme'));
   await page.reload();
@@ -550,7 +551,6 @@ for (const theme of ['light', 'dark']) {
     }, theme);
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
-    await expect(page.getByRole('button', { name: 'Dark mode', exact: true })).toHaveAttribute('aria-pressed', String(theme === 'dark'));
     await expect(page.locator('body')).not.toHaveClass(/compact/);
     expect(await page.evaluate(() => ['compact', 'projectFilter', 'model.codex'].map(key => localStorage.getItem(`pandacode.${key}`)))).toEqual(['false', '', 'current-model']);
   });
@@ -639,7 +639,7 @@ test('offers only reported reasoning efforts and remembers the selected effort f
   await effortRadio(page, 'Low').press('End');
   await expect.poll(() => savedEffort(page)).toBe('high');
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'Dark mode', exact: true }).click();
+  await toggleTheme(page);
   await modelTrigger(page).click();
   await expect(reasoningLabel(page)).toHaveText('High');
   await page.keyboard.press('Escape');
@@ -1002,10 +1002,10 @@ test('changes terminal colors without replacing its session or the composer draf
   await expect(viewport).toBeVisible();
   await expect(viewport).toHaveCSS('background-color', 'rgb(25, 26, 24)');
   await page.evaluate(() => { (window as any).__themeNodes = [document.querySelector('#prompt'), document.querySelector('.xterm-screen')]; });
-  await page.getByRole('button', { name: 'Dark mode', exact: true }).click();
+  await toggleTheme(page);
   await expect(viewport).toHaveCSS('background-color', 'rgb(255, 255, 255)');
   await expect(prompt(page)).toHaveValue('Keep this draft while changing appearance');
-  await page.getByRole('button', { name: 'Dark mode', exact: true }).click();
+  await toggleTheme(page);
   await expect(viewport).toHaveCSS('background-color', 'rgb(25, 26, 24)');
   await expect(prompt(page)).toHaveValue('Keep this draft while changing appearance');
   await page.screenshot({ path: '/private/tmp/pandacode-dark-terminal.png', animations: 'disabled' });
@@ -1028,9 +1028,9 @@ test('synchronizes dark mode with native appearance without wallpapers and respe
     });
   });
   await expect.poll(() => page.evaluate(() => (window as any).__themeCalls.at(-1)?.darkMode)).toBe(true);
-  await page.getByRole('button', { name: 'Dark mode', exact: true }).click();
+  await toggleTheme(page);
   await expect.poll(() => page.evaluate(() => (window as any).__themeCalls.at(-1)?.darkMode)).toBe(false);
-  await page.getByRole('button', { name: 'Dark mode', exact: true }).click();
+  await toggleTheme(page);
   await expect.poll(() => page.evaluate(() => (window as any).__themeCalls.at(-1)?.darkMode)).toBe(true);
   const glass = (await appearanceSurfaces(page)).alphas;
   // The main pane is clear: the thread is a window onto the sky.
@@ -1049,7 +1049,7 @@ test('synchronizes dark mode with native appearance without wallpapers and respe
   await page.screenshot({ path: '/private/tmp/pandacode-dark-accessible.png', animations: 'disabled' });
   await page.keyboard.press('Escape');
   const count = await page.evaluate(() => { (window as any).__disposeThemeAppearance(); return (window as any).__themeCalls.length; });
-  await page.getByRole('button', { name: 'Dark mode', exact: true }).click();
+  await toggleTheme(page);
   expect(await page.evaluate(() => (window as any).__themeCalls.length)).toBe(count);
   await devtools.detach();
 });
@@ -1133,7 +1133,7 @@ test('finds and selects projects beyond the first hundred filter options', async
   await expect(selected).toBeFocused();
   await page.keyboard.press('Escape');
   await page.locator('.new-task-button').click();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in Fixture project 119?');
+  await expect(page.locator('#welcome-project')).toHaveText('Fixture project 119');
   await expect(openTaskProject(page)).toHaveText('Fixture project 119');
 });
 
@@ -2390,8 +2390,8 @@ test('saved user prompts keep old threads active until their own 24 hour boundar
   await expect(taskRow(page, 'session-4', 'inactive')).toBeVisible();
 });
 
-test('lists pending tasks of every project in Finished, which folds and stays folded', async ({ page }) => {
-  // Only Active, Finished and Settled exist: pending samples are listed under Finished too.
+test('lists pending tasks of every project with no heading, and nothing folds them away', async ({ page }) => {
+  // Pending samples are finished work like any other: listed after Active, with no heading.
   await page.route('**/src/preview.ts*', async route => {
     const response = await route.fetch();
     await route.fulfill({ response, body: (await response.text()).replace(/const providers\s*=/, `for (const s of sessions) s.taskStage = 'pending';\n$&`) });
@@ -2403,13 +2403,12 @@ test('lists pending tasks of every project in Finished, which folds and stays fo
   await expect(activeRows(page).locator('.task-title')).toHaveText(['Make search feel instant']);
   // The row names its project, visibly once the sidebar is wide enough and always for assistive technology.
   await expect(taskRow(page, 'session-4').locator('.task-project')).toHaveText('pandacode');
-  const toggle = tasks.getByRole('button', { name: /^Finished/ });
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  await toggle.click();
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await expect(tasks.locator('.task-item')).toHaveCount(0);
+  await expect(tasks.getByRole('button', { name: /^Finished/ })).toHaveCount(0);
+  await expect(tasks.locator('.section-heading')).toHaveCount(0);
+  // A fold saved by an older build cannot hide them: there is no heading to open them again.
+  await page.evaluate(() => localStorage.setItem('pandacode.sidebar.collapsedSections', JSON.stringify(['review'])));
   await page.reload();
-  await expect(page.getByRole('region', { name: 'Finished tasks', exact: true }).getByRole('button', { name: /^Finished/ })).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByRole('region', { name: 'Finished tasks', exact: true }).locator('.task-item')).toHaveCount(4);
 });
 
 test('moves a task to inactive automatically at the 24 hour response boundary', async ({ page }) => {
@@ -2589,11 +2588,12 @@ test('a new task is listed after its first prompt and an untouched one is discar
 });
 
 test('opens a new conversation in the active project without listing it', async ({ page }) => {
-  const projectName = await page.locator('#breadcrumb').innerText();
+  // The header shows the thread's title; the (hidden) project crumb still names the project.
+  const projectName = (await page.locator('#breadcrumb [data-action="select-project"]').textContent())!;
   await page.locator('.new-task-button').click();
   await expect(page.getByRole('dialog')).not.toBeVisible();
   await expect(newTaskHeading(page)).toBeVisible();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+  await expect(page.locator('#welcome-project')).toHaveText('orbit');
   await expect(prompt(page)).toBeFocused();
   await expect(prompt(page)).toHaveValue('');
   await expect(page.locator('.user-message,.agent-message')).toHaveCount(0);
@@ -2610,7 +2610,8 @@ test('opens a new conversation in the active project without listing it', async 
   expect(headingBounds.y + headingBounds.height).toBeLessThan(mainBounds.y + mainBounds.height * 0.65);
   expect(composerBounds.y - headingBounds.y - headingBounds.height).toBeGreaterThanOrEqual(0);
   expect(mainBounds.y + mainBounds.height - composerBounds.y - composerBounds.height).toBeGreaterThanOrEqual(0);
-  expect(mainBounds.y + mainBounds.height - composerBounds.y - composerBounds.height).toBeLessThan(140);
+  // The composer follows the headline and its project line, centred with them rather than anchored to the pane's bottom.
+  expect(composerBounds.y - headingBounds.y - headingBounds.height).toBeLessThan(120);
   await expect(page.getByRole('button', { name: 'Change task project', exact: true })).toHaveCount(1);
   await page.screenshot({ path: '/private/tmp/pandacode-new-task.png' });
   await page.getByRole('button', { name: /^Model: / }).click();
@@ -2652,7 +2653,7 @@ test('changes the empty task project while keeping its draft, harness, model, an
   await picker.getByRole('searchbox', { name: 'Search projects', exact: true }).fill('panda');
   await picker.getByRole('option', { name: /^pandacode — / }).click();
   await expect(picker).toHaveCount(0);
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in pandacode?');
+  await expect(page.locator('#welcome-project')).toHaveText('pandacode');
   await expect(prompt(page)).toHaveAttribute('data-session-id', sessionId!);
   await expect(openTaskProject(page)).toHaveText('pandacode');
   await expect(page.locator('#welcome-project')).toHaveText('pandacode');
@@ -2666,7 +2667,7 @@ test('changes the empty task project while keeping its draft, harness, model, an
   await page.reload();
   expect(await page.evaluate(() => localStorage.getItem('pandacode.project'))).toBe('project-2');
   await page.locator('.new-task-button').click();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in pandacode?');
+  await expect(page.locator('#welcome-project')).toHaveText('pandacode');
 });
 
 test('searches task projects by keyboard and cancels or reselects without changing the task', async ({ page }) => {
@@ -2686,7 +2687,7 @@ test('searches task projects by keyboard and cancels or reselects without changi
   await search.press('Escape');
   await expect(picker).toHaveCount(0);
   await expect(trigger).toBeFocused();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+  await expect(page.locator('#welcome-project')).toHaveText('orbit');
   await expect(prompt(page)).toHaveValue('A draft that stays with this empty task');
   await trigger.click();
   await search.fill('/Users/you/Projects/orbit');
@@ -2694,13 +2695,13 @@ test('searches task projects by keyboard and cancels or reselects without changi
   await search.press('Enter');
   await expect(picker).toHaveCount(0);
   await expect(prompt(page)).toHaveAttribute('data-session-id', sessionId!);
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+  await expect(page.locator('#welcome-project')).toHaveText('orbit');
   await expect(prompt(page)).toHaveValue('A draft that stays with this empty task');
   await trigger.click();
   await search.fill('panda');
   await search.press('Enter');
   await expect(picker).toHaveCount(0);
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in pandacode?');
+  await expect(page.locator('#welcome-project')).toHaveText('pandacode');
   await expect(prompt(page)).toHaveAttribute('data-session-id', sessionId!);
   await expect(prompt(page)).toHaveValue('A draft that stays with this empty task');
 });
@@ -2724,7 +2725,7 @@ test('opens a new folder from the task project picker without discarding its dra
   await dialog.getByRole('textbox', { name: 'Project folder', exact: true }).fill('/tmp/new-task-folder');
   await dialog.getByRole('button', { name: 'Open project', exact: true }).click();
   await expect(dialog).not.toBeVisible();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in new-task-folder?');
+  await expect(page.locator('#welcome-project')).toHaveText('new-task-folder');
   await expect(prompt(page)).toHaveAttribute('data-session-id', sessionId!);
   await expect(openTaskProject(page)).toHaveText('new-task-folder');
   await expect(page.locator('#welcome-project')).toHaveText('new-task-folder');
@@ -2747,7 +2748,7 @@ test('applies a delayed project switch after leaving and reselecting the same em
   });
   await page.reload();
   await page.locator('.new-task-button').click();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+  await expect(page.locator('#welcome-project')).toHaveText('orbit');
   const sessionId = await draftTaskId(page);
   await prompt(page).fill('Retain this draft when I return before the project write finishes');
   await page.evaluate(() => { (window as any).__pandacodeDelayConfigure = true; });
@@ -2767,7 +2768,7 @@ test('applies a delayed project switch after leaving and reselecting the same em
   await page.locator('.new-task-button').click();
   await expect(prompt(page)).toHaveAttribute('data-session-id', sessionId!);
   await expect(prompt(page)).toHaveValue('Retain this draft when I return before the project write finishes');
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in pandacode?');
+  await expect(page.locator('#welcome-project')).toHaveText('pandacode');
   await expect(prompt(page)).toHaveAttribute('data-session-id', sessionId!);
   await expect(openTaskProject(page)).toHaveText('pandacode');
   await expect(page.locator('#welcome-project')).toHaveText('pandacode');
@@ -2795,7 +2796,7 @@ for (const delayedCommand of ['add_project', 'list_projects']) {
     });
     await page.reload();
     await page.locator('.new-task-button').click();
-    await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+    await expect(page.locator('#welcome-project')).toHaveText('orbit');
     const sessionId = await draftTaskId(page);
     await prompt(page).fill('Keep this task and draft after canceling its folder request');
     await page.getByRole('button', { name: 'Change task project', exact: true }).first().click();
@@ -2822,7 +2823,7 @@ for (const delayedCommand of ['add_project', 'list_projects']) {
     await closeSettings(page);
     await expect(prompt(page)).toHaveAttribute('data-session-id', sessionId!);
     await expect(openTaskProject(page)).toHaveText('orbit');
-    await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+    await expect(page.locator('#welcome-project')).toHaveText('orbit');
     await expect(prompt(page)).toHaveValue('Keep this task and draft after canceling its folder request');
   });
 }
@@ -2883,7 +2884,7 @@ test('restores the last active project and creates new conversations there', asy
   await expect(projectFilter(page)).toHaveText('pandacode');
   await page.locator('.new-task-button').click();
   await expect(newTaskHeading(page)).toBeVisible();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in pandacode?');
+  await expect(page.locator('#welcome-project')).toHaveText('pandacode');
   await expect(prompt(page)).toBeFocused();
 });
 
@@ -3134,7 +3135,7 @@ async function observeWorktreeCommands(page: Page, hook = ''): Promise<void> {
 
 async function submitWorktree(page: Page, branch: string): Promise<void> {
   // The prompt bar's branch chip is the one worktree control; a started task spawns a sibling task.
-  await page.locator('#branch-chip').click();
+  await pickFromPlus(page, page.locator('#branch-chip'));
   await page.getByRole('dialog', { name: 'Branch and worktree', exact: true }).getByRole('menuitem', { name: /New task in a worktree/ }).click();
   const dialog = page.locator('#dialog');
   await dialog.getByRole('textbox', { name: 'Branch name', exact: true }).fill(branch);
@@ -3153,7 +3154,7 @@ test('creates a worktree task under its original project with an icon and fresh 
   await expect.poll(() => savedPermission(page)).toBe('full');
   await prompt(page).fill('Keep this draft in the original checkout');
   await submitWorktree(page, 'codex/worktree-task');
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+  await expect(page.locator('#welcome-project')).toHaveText('orbit');
   const selected = page.locator('.task-item.selected');
   const taskId = await selected.getAttribute('data-id');
   expect(taskId).not.toBe('session-1');
@@ -3177,7 +3178,7 @@ test('creates a worktree task under its original project with an icon and fresh 
   await expect(page.locator('.task-item.selected .task-worktree')).toBeVisible();
   await expect(page.locator('.composer-local')).toHaveText('Worktree');
   await page.locator('.new-task-button').click();
-  await expect(newTaskHeading(page)).toHaveAccessibleName('What should we build in orbit?');
+  await expect(page.locator('#welcome-project')).toHaveText('orbit');
   await expect(page.locator('.task-item.selected .task-worktree')).toHaveCount(0);
   await expect(page.locator('.composer-local')).toHaveText('Local');
   await expect(page.locator('#welcome-project')).toBeEnabled();
@@ -3519,12 +3520,18 @@ test('a first visit keeps the old rows (inert, briefly) until the page or the lo
   }
 });
 
-test('the prompt sits in the same place in every thread', async ({ page }) => {
+test('the prompt sits in the same place in every thread with messages, and is centred on an empty one', async ({ page }) => {
   await expect(page.locator('#composer')).toBeVisible();
-  const bottoms: number[] = [];
+  const bottoms: number[] = [], centred: boolean[] = [];
   // Measured once surfaces have settled: panes arrive with a short spring.
   const settled = () => page.evaluate(() => document.getAnimations().filter(animation => animation.timeline instanceof DocumentTimeline && animation.playState === 'running' && Number.isFinite(Number(animation.effect?.getComputedTiming().endTime))).length);
-  const measure = async () => { await expect(page.locator('#composer')).toBeVisible(); await expect.poll(settled).toBe(0); bottoms.push(Math.round((await page.locator('#composer').boundingBox())!.y + (await page.locator('#composer').boundingBox())!.height)); };
+  // An empty thread is the New thread page: headline, project line and composer sit together in the pane's middle.
+  const measure = async () => {
+    await expect(page.locator('#composer')).toBeVisible(); await expect.poll(settled).toBe(0);
+    const box = (await page.locator('#composer').boundingBox())!, pane = (await page.locator('.conversation-pane').boundingBox())!;
+    if (await page.locator('.conversation-pane.new-task-page').count()) centred.push(box.y > pane.y + pane.height * .3 && box.y + box.height < pane.y + pane.height * .85);
+    else bottoms.push(Math.round(box.y + box.height));
+  };
   const ids = await page.locator('#navigation .task-item').evaluateAll(rows => rows.map(row => (row as HTMLElement).dataset.id!));
   expect(ids.length).toBeGreaterThan(1);
   for (const id of ids) {
@@ -3533,11 +3540,14 @@ test('the prompt sits in the same place in every thread', async ({ page }) => {
     await expect(page.locator('#transcript .history-notice')).toHaveCount(0);
     await measure();
   }
-  // A brand-new task, which has no context count yet, lines up too.
+  // A brand-new task is an empty thread too.
   await page.keyboard.press('ControlOrMeta+n');
   await expect(page.locator('.new-task-welcome')).toBeVisible();
   await measure();
+  expect(bottoms.length).toBeGreaterThan(1);
   expect(new Set(bottoms).size, `prompt bottoms: ${bottoms.join(', ')}`).toBe(1);
+  expect(centred.length).toBeGreaterThan(0);
+  expect(centred.every(Boolean)).toBe(true);
 });
 
 test('streaming keeps the transcript at the bottom after sending and leaves a reader who scrolled up', async ({ page }) => {

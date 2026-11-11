@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { enableScenes } from './scene-helper';
 
 const row = (page: Page, id: string) => page.locator(`#navigation .task-item[data-id="${id}"]`);
 const tile = (page: Page, id: string) => page.locator(`.thread-tile[data-tile="${id}"]`);
@@ -150,6 +151,7 @@ test.describe('thread tiles', () => {
   });
 
   test('every tile shows its own thread in the sky and moves nothing under reduced motion', async ({ page }) => {
+    await enableScenes(page);
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await open(page);
     const first = (await current(page))!, other = (await threads(page)).find(id => id !== first)!;

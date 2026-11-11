@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { pickFromPlus } from './composer-more-helper';
 
 // Menus and dialogs read as one line per row: short details sit beside the label,
 // long ones move behind an info mark whose tooltip appears on hover and keyboard focus.
@@ -12,9 +13,11 @@ async function open(page: Page): Promise<void> {
 
 test('menu rows keep label and detail on one line and never wrap', async ({ page }) => {
   await open(page);
-  await page.getByRole('button', { name: 'Attach files for context' }).click();
-  const rows = page.getByRole('dialog', { name: 'Attach', exact: true }).getByRole('menuitem');
-  await expect(rows).toHaveCount(6);
+  await page.getByRole('button', { name: 'Add files and tools' }).click();
+  const rows = page.getByRole('dialog', { name: 'Add files and tools', exact: true }).getByRole('menuitem');
+  // Six things to attach or queue, then the composer's parked controls.
+  await expect(rows.nth(5)).toBeVisible();
+  expect(await rows.count()).toBeGreaterThan(6);
   const heights = await rows.evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height));
   for (const height of heights) expect(height).toBeLessThanOrEqual(36);
   const first = rows.first();
@@ -60,7 +63,7 @@ test('long menu details move behind an info mark with a tooltip on hover and on 
 
 test('dialogs fold long descriptions and static field hints behind marks while keeping them readable', async ({ page }) => {
   await open(page);
-  await page.locator('#branch-chip').click();
+  await pickFromPlus(page, page.locator('#branch-chip'));
   await page.getByRole('menuitem', { name: /New task in a worktree/ }).click();
   const dialog = page.locator('#dialog');
   await expect(dialog.locator('.dialog-title h2')).toHaveText('New task in a worktree');

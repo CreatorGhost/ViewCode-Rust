@@ -378,7 +378,7 @@ pub(crate) fn turn_snapshot_paths(
     Ok(Some((paths, excluded, truncated)))
 }
 
-fn stop_process_group(process_id: u32) {
+pub(crate) fn stop_process_group(process_id: u32) {
     #[cfg(unix)]
     // Each Git command owns a fresh group, so timeout cleanup includes its hooks.
     unsafe {

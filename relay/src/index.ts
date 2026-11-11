@@ -5,6 +5,7 @@ import { type Env, fail, json } from "./env.ts";
 import { githubUser } from "./github.ts";
 import { MAX_FRAME_BYTES } from "./limits.ts";
 import { isKnownRoute } from "./routes.ts";
+import { forwardAs, handleSelf, relayMode, SELF_ACCOUNT } from "./self.ts";
 import { signToken, verifyToken } from "./token.ts";
 import { parseDevice } from "./validate.ts";
 
@@ -35,6 +36,8 @@ async function authGithub(request: Request, env: Env): Promise<Response> {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    // Self-hosted (Quick connect): one deployment, one account, the host secret instead of GitHub.
+    if (relayMode(env) === "self") return handleSelf(request, env, (forwarded) => stub(env, SELF_ACCOUNT).fetch(forwarded));
     const url = new URL(request.url);
     const path = url.pathname;
     if (!configured(env, path === "/v1/auth/github")) return fail(500, "server error");
@@ -47,13 +50,7 @@ export default {
 
     if (!(await env.ACCOUNT_LIMITER.limit({ key: claims.acct })).success) return fail(429, "too many requests");
 
-    const headers = new Headers(request.headers);
-    headers.set("x-device-id", claims.dev);
-    headers.set("x-token-iat", String(claims.iat));
-    headers.delete("x-token-gen");
-    if (claims.gen !== undefined) headers.set("x-token-gen", String(claims.gen));
-    headers.delete("authorization");
-    const res = await stub(env, claims.acct).fetch(new Request(request, { headers }));
+    const res = await stub(env, claims.acct).fetch(forwardAs(request, claims));
     if (path !== "/v1/token" || !res.ok) return res;
     const { gen } = (await res.json().catch(() => ({}))) as { gen?: unknown };
     return json({ token: await signToken(env.SESSION_SECRET, claims.acct, claims.dev, Math.floor(Date.now() / 1000), typeof gen === "number" ? gen : undefined) });

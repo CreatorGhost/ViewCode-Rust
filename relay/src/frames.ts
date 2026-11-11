@@ -53,6 +53,8 @@ export interface DeviceView {
   host: boolean;
   online: boolean;
   lastSeen: number;
+  /** Self-hosted deployments only: when a paired device's credential lapses (ms). Absent when it has no fixed end. */
+  expiresAt?: number;
 }
 /** The full registered list, the same shape as `GET /v1/devices`. */
 export const presenceFrame = (devices: DeviceView[]) => JSON.stringify({ kind: "presence", devices });

@@ -24,6 +24,7 @@ import { previewCapabilities } from './preview-capabilities';
 import { recipesCommand } from './preview-recipes';
 import { openCodePreviewKey, openCodePreviewModels, previewOpenCodeChoices, previewOpenCodeSelection } from './preview-opencode';
 const turnChanges = createPreviewTurnChanges();
+let quickConnect: ReturnType<typeof import('./preview-quick-connect').createPreviewQuickConnect> | undefined;
 const now = Date.now();
 const sampleReadme = '<div align="center">\n\n<img src="docs/banner.png" alt="Orbit banner" width="100%" onerror="alert(1)"/>\n\n[![Build](https://img.shields.io/badge/build-passing-green)](https://example.com/ci)\n\n<script>alert(1)</script>\n\n<a href="https://example.com/x" download class="toast">Get</a>\n\n</div>\n\n# Orbit\n\nA tiny search index for the browser preview.\n\n## Usage\n\n- Build the index with `createSearchIndex`.\n- Call `search(query)`.\n\n> Results are case-insensitive.\n';
 const sampleSource = '// Browser preview — sample source\nexport function createSearchIndex(items) {\n  return {\n    search(query) {\n      return items.filter(item =>\n        item.title.toLowerCase().includes(query.toLowerCase())\n      );\n    }\n  };\n}\n';
@@ -31,6 +32,8 @@ const previewWorkspaceFiles = ['index.html', '.gitignore', 'README.md', 'package
 const sampleTestOutput = 'PASS src/components/search.test.ts\n  ✓ filters results as the query changes\n  ✓ preserves keyboard selection\n\nTests: 12 passed, 12 total\nTime: 0.8s\nSample output — no command was executed.';
 function encodeTool(tool: ToolActivity): string { return JSON.stringify({ type: 'tool_activity', version: 1, ...tool }); }
 let projects: Project[] = [{ id: 'project-1', name: 'orbit', path: '/Users/you/Projects/orbit' }, { id: 'project-2', name: 'pandacode', path: '/Users/you/Projects/pandacode' }];
+// ?projectcolor=violet gives the first project a colour (one of `ProjectColor`), as `set_project_color` would.
+{ const color = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('projectcolor') : null; if (color) projects[0] = { ...projects[0], color: color as Project['color'] }; }
 let sessions: Session[] = [
   { id: 'session-1', projectId: 'project-1', title: 'Make search feel instant', provider: 'claude', model: 'sonnet', mode: 'ask', status: 'idle', createdAt: now - 420000, updatedAt: now, archived: false, worktreePath: null, resumeId: 'preview-session', lastResponseAt: now - 300000 },
   { id: 'session-2', projectId: 'project-1', title: 'Refine the navigation', provider: 'codex', model: '', mode: 'ask', status: 'idle', createdAt: now - 8200000, updatedAt: now - 8000000, archived: false, worktreePath: null, resumeId: null, lastResponseAt: null },
@@ -1497,6 +1500,14 @@ export async function invoke<T>(command: string, args: Record<string, any>): Pro
     invoke, emit,
     addProject: name => { const p = { id: crypto.randomUUID(), name, path: `/Users/you/PandaCode Bots/${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}` }; projects.push(p); return p; },
   });
+  if (command.startsWith('quick_connect_')) {
+    const w = window as any;
+    // `__quickConnect` steers the mock; `__quickConnectPair(name?)` plays the phone scanning the link.
+    const mock = quickConnect ??= (await import('./preview-quick-connect')).createPreviewQuickConnect(emit, () => (w.__quickConnect ??= {}));
+    w.__quickConnectPair ??= mock.pair;
+    w.__quickConnectCalls = (w.__quickConnect ??= {}).calls ??= [];
+    return mock.invoke(command, args) as T;
+  }
   if (command === 'remote_device_grants' || command === 'remote_set_device_grant' || command.startsWith('remote_pair_')) return (await import('./preview-grants')).previewGrants(command, args) as T;
   if (command === 'remote_diagnostics' || command === 'remote_diagnostics_export') return (await import('./preview-diagnostics')).previewDiagnostics(command, args) as T;
   if (command === 'list_files' && (window as any).__filesFail) {

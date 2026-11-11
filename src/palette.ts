@@ -1,30 +1,32 @@
 import './palette.css';
 import { parseHex, toOklch } from './color';
-import { accentTokens, statusClearOf, TONE_TOKENS, vsixTokens, type Tokens, type VsixTheme } from './palette-core';
+import { accentTokens, DEFAULT_ACCENT, PROJECT_TOKENS, projectTones, statusClearOf, TONE_TOKENS, vsixTokens, type Tokens, type VsixTheme } from './palette-core';
+export { DEFAULT_ACCENT } from './palette-core';
 import { wallpaperAccents } from './wallpaper-accents';
 export type { VsixTheme } from './palette-core';
 
-/* The app's colors: PandaCode's own palette with an accent that is classic yellow,
- * a fixed color, or drawn from the current wallpaper — or, when a VS Code theme is
+/* The app's colors: PandaCode's own palette with an accent that is the default teal
+ * (a fresh profile), classic yellow, a fixed color, or drawn from the current wallpaper — or, when a VS Code theme is
  * active, that theme's colors, which then stay put whatever the wallpaper does. */
 
-export type AccentChoice = { mode: 'wallpaper' } | { mode: 'classic' } | { mode: 'custom'; color: string };
+export type AccentChoice = { mode: 'default' } | { mode: 'wallpaper' } | { mode: 'classic' } | { mode: 'custom'; color: string };
 type Saved = { accent: AccentChoice; vsix: VsixTheme | null; cache: { key: string; tokens: Tokens; terminal: Record<string, string> } | null };
 
 const STORE = 'pandacode.palette';
 export const CLASSIC = '#ffd43b';
 export const SWATCHES = ['#4f8ef7', '#34c084', '#a86cf0', '#f0679b', '#ff8a3d', '#2fb8c4'];
 const TOKEN_NAMES = ['--bg', '--sidebar', '--panel', '--raised', '--border', '--text', '--muted', '--faint', '--success', '--danger',
-  '--accent', '--accent-rgb', '--accent-dim', '--accent-ink', '--focus', '--on-accent', '--accent-hover', '--accent-deep-rgb', '--accent-tint', '--accent-tint-strong', '--warning', '--info', ...TONE_TOKENS];
+  '--accent', '--accent-rgb', '--accent-dim', '--accent-ink', '--focus', '--on-accent', '--accent-hover', '--accent-deep-rgb', '--accent-tint', '--accent-tint-strong', '--warning', '--info', ...TONE_TOKENS, ...PROJECT_TOKENS];
 const root = document.documentElement;
 
 function read(): Saved {
   try {
     const saved = JSON.parse(localStorage.getItem(STORE) ?? 'null') as Partial<Saved> | null;
     const accent = saved?.accent;
-    const valid = accent && (accent.mode === 'wallpaper' || accent.mode === 'classic' || (accent.mode === 'custom' && parseHex(accent.color)));
-    return { accent: valid ? accent : { mode: 'wallpaper' }, vsix: saved?.vsix ?? null, cache: saved?.cache ?? null };
-  } catch { return { accent: { mode: 'wallpaper' }, vsix: null, cache: null }; }
+    const valid = accent && (accent.mode === 'default' || accent.mode === 'wallpaper' || accent.mode === 'classic' || (accent.mode === 'custom' && parseHex(accent.color)));
+    // Nothing saved: the default accent. A saved choice (the wallpaper's accent included) is kept.
+    return { accent: valid ? accent : { mode: 'default' }, vsix: saved?.vsix ?? null, cache: saved?.cache ?? null };
+  } catch { return { accent: { mode: 'default' }, vsix: null, cache: null }; }
 }
 let state = read();
 let wallpaperId: string | undefined;
@@ -46,8 +48,10 @@ function markReady(): void {
   cancelAnimationFrame(readyFrame);
   readyFrame = requestAnimationFrame(() => { readyFrame = requestAnimationFrame(() => root.setAttribute('data-ready', '')); });
 }
-function write(tokens: Tokens): void {
+function write(palette: Tokens): void {
   markReady();
+  // The project tones follow only the base, so they are derived here and never ride in the saved cache.
+  const tokens = { ...palette, ...projectTones(theme()) };
   for (const name of TOKEN_NAMES) {
     if (name in tokens) root.style.setProperty(name, tokens[name]); else root.style.removeProperty(name);
   }
@@ -62,7 +66,8 @@ function compute(): { key: string; tokens: Tokens; terminal: Record<string, stri
     const { tokens, terminal } = vsixTokens(state.vsix);
     return { key: `vsix:${state.vsix.id}`, tokens, terminal };
   }
-  const color = state.accent.mode === 'custom' ? state.accent.color : state.accent.mode === 'wallpaper' ? wallpaperColor : undefined;
+  // The scene accent with no wallpaper or scene on screen is the default accent, never a jump to classic yellow.
+  const color = state.accent.mode === 'custom' ? state.accent.color : state.accent.mode === 'classic' ? undefined : state.accent.mode === 'wallpaper' && wallpaperColor || DEFAULT_ACCENT[mode];
   const source = color && parseHex(color)?.rgb;
   if (!source) return { key: `classic:${mode}`, tokens: statusClearOf(toOklch(parseHex(CLASSIC)!.rgb).h, mode), terminal: {} };
   const tokens = accentTokens(source, mode);
@@ -111,6 +116,10 @@ export const palette = {
   refresh(): void { apply(); },
 };
 
+/** For windows without the workspace stylesheet (the launcher, the tray popover): the accent to derive when the saved
+ * palette wrote none, i.e. classic yellow if that is the user's choice, else the default accent. */
+export const baseAccent = (mode: 'light' | 'dark'): string => state.accent.mode === 'classic' ? CLASSIC : DEFAULT_ACCENT[mode];
+
 /** Re-read the saved palette and apply its cached colors without recomputing; the launcher calls this when the main window changes them. */
 export function restorePalette(): void {
   state = read();
@@ -122,7 +131,7 @@ export function restorePalette(): void {
   write(state.cache.tokens);
   terminalOverrides = state.cache.terminal ?? {};
   const prefix = state.cache.key.split(':')[0];
-  if (!state.vsix && prefix.startsWith('#') && state.accent.mode === 'wallpaper') wallpaperColor = prefix;
+  if (!state.vsix && prefix.startsWith('#') && state.accent.mode === 'wallpaper' && !Object.values(DEFAULT_ACCENT).includes(prefix)) wallpaperColor = prefix;
 }
 
 // Before the workspace paints: last session's colors, so nothing flashes yellow first.
