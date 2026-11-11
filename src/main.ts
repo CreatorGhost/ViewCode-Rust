@@ -2,10 +2,12 @@ import { decodeHandoff, historicalProvider } from './provider-handoff';
 import { ACCOUNT_SWITCH_PREFIX, accountSwitchDetail } from './account-switch-note';
 import { bindThreadReordering, syncRovingFocus, threadGroupRows } from './thread-order';
 import { PROJECT_LIMIT, readCollapsed, shownTasks } from './sidebar-tree';
+import { SCENES_EVENT, scenesEnabled, setScenesEnabled } from './scene-preference';
+import { isParkedChoice, menuAnchor, mountComposerMore, parkedItems, pressParked } from './composer-more';
 import { railProjectsHtml, railUsageHtml } from './project-rail';
 import { USAGE_PEEK_EVENT } from './usage-peek';
 import { COLLAPSED_SECTIONS_KEY, COMPLETED_OPEN_KEY, UNREVIEWED_KEY, readOpen, sectionOf, sidebarSections, type HeldSection } from './sidebar-sections';
-import { PER_PROJECT, PROJECT_ORDER_KEY, SORT_KEY, compareManual, matchesFilter, readProjectOrder, readSort, taskComparator, type SidebarSort } from './sidebar-sort';
+import { PER_PROJECT, PROJECT_ORDER_KEY, SORT_KEY, compareManual, readProjectOrder, readSort, taskComparator, type SidebarSort } from './sidebar-sort';
 import './styles.css';
 import { createVoiceDictation, voiceButtonHtml } from './voice-dictation';
 import './design-system.css';
@@ -64,8 +66,6 @@ import { botAvatarHtml } from './bot-avatars';
 import * as botThread from './bot-thread';
 import type { Activity as BotActivity, FailoverAsk } from './bots';
 import { mountExternalLinks } from './external-links';
-import { mountDesktopBrand } from './brand-mark';
-import { starPanda } from './star-panda';
 import { bindMessageActions, messageActionsHtml } from './message-actions';
 import { providerLogo } from './provider-logos';
 import { decodeToolActivity, groupToolRuns, renderToolActivity, renderToolGroup, renderToolStatus, toolStackHtml } from './tool-activity';
@@ -99,7 +99,7 @@ import type { RoutingMode, RoutingStatus } from './model-routing';
 import { CONNECT_SETUP, LOCAL, behindDialog, behindText, cancelledRemoteStart, clearRemoteStart, computerControl, computerItems, lastSeenText, remoteStart, remoteStartAttached, remoteStartStrip, startStageText, trackRemoteStart } from './remote-target';
 import './cloud-agents.css';
 import { SETUP_CHOICE, cloudActionItems, cloudIcon, cloudProvider, cloudStrip, deleteMachineDialog, harnessRefusal, type CloudStage, type CloudTarget } from './cloud-agents';
-import { botsBarHtml, botsListHtml, botsPanelHeadHtml, markAllBotsRead, moveBot, pinnedBots, setBotPinned, storedSidebarView, storeSidebarView, syncSeen, type BotSignals, type SidebarView } from './sidebar-bots';
+import { botsListHtml, botsPanelHeadHtml, markAllBotsRead, moveBot, pinnedBots, setBotPinned, storedSidebarView, storeSidebarView, syncSeen, type BotSignals, type SidebarView } from './sidebar-bots';
 import { sharedChannelActionsHtml, sharedChannelComposerHtml, sharedChannelThreadHtml, type SharedChannelDetail, type SharedChannelSummary, type SharedChannelUiOptions } from './bot-shared-channels';
 import { connectAgentUiActions, type AgentUiAction } from './agent-ui-actions';
 import { createAgentInput, type AgentInput } from './agent-input';
@@ -161,7 +161,7 @@ const state = {
   projectId: '', sessionId: '', messages: [] as Message[], messagesLoading: false, messagesError: '', streams: new Map<string, Stream>(),
   view: (({ board: 'board', github: 'github' } as Record<string, 'board' | 'github'>)[localStorage.getItem('pandacode.view') ?? ''] ?? 'conversation') as WorkspaceView, boardPanel: false,
   sidebarCollapsed: localStorage.getItem('pandacode.sidebarCollapsed') === 'true',
-  query: '', inspector: false, inspectorTab: threadDefault(inspectorTabs) as PanelView,
+  inspector: false, inspectorTab: threadDefault(inspectorTabs) as PanelView,
   projectFilter: localStorage.getItem('pandacode.projectFilter') ?? '', collapsedFolders: readCollapsed(localStorage, 'pandacode.collapsedFolders'), expandedFolders: new Set<string>(),
   /** Follow-ups typed while an agent works, per task, in delivery order; mirrored from native storage. */
   queues: new Map<string, QueuedMessage[]>(), queueHolds: new Map<string, HoldReason>(), queueEditing: '', queueBusy: new Set<string>(),
@@ -179,8 +179,6 @@ let renderFrame = 0;
 /** Shows the open thread's scene behind the conversation (set once the sky mounts; `renderTranscript` calls it). */
 let showThreadScene: (id: string | null) => void = () => {};
 let navigationFrame = 0;
-let settledDock: HTMLElement | null = null;
-const settledResize = new ResizeObserver(() => { if (settledDock) $('#navigation').style.setProperty('--settled-height', `${settledDock.offsetHeight}px`); });
 type FinishingStream = { stream: Stream; finishedAt: number; error?: string };
 const finishingStreams = new Map<string, FinishingStream>();
 // Ignore late snapshots/events for IDs removed during this window's lifetime.
@@ -514,13 +512,12 @@ const $app = document.querySelector<HTMLDivElement>('#app')!;
 $app.innerHTML = `<div class="workspace" data-tauri-drag-region>
   <nav id="project-rail" class="project-rail" aria-label="Projects and shortcuts" data-tauri-drag-region><div id="rail-projects" class="rail-projects" role="group" aria-label="Projects"></div><div id="rail-usage" class="rail-usage" role="group" aria-label="Usage by agent"></div></nav>
   <aside id="workspace-sidebar" class="sidebar" aria-label="Projects and tasks">
-    <div class="brand" data-tauri-drag-region><button type="button" class="brand-name" aria-label="Replay PandaCode animation" data-tauri-drag-region="false">PandaCode</button>${button('view-menu', 'Workspace view: Conversation', 'thread', 'view-menu', 'id="view-menu" aria-haspopup="menu" aria-expanded="false"')}</div>
-    <div class="sidebar-actions"><button class="new-task-button" data-action="new-task">${icon('edit')}<span>New thread</span><kbd>${shortcut('N')}</kbd></button><button class="new-chat-button" data-action="new-chat" title="New chat (no project)">${icon('chat')}<span>New chat</span></button><button class="search-trigger" data-action="search">${icon('search')}<span>Search</span><kbd>${shortcut('K')}</kbd></button></div>
+    <div class="brand" data-tauri-drag-region>${button('view-menu', 'Workspace view: Conversation', 'thread', 'view-menu', 'id="view-menu" aria-haspopup="menu" aria-expanded="false"')}</div>
+    <div class="sidebar-actions"><button class="new-task-button" data-action="new-task">${icon('edit')}<span>New thread</span><kbd>${shortcut('N')}</kbd></button><button class="search-trigger" data-action="search">${icon('search')}<span>Search</span><kbd>${shortcut('K')}</kbd></button></div>
     <div class="sidebar-projects"><button id="project-filter" class="project-filter" data-action="filter-projects" aria-label="Filter projects" aria-haspopup="dialog" aria-expanded="false"><span data-filter-label>All projects</span>${icon('down')}</button><button id="sidebar-sort" class="icon-button sidebar-sort" data-action="sidebar-sort" aria-label="Sort and view" title="Sort and view" aria-haspopup="menu" aria-expanded="false">${SORT_ICON}</button>${button('import-conversations', 'Import conversations', 'download', 'import-trigger')}${button('add-project', 'Open project', 'plus')}</div>
-    <div class="sidebar-search">${icon('search')}<input id="sidebar-filter" type="search" aria-label="Filter tasks" placeholder="Filter tasks" autocomplete="off" spellcheck="false" maxlength="200" aria-keyshortcuts="/"><button type="button" class="sidebar-search-clear" data-action="clear-sidebar-filter" tabindex="-1" aria-label="Clear filter" title="Clear filter">${icon('close')}</button></div>
     <div class="navigation-frame"><div id="navigation" class="navigation"></div></div>
     <section id="sidebar-bots-panel" class="bots-panel" aria-label="Bots"></section>
-    <div class="sidebar-bottom"><div id="sidebar-bots" class="sidebar-bots"></div>${button('support', 'Help & support', 'help', 'support-button', 'id="support-button"')}${button('agent-usage', 'Agent usage', 'activity', '', 'id="agent-usage-button"')}${button('rail-github', 'Pull requests and issues', 'pull')}<button data-action="settings-page" data-id="remote" title="Remote access" aria-label="Remote access">${icon('phone')}</button><button data-action="settings" title="Settings (${shortcut(',')})" aria-label="Settings">${icon('settings')}</button>${starPanda()}<button data-action="toggle-theme" id="theme-toggle" aria-label="Dark mode" aria-pressed="false"></button></div>
+    <div class="sidebar-bottom"><button data-action="settings-page" data-id="remote" title="Remote access" aria-label="Remote access">${icon('phone')}</button>${button('rail-github', 'Pull requests and issues', 'pull')}<button data-action="settings" title="Settings (${shortcut(',')})" aria-label="Settings">${icon('settings')}</button></div>
   </aside>
   <main class="main-pane">
     <header class="workspace-header" data-tauri-drag-region="deep"><div class="header-leading" data-tauri-drag-region>${button('toggle-sidebar', 'Hide sidebar', 'sidebar', 'sidebar-toggle', 'id="sidebar-toggle" aria-controls="workspace-sidebar" aria-expanded="true" aria-keyshortcuts="Meta+B Control+B"')}<span id="view-divider" class="header-divider" aria-hidden="true" hidden></span><div id="breadcrumb" class="breadcrumb" data-tauri-drag-region></div></div><div class="header-actions">${preview ? '<span class="preview-status">Browser preview · sample data</span>' : ''}</div><div id="agents-dock-host"></div><div id="action-dock" class="action-dock" role="toolbar" aria-label="Workspace actions" aria-orientation="vertical" data-tauri-drag-region="false"><div class="action-dock-group" data-group="panels">${button('toggle-inspector', 'Toggle inspector', 'panel', 'active', 'id="inspector-toggle" aria-keyshortcuts="Meta+Shift+B Control+Shift+B"', `Toggle inspector (${shortcut('B', true)})`)}${button('terminal', 'Toggle terminal', 'terminal', '', 'id="terminal-toggle" aria-controls="terminal-drawer" aria-expanded="false" aria-keyshortcuts="Meta+J Control+J"', `Toggle terminal (${shortcut('J')})`)}${button('browser', 'Open browser', 'globe', '', 'id="browser-toggle"')}${button('moodboards', 'Project moodboards', 'images')}<button type="button" id="agents-toggle" class="agents-toggle" aria-label="Agents" aria-haspopup="dialog" aria-expanded="false" aria-controls="agents-flyout" data-dock-notip hidden>${icon('team')}<b class="dock-badge" aria-hidden="true" hidden></b></button></div><div class="action-dock-group" data-group="actions"><button type="button" class="header-run" id="run-project-button" data-action="run-project" aria-label="Run project" title="Run pandacode-run.sh" hidden>${icon('play')}<span>Run</span></button>${button('deploy', 'Deploy', 'upload', '', 'id="deploy-button" aria-haspopup="dialog"')}${button('task-menu', 'Task actions', 'more', '', 'id="task-menu-trigger" aria-haspopup="dialog" aria-expanded="false"')}</div><div class="action-dock-group" data-group="status"><button type="button" id="update-status" class="update-status" hidden>${icon('refresh')}<span>Restart to update</span></button></div></div><div id="agents-flyout" class="agents-flyout" data-tauri-drag-region="false" hidden><div id="subagents-host" class="subagents-host" hidden></div><div id="lineage-host" class="lineage-host"></div></div></header>
@@ -530,13 +527,13 @@ $app.innerHTML = `<div class="workspace" data-tauri-drag-region>
   <section id="settings-page" aria-label="Settings" hidden></section>
   <aside id="inspector" class="inspector" aria-label="Project inspector"><div class="inspector-strip"><nav class="inspector-tabs" role="tablist" aria-label="Panel views"><div class="inspector-tab file-panel-tab" data-view="file" hidden><button class="inspector-tab-button" role="tab" aria-selected="false" tabindex="-1" data-action="tab-open-files" aria-label="Open files" title="Open files">${icon('file')}<span class="inspector-tab-label">Open files</span></button>${button('close-inspector-tab', 'Close open files', 'close', 'inspector-tab-close', 'data-view="file" tabindex="-1"')}</div>${INSPECTOR_AVAILABLE.map(view => `<div class="inspector-tab" data-view="${view}" hidden><button class="inspector-tab-button" role="tab" aria-selected="false" tabindex="-1" data-action="${INSPECTOR_ACTIONS[view]}" aria-label="${INSPECTOR_TITLES[view]}" title="${escape(INSPECTOR_TIPS[view] ?? INSPECTOR_TITLES[view])}">${icon(INSPECTOR_ICONS[view])}<span class="inspector-tab-label">${INSPECTOR_TITLES[view]}</span>${view === 'changes' ? '<span id="changes-count" class="inspector-tab-count"></span>' : ''}</button>${button('close-inspector-tab', `Close ${INSPECTOR_TITLES[view]}`, 'close', 'inspector-tab-close', `data-view="${view}" tabindex="-1"`)}</div>`).join('')}${button('inspector-add-tab', 'Open a view', 'plus', 'inspector-tab-add', 'aria-haspopup="dialog"')}</nav><h2 id="inspector-title" class="sr-only">${INSPECTOR_TITLES[inspectorTabs.selected]}</h2><div class="inspector-strip-actions">${button('refresh-inspector', 'Refresh project', 'refresh', '', 'id="inspector-refresh"')}${button('toggle-inspector', 'Hide inspector', 'panel', 'inspector-hide')}</div></div><div id="inspector-content" class="inspector-content"></div><section id="browser-panel" class="browser-panel" aria-label="Browser" hidden></section><section id="simulator-panel" class="simulator-panel" aria-label="Simulators" hidden></section><section id="vm-panel" class="vm-panel" aria-label="Virtual machines" hidden></section><section id="design-panel" class="design-panel" aria-label="Design" hidden></section><section id="file-panel" class="file-panel" aria-label="Open files" hidden><div id="file-tabs" class="file-tabs" role="tablist" aria-label="Open files" hidden></div><section id="file-view" class="file-view" role="tabpanel" aria-label="Open file" hidden></section></section></aside>
 </div><div id="toast" class="toast" role="status" hidden></div><dialog id="dialog"></dialog>`;
-mountDesktopBrand($('.brand-name'));
 // Design-system gallery (src/redesign/gallery.ts): browser preview only, with `?ds`.
 if (preview && new URLSearchParams(location.search).has('ds')) void import('./redesign/gallery').then(gallery => gallery.mountGallery());
 mountAgentsDock(document.querySelector<HTMLElement>('#agents-dock-host')!, { openTask: id => run((async () => { await reloadSessions(); await selectSession(id, true); })()) });
 publishSpringEasings();
 syncPulses();
 mountActionDock($('#action-dock'));
+mountComposerMore($('#composer-area'));
 installDialogMotion(document.querySelector<HTMLDialogElement>('#dialog')!);
 const terminalPanel = new TerminalPanel($('#terminal-drawer'), $('#terminal-host'), report);
 const projectRunner = new ProjectRunner({
@@ -553,7 +550,7 @@ let projectsListed = false;
 let bootPending: Promise<void> | undefined;
 let sectionHold: { id: string; section: HeldSection } | undefined, completedOpen = readOpen(localStorage, COMPLETED_OPEN_KEY);
 const collapsedSections = readCollapsed(localStorage, COLLAPSED_SECTIONS_KEY);
-/** Settled lists its newest rows first, then pages in more on request. */
+/** Behind the fold, settled threads list their newest rows first, then page in more on request. */
 const COMPLETED_FIRST = 10, COMPLETED_PAGE = 25;
 let completedShown = COMPLETED_FIRST;
 let sidebarSort: SidebarSort = readSort(localStorage);
@@ -691,7 +688,7 @@ const worktrees = createWorktrees({
     // Only a dialog that is still open may close and navigate; a canceled one leaves the user where they are.
     if (!live) return;
     closeModal();
-    if (current) { state.query = ''; await selectSession(created.id, true); }
+    if (current) { await selectSession(created.id, true); }
   },
   settle: async task => { await changeTaskStage(task, 'completed', false); },
   extraItems: task => github.menuItems(task),
@@ -758,7 +755,8 @@ const attachments = mountPromptAttachments({
     return true;
   },
   rerender: taskId => { if (taskId === state.sessionId) renderAttachmentBar(); },
-  menu: (anchor, items, onSelect) => showChoices(anchor, { title: 'Attach', width: 340, actions: true, items: [...items, { id: 'recipes', label: 'Workflow recipes…', description: 'Queue saved steps', icon: 'play' }, { id: 'wake', label: 'Schedule a wake-up…', description: 'Wake this thread later', icon: 'clock' }], onSelect: id => { closeChoiceMenu(); if (id === 'wake') openWakeComposer(anchor); else run(id === 'recipes' ? openRecipes() : onSelect(id)); } }),
+  // The `+` menu: what can be attached, then every composer control that is not in the row (composer-more.ts).
+  menu: (anchor, items, onSelect) => showChoices(anchor, { title: 'Add files and tools', width: 340, actions: true, items: [...items, { id: 'recipes', label: 'Workflow recipes…', description: 'Queue saved steps', icon: 'play' }, { id: 'wake', label: 'Schedule a wake-up…', description: 'Wake this thread later', icon: 'clock' }, ...parkedItems()], onSelect: id => { closeChoiceMenu(); if (isParkedChoice(id)) pressParked(id); else if (id === 'wake') openWakeComposer(anchor); else run(id === 'recipes' ? openRecipes() : onSelect(id)); } }),
   projectFiles: () => { state.inspector = true; state.inspectorTab = 'files'; state.selectedKind = ''; renderInspector(); },
   sketch: (taskId, existing) => run(openSketch(taskId, existing)),
 });
@@ -1057,10 +1055,10 @@ const subagents = new Subagents($('#subagents-host'), 'subagents-panel', session
 const jevActivity = new JevActivity();
 $('#transcript').before(jevActivity.host);
 mountAgents($('#agents-toggle') as HTMLButtonElement, $('#agents-flyout'), () => architectView ? [architectView, subagents, lineageSource] : [subagents, lineageSource]);
-// The thread is a window: the wallpaper (when the Wallpapers switch is on) or the sky shows inside the main pane.
+// The thread is a plain panel unless the user opts in: the wallpaper (the Wallpapers switch) or, with that off, a live scene (the Live scenes switch) shows inside the main pane.
 const wallpapers = mountWallpapers($('.workspace'), $('.main-pane'));
 const sky = mountSky($('.main-pane'), $('.workspace'), {
-  wanted: () => !wallpapers.preferences.enabled,
+  wanted: () => !wallpapers.preferences.enabled && scenesEnabled(),
   fixedMinutes: preview ? parseSkyTime(new URLSearchParams(location.search).get('sky')) : null,
   expose: preview,
   pinnedScene: preview ? new URLSearchParams(location.search).get('scene') : null,
@@ -1081,7 +1079,7 @@ const tiles = mountThreadTiles({
   open: async (id, scrollTop) => { await selectSession(id); if (scrollTop !== undefined) { transcriptScroller.scrollTop = scrollTop; releaseTranscript(); } },
   focusPrompt: () => document.querySelector<HTMLTextAreaElement>('#prompt')?.focus(),
   draw: (id, rows, scroller) => drawTile(id, rows, scroller),
-  scene: (tile, id) => { const scene = mountSky(tile, $('.workspace'), { wanted: () => !wallpapers.preferences.enabled, fixedMinutes: skyTime, tileRoot: $('.work-area') }); scene.setThread(id); return scene; },
+  scene: (tile, id) => { const scene = mountSky(tile, $('.workspace'), { wanted: () => !wallpapers.preferences.enabled && scenesEnabled(), fixedMinutes: skyTime, tileRoot: $('.work-area') }); scene.setThread(id); return scene; },
   notify,
 });
 wallpapers.subscribe(() => tiles.refreshScenes());
@@ -1089,9 +1087,10 @@ showThreadScene = id => { sky.setThread(id); tiles.sync(id); };
 showThreadScene(session()?.draft ? null : session()?.id ?? null);
 wallpapers.subscribe(() => sky.refresh());
 // The accent follows the scene on screen; a VS Code theme keeps its own colors.
-// With Wallpapers off the scene is the sky, and the scene accent is its calm blue.
-const syncPaletteWallpaper = () => palette.setWallpaper(wallpapers.enabled ? wallpapers.currentId : SKY_SCENE);
+// With Wallpapers off and Live scenes on the scene is the sky, and the scene accent is its calm blue; with neither there is no scene.
+const syncPaletteWallpaper = () => palette.setWallpaper(wallpapers.enabled ? wallpapers.currentId : scenesEnabled() ? SKY_SCENE : undefined);
 wallpapers.subscribe(syncPaletteWallpaper); syncPaletteWallpaper();
+window.addEventListener(SCENES_EVENT, () => { sky.refresh(); tiles.refreshScenes(); syncPaletteWallpaper(); });
 window.addEventListener('pandacode-theme-change', () => palette.refresh());
 const disposeSidebarResizing = initializeSidebarResizing($('.workspace'), $('.sidebar'));
 const disposeInspectorResizing = initializeSidebarResizing($('.workspace'), $('#inspector'), true);
@@ -1152,12 +1151,6 @@ function clearWorkspaceInspector(render = true): void {
   state.browserUrl = '';
   selectedFileContext = undefined;
   if (render) renderInspector();
-}
-function renderThemeToggle(): void {
-  const dark = currentTheme() === 'dark', toggle = $('#theme-toggle');
-  toggle.innerHTML = icon(dark ? 'sun' : 'moon');
-  toggle.setAttribute('aria-pressed', String(dark));
-  toggle.title = dark ? 'Switch to light mode' : 'Switch to dark mode';
 }
 function activateProject(id: string, render = true): void {
   const changed = state.projectId !== id;
@@ -1546,13 +1539,8 @@ function renderNavigation(): void {
   const filterIcon = filtered ? projectAppIcon(filtered.id, filtered.name) : '';
   const shownIcon = filterLabel.previousElementSibling;
   if ((shownIcon?.outerHTML ?? '') !== filterIcon) { shownIcon?.remove(); if (filterIcon) filterLabel.insertAdjacentHTML('beforebegin', filterIcon); }
-  const filterField = $('#sidebar-filter') as HTMLInputElement;
-  if (filterField.value !== state.query) filterField.value = state.query;
-  filterField.parentElement!.classList.toggle('has-query', Boolean(state.query));
-  const projectName = (s: Session) => state.projects.find(p => p.id === s.projectId)?.name ?? '';
   const sidebarSessions = listedSessions().filter(s => !botProjects.has(s.projectId));
   const inScope = sidebarSessions.filter(s => !state.projectFilter || s.projectId === state.projectFilter);
-  const matching = inScope.filter(s => matchesFilter(s, state.query, projectName(s)));
   // Opening a thread (in view, with the window focused) clears its unread mark; settling one does too.
   const seen = unreviewed ?? (state.sessions.length ? unreviewed = readCollapsed(localStorage, UNREVIEWED_KEY) : new Set<string>());
   const reviewed = [...seen].filter(id => { const task = state.sessions.find(s => s.id === id); return id === state.sessionId && transcriptVisible() && document.hasFocus() || (task ? taskStage(task) === 'completed' : state.sessions.length > 0); });
@@ -1564,7 +1552,7 @@ function renderNavigation(): void {
   if (sectionHold && sectionHold.section !== 'active' && isRunning(sectionHold.id)) sectionHold = { ...sectionHold, section: 'active' };
   const order = taskComparator(sidebarSort.tasks), manual = sidebarSort.tasks === 'manual';
   const sections = sidebarSections({
-    tasks: [...matching].sort(order), stage: taskStage,
+    tasks: [...inScope].sort(order), stage: taskStage,
     // Work that needs you: running or waiting, stopped by a usage limit, or failed while you were away.
     active: s => isRunning(s.id) || limitActive(s, now) || failed(s) && seen.has(s.id),
     selectedId: state.sessionId, hold: sectionHold?.id === state.sessionId ? sectionHold.section : undefined,
@@ -1613,31 +1601,36 @@ function renderNavigation(): void {
   };
   const single = Boolean(state.projectFilter);
   const heading = (key: string, label: string, count: number) => `<div class="group-heading section-heading">${label}<span class="section-count">${count}</span></div>`;
-  const filtering = Boolean(state.query.trim());
   // Active, Finished, Chats and Tasks fold from their headings (saved in collapsedSections); a line
   // runs from the label to the count. `rows` draws only while open.
   const section = (key: string, label: string, name: string, count: number, rows: () => string) => {
     if (!count) return '';
-    const open = filtering || !collapsedSections.has(key);
+    const open = !collapsedSections.has(key);
     return `<section class="task-group sidebar-section ${key}-group" data-thread-group="${key}" aria-label="${name}"><button class="group-heading section-heading section-fold" data-action="toggle-section" data-section="${key}" tabindex="-1" aria-expanded="${open}" aria-controls="${key}-tasks">${label}<span class="section-rule" aria-hidden="true"></span><span class="section-count">${count}</span>${icon('chevron')}</button><div id="${key}-tasks" class="task-list" ${open ? '' : 'hidden'}>${open ? rows() : ''}</div></section>`;
   };
-  // While filtering, every match shows: closed sections open and limits lift, for this draw only
-  // (nothing is saved).
-  const completedVisible = completedOpen || filtering;
+  // The fold at the end of the list: Finished rows past the per-section cap and every settled thread
+  // wait behind one quiet "N more" row. Open (saved as before), Finished lists every row, the
+  // settled ones follow a page at a time, and the row reads "Show less".
+  const reviewCapped = shownTasks(sections.review, false, state.sessionId, sidebarSort.perProject);
+  const reviewRows = completedOpen ? sections.review : reviewCapped;
   // The open (held) thread always shows, even past the first page, as in a folder.
-  const completedRows = filtering ? sections.completed : shownTasks(sections.completed, false, state.sessionId, completedShown);
+  const completedRows = completedOpen ? shownTasks(sections.completed, false, state.sessionId, completedShown) : [];
   const completedMore = sections.completed.length - completedRows.length;
-  const completedSection = sections.completed.length
-    ? `<section class="task-group sidebar-section completed-group" data-thread-group="completed" aria-label="Settled tasks"><button class="group-heading section-heading section-toggle" data-action="toggle-completed" tabindex="-1" aria-expanded="${completedVisible}" aria-controls="completed-tasks">${icon('chevron')}Settled<span class="section-count">${sections.completed.length}</span></button><div id="completed-tasks" class="task-list" ${completedVisible ? '' : 'hidden'}>${completedVisible ? completedRows.map(s => row(s)).join('') + (completedMore ? `<button class="folder-more" data-action="completed-more" tabindex="-1">Show ${Math.min(COMPLETED_PAGE, completedMore)} more</button>` : '') : ''}</div></section>` : '';
+  const folded = sections.review.length - reviewCapped.length + sections.completed.length;
+  const completedSection = completedRows.length
+    ? `<section class="task-group sidebar-section more-group" data-thread-group="completed" aria-label="Settled tasks"><div id="completed-tasks" class="task-list">${completedRows.map(s => row(s)).join('') + (completedMore ? `<button class="folder-more" data-action="completed-more" tabindex="-1">Show ${Math.min(COMPLETED_PAGE, completedMore)} more</button>` : '')}</div></section>` : '';
+  const foldRow = folded ? `<button class="folder-more more-fold" data-action="toggle-completed" tabindex="-1" aria-expanded="${completedOpen}">${completedOpen ? 'Show less' : `${folded} more`}</button>` : '';
+  // Finished has no heading: after Pinned and Active the threads just continue, down to the fold.
+  const reviewGroup = sections.review.length ? `<section class="task-group sidebar-section review-group" data-thread-group="review" aria-label="Finished tasks"><div id="review-tasks" class="task-list">${reviewRows.map(s => row(s, !single, manual)).join('')}</div></section>` : '';
   const sectioned = sections.active.length + sections.review.length + sections.completed.length;
   // Pinned keeps the order you gave it, whatever the task sort.
   const pinned = visible.filter(s => s.pinned).sort(compareManual);
   // "Show N more" / "Show less" under a capped list; `key` is a project id, "chats" or "all".
-  const moreButton = (key: string, total: number, shown: number, expanded: boolean, limit: number) => !filtering && (total > shown || expanded && total > limit)
+  const moreButton = (key: string, total: number, shown: number, expanded: boolean, limit: number) => (total > shown || expanded && total > limit)
     ? `<button class="folder-more" data-action="toggle-folder-more" data-project="${escape(key)}" tabindex="-1">${expanded ? 'Show less' : `${total - shown} more`}</button>` : '';
   const capped = (key: string, tasks: Session[], limit: number) => {
     const expanded = state.expandedFolders.has(key);
-    const rows = filtering ? tasks : shownTasks(tasks, expanded, state.sessionId, limit);
+    const rows = shownTasks(tasks, expanded, state.sessionId, limit);
     return { rows, more: moreButton(key, tasks.length, rows.length, expanded, limit) };
   };
   // All projects: no folders, only sections. Projectless chats, then every other task, each row
@@ -1653,7 +1646,7 @@ function renderNavigation(): void {
   // A selected project is already named by the filter above: list its tasks flat, with room for more.
   const project = single ? state.projects.find(p => p.id === state.projectFilter) : undefined;
   const projectTasks = project ? visible.filter(s => !s.pinned && s.projectId === project.id) : [];
-  const projectList = project && (projectTasks.length || !filtering && !sectioned && !pinned.length) ? (() => {
+  const projectList = project && (projectTasks.length || !sectioned && !pinned.length) ? (() => {
     const { rows, more } = capped(project.id, projectTasks, PROJECT_LIMIT);
     const list = rows.map(s => row(s, false, manual)).join('') || '<div class="no-tasks">No tasks yet</div>';
     return `<section class="task-group folder-group single-project" data-thread-group="project:${escape(project.id)}" data-project="${escape(project.id)}" aria-label="${escape(project.name)} tasks"><div class="task-list">${list}${more}</div></section>`;
@@ -1665,11 +1658,10 @@ function renderNavigation(): void {
   const focused = nav.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
   const focusSelector = focused?.dataset.id ? `[data-id="${CSS.escape(focused.dataset.id)}"]` : focused?.dataset.action ? `[data-action="${CSS.escape(focused.dataset.action)}"]${focused.dataset.project ? `[data-project="${CSS.escape(focused.dataset.project)}"]` : ''}${focused.dataset.section ? `[data-section="${CSS.escape(focused.dataset.section)}"]` : ''}${focused.dataset.task ? `[data-task="${CSS.escape(focused.dataset.task)}"]` : ''}` : '';
   const pinnedGroup = pinned.length ? `<section class="task-group pinned-group" data-thread-group="pinned" aria-label="Pinned tasks">${heading('pinned', 'Pinned', pinned.length)}<div class="task-list">${pinned.map(s => row(s, !single, true)).join('')}</div></section>` : '';
-  const empty = filtering ? '<div class="no-tasks sidebar-no-match">No tasks match</div>' : '';
   // Morph rather than replace: unchanged rows keep their nodes, so nothing flickers.
   // Rows sit one level deeper than before (.task-row around .task-item), so morph one level deeper.
   morph(nav, !userProjects().length && !chats.length && !pinned.length && !sectioned ? (projectsListed ? '<div class="sidebar-empty">Open a project to get started.</div>' : '')
-    : `${pinnedGroup}${section('active', 'Active', 'Active tasks', sections.active.length, () => sections.active.map(s => row(s, !single)).join(''))}${section('review', 'Finished', 'Finished tasks', sections.review.length, () => { const { rows, more } = capped('review', sections.review, sidebarSort.perProject); return rows.map(s => row(s, !single, manual)).join('') + more; })}${chatGroup}${tasksGroup}${projectList}${filtering && !matching.length ? empty : ''}${completedSection}`, 6);
+    : `${pinnedGroup}${section('active', 'Active', 'Active tasks', sections.active.length, () => sections.active.map(s => row(s, !single)).join(''))}${reviewGroup}${chatGroup}${tasksGroup}${projectList}${completedSection}${foldRow}`, 6);
   if (retainedRow) {
     const replacement = nav.querySelector<HTMLElement>(`.task-item[data-id="${CSS.escape(retainedRow.dataset.id!)}"]`);
     if (replacement) {
@@ -1681,12 +1673,6 @@ function renderNavigation(): void {
       replacement.replaceWith(retainedRow);
       nav.dispatchEvent(new Event('scroll'));
     } else closeChoiceMenu();
-  }
-  // The list's scrollport ends where the docked Settled section starts, so rows never pass under it.
-  const dock = nav.querySelector<HTMLElement>(':scope > .completed-group');
-  if (dock !== settledDock) {
-    settledResize.disconnect(); settledDock = dock;
-    if (dock) settledResize.observe(dock); else nav.style.removeProperty('--settled-height');
   }
   // A row action that moved its task to another section hands focus to the task's row.
   syncRovingFocus(nav);
@@ -2871,7 +2857,7 @@ function renderComposer(): void {
     : `<button type="submit" class="send-button" title="Send message (${shortcut('Enter')})" aria-label="Send message" ${togglingTeam ? 'disabled' : ''}>${icon('arrow')}</button>`;
   // The composer redraws on every session change; the orchestration slot's nodes outlive it.
   const orchestrationSlot = document.querySelector('#machine-orchestration');
-  $('#composer-area').innerHTML = `<form id="composer" class="composer ${running ? 'composer-running' : ''}" data-tip-side="below">${wakeStrip(s.id)}${queuePanel({ entries: state.queues.get(s.id) ?? [], hold: state.queueHolds.get(s.id) ?? null, running, steerable: !team && !offline, sendable: !botProjects.has(s.projectId) && !offline, editingId: state.queueEditing || null, busy: state.queueBusy.has(s.id), steering: steeringQueued, notSteered, agentName: botForThread()?.name ?? provider(s.provider)?.name })}${s.remoteDevice ? '' : council.strip(s.id)}<div id="attachments" class="attachments">${attachmentBar(s)}</div>${running && !team ? `<div class="composer-steer-bar"><button type="button" class="icon-button composer-steer-edit" data-action="steer-edit" title="Edit draft" aria-label="Edit draft">${icon('edit')}</button><button type="button" class="steer-button" data-action="steer" title="Steer: send into the running turn (${shortcut('Enter')})" aria-label="Steer the running turn">${STEER_ICON}<span class="sr-only">Steer</span></button><button type="button" class="icon-button composer-steer-clear" data-action="steer-clear" title="Clear draft" aria-label="Clear draft">${icon('close')}</button></div>` : !team && finishingStreams.has(s.id) && !finishingStreams.get(s.id)!.error ? '<div class="composer-steer-bar" data-holding aria-hidden="true"></div>' : ''}<div class="composer-input"><textarea id="prompt" dir="auto" data-session-id="${escape(s.id)}" aria-label="Message your coding agent" placeholder="${running ? (team ? 'Queue a follow-up…' : 'Queue a follow-up · ⌘↩ steers now') : composerPlaceholder()}" aria-description="${escape(promptDescription())}" rows="2"></textarea><div class="composer-actions">${button('attach', 'Attach files for context', 'attach', '', 'type="button"')}${voiceButtonHtml}<span class="composer-pill">${sendControl}</span></div></div><div class="composer-toolbar composer-tray"><div class="composer-tools">${modelTriggerHtml(s, modelLocked, true)}${modeTriggerHtml(s, running || togglingTeam, true)}${teamButton(s)}${tokenSaver.button(s.id)}${s.remoteDevice ? '' : council.button(s.id)}</div>${contextBarHtml(s, newTaskView())}</div></form>`;
+  $('#composer-area').innerHTML = `<form id="composer" class="composer ${running ? 'composer-running' : ''}" data-tip-side="below">${wakeStrip(s.id)}${queuePanel({ entries: state.queues.get(s.id) ?? [], hold: state.queueHolds.get(s.id) ?? null, running, steerable: !team && !offline, sendable: !botProjects.has(s.projectId) && !offline, editingId: state.queueEditing || null, busy: state.queueBusy.has(s.id), steering: steeringQueued, notSteered, agentName: botForThread()?.name ?? provider(s.provider)?.name })}${s.remoteDevice ? '' : council.strip(s.id)}<div id="attachments" class="attachments">${attachmentBar(s)}</div>${running && !team ? `<div class="composer-steer-bar"><button type="button" class="icon-button composer-steer-edit" data-action="steer-edit" title="Edit draft" aria-label="Edit draft">${icon('edit')}</button><button type="button" class="steer-button" data-action="steer" title="Steer: send into the running turn (${shortcut('Enter')})" aria-label="Steer the running turn">${STEER_ICON}<span class="sr-only">Steer</span></button><button type="button" class="icon-button composer-steer-clear" data-action="steer-clear" title="Clear draft" aria-label="Clear draft">${icon('close')}</button></div>` : !team && finishingStreams.has(s.id) && !finishingStreams.get(s.id)!.error ? '<div class="composer-steer-bar" data-holding aria-hidden="true"></div>' : ''}<div class="composer-input"><textarea id="prompt" dir="auto" data-session-id="${escape(s.id)}" aria-label="Message your coding agent" placeholder="${running ? (team ? 'Queue a follow-up…' : 'Queue a follow-up · ⌘↩ steers now') : composerPlaceholder()}" aria-description="${escape(promptDescription())}" rows="2"></textarea><div class="composer-actions">${button('attach', 'Add files and tools', 'plus', '', 'type="button" id="composer-more" aria-haspopup="menu" aria-expanded="false"')}${voiceButtonHtml}<span class="composer-pill">${sendControl}</span></div></div><div class="composer-toolbar composer-tray"><div class="composer-tools">${modelTriggerHtml(s, modelLocked, true)}${modeTriggerHtml(s, running || togglingTeam, true)}</div><div class="composer-parked">${teamButton(s)}${tokenSaver.button(s.id)}${s.remoteDevice ? '' : council.button(s.id)}${contextBarHtml(s, newTaskView())}</div></div></form>`;
   // A refresh replaces the textarea and its native undo history with it (#277); the same thread's node goes back in carrying the refresh's attributes.
   if (oldPrompt && oldPrompt.dataset.sessionId === s.id) {
     const fresh = document.querySelector<HTMLTextAreaElement>('#prompt');
@@ -3103,16 +3089,6 @@ function renderSidebarVisibility(): void {
   const label = collapsed ? 'Show sidebar' : 'Hide sidebar';
   toggle.setAttribute('aria-label', label);
   toggle.title = `${label} (${shortcut('B')})`;
-  const utilityHost = board || collapsed ? $('.header-leading') : $('.sidebar-bottom');
-  for (const id of ['support-button', 'agent-usage-button']) {
-    const utility = $(`#${id}`);
-    if (utility.parentElement !== utilityHost) {
-      const focused = document.activeElement === utility;
-      if (board || collapsed) $('#breadcrumb').before(utility);
-      else $('.sidebar-bottom [data-action="rail-github"]').before(utility);
-      if (focused) utility.focus({ preventScroll: true });
-    }
-  }
 }
 function toggleSidebar(): void {
   if (state.view !== 'conversation') return;
@@ -3190,7 +3166,7 @@ async function saveBoardTaskForm(form: HTMLFormElement, data: FormData): Promise
   if (saved.id === state.sessionId) fullTaskDescription = { id: saved.id, value: saved.taskDescription ?? '' };
   const current = form.isConnected && document.querySelector<HTMLDialogElement>('#dialog')!.open && generation === state.generation;
   if (current) closeModal();
-  if (!id && current) { state.query = ''; await selectSession(saved.id); }
+  if (!id && current) { await selectSession(saved.id); }
   else { renderBoardView(); if (!id) notify('Task added to Pending.'); }
   renderNavigation();
 }
@@ -5533,7 +5509,7 @@ async function startTask(projectId: string): Promise<void> {
   leaveDraft('');
   // A settled draft (its worktree removed) is never reopened.
   const existing = state.sessions.find(task => task.draft && task.id !== current && task.projectId === active.id && !deletedSessions.has(task.id) && taskStage(task) !== 'completed');
-  if (existing) { state.query = ''; closeModal(); await selectSession(existing.id, true); return; }
+  if (existing) { closeModal(); await selectSession(existing.id, true); return; }
   creatingTask = true;
   let created: Session;
   try {
@@ -5541,7 +5517,7 @@ async function startTask(projectId: string): Promise<void> {
   } finally { creatingTask = false; }
   state.sessions.unshift(created);
   if (generation !== state.generation) { renderNavigation(); return; }
-  state.query = ''; closeModal(); await selectSession(created.id, true);
+  closeModal(); await selectSession(created.id, true);
 }
 /** A projectless chat: its own folder, the usual harness and model. `from` is a New task moved to No project:
  *  the chat takes over its choices, typed text and attachments, so the draft is left empty and discarded on the way out. */
@@ -5553,7 +5529,7 @@ async function createChat(from?: Session): Promise<void> {
   const unused = from ? undefined : state.sessions.find(task => chatTask(task) && task.lastPromptAt == null && !task.resumeId && !task.archived && !deletedSessions.has(task.id) && taskStage(task) !== 'completed');
   if (unused) {
     if (state.projectFilter) setProjectFilter('');
-    state.query = ''; closeModal(); await selectSession(unused.id, true); return;
+    closeModal(); await selectSession(unused.id, true); return;
   }
   const harness = state.providers.find(p => p.id === state.defaultProvider && p.installed)
     ?? state.providers.find(p => p.installed) ?? state.providers[0];
@@ -5588,7 +5564,7 @@ async function createChat(from?: Session): Promise<void> {
   }
   if (generation !== state.generation) { renderNavigation(); return; }
   if (state.projectFilter) setProjectFilter('');
-  state.query = ''; closeModal(); await selectSession(created.id, true);
+  closeModal(); await selectSession(created.id, true);
 }
 /** Drops a chat's hidden project (and its empty folder) once no task uses it. */
 async function forgetChat(projectId: string): Promise<void> {
@@ -5596,6 +5572,8 @@ async function forgetChat(projectId: string): Promise<void> {
 }
 type ChoiceOptions = Omit<Parameters<typeof import('./choice-menu').openChoiceMenu>[0], 'anchor' | 'onClose'> & { afterClose?: () => void };
 async function showChoices(anchor: HTMLElement, options: ChoiceOptions): Promise<void> {
+  // A parked composer control's menu opens from `+`.
+  anchor = menuAnchor(anchor);
   // A second click on the trigger closes its menu; a right-click (a point) moves it there instead.
   if (!options.point && pendingMenuOpen?.anchor === anchor) { cancelPendingMenu(); return; }
   if (!options.point && choiceMenuCleanup && choiceMenuAnchor === anchor) { closeChoiceMenu(); return; }
@@ -5808,15 +5786,10 @@ async function showSidebarSort(anchor: HTMLElement): Promise<void> {
 function visibleSidebarRows(): HTMLElement[] {
   return [...$('#navigation').querySelectorAll<HTMLElement>('.task-item')].filter(row => !row.closest('[hidden]'));
 }
-/** ⌘1…⌘9 open the Nth visible task, ⌘⇧[ and ⌘⇧] the previous and next, / filters, ⌘Z undoes. */
+/** ⌘1…⌘9 open the Nth visible task, ⌘⇧[ and ⌘⇧] the previous and next, ⌘Z undoes. */
 function sidebarShortcut(event: KeyboardEvent): boolean {
   const command = event.metaKey || event.ctrlKey, target = event.target as HTMLElement;
   const typing = target.matches('input, textarea, select, [contenteditable="true"]');
-  if (event.key === 'Escape' && target.id === 'sidebar-filter') {
-    event.preventDefault();
-    if ((target as HTMLInputElement).value) { state.query = ''; renderNavigation(); } else target.blur();
-    return true;
-  }
   // Never take keys meant for the prompt or any other field.
   if (typing) return false;
   if (command && !event.shiftKey && !event.altKey && /^[1-9]$/.test(event.key)) {
@@ -5830,13 +5803,6 @@ function sidebarShortcut(event: KeyboardEvent): boolean {
     event.preventDefault();
     if (next) run(selectSession(next.dataset.id!));
     return true;
-  }
-  // / filters from the task list or anywhere that is not a control (the typing guard above already
-  // passed); when the field is not shown (a narrow window) the key is left alone.
-  const filter = $('#sidebar-filter');
-  const control = !$('#navigation').contains(target) && target.closest('button, a[href], [role="button"], [role="menuitem"], [role="tab"], summary');
-  if (event.key === '/' && !command && !event.altKey && !control && filter.getClientRects().length) {
-    event.preventDefault(); filter.focus(); return true;
   }
   if (command && !event.shiftKey && !event.altKey && event.code === 'KeyZ' && toastUndo) {
     event.preventDefault(); const undo = toastUndo; toastUndo = undefined; void hideToast($('#toast')); undo(); return true;
@@ -5951,7 +5917,7 @@ async function showSettings(section?: import('./settings').SettingsSection, inte
     if (host.hidden) return;
     settingsView = mountSettings(host, {
       providers: state.providers, defaultProvider: state.defaultProvider, defaultModel: defaultModelLabel(), activityExpanded: activityExpanded(),
-      compact: document.body.classList.contains('compact'), wallpapers: wallpapers.preferences.enabled,
+      compact: document.body.classList.contains('compact'), wallpapers: wallpapers.preferences.enabled, scenes: scenesEnabled(),
       theme: currentTheme(), preview, section, discover: discoverSettingsProviders,
       projects: { list: userProjects, remove: removeProject },
       turnChecks: turnChecksEnabled(),
@@ -6018,7 +5984,7 @@ function toggleTheme(): void {
   const vsix = palette.vsix;
   const next = currentTheme() === 'dark' ? 'light' : 'dark';
   if (vsix) palette.setVsix(null);
-  setTheme(next); renderThemeToggle();
+  setTheme(next);
   if (vsix) notify(`${vsix.name} turned off · PandaCode ${next}`);
   if (settingsView) { closeSettings(); void showSettings('appearance'); }
 }
@@ -6478,7 +6444,7 @@ async function sendCloud(s: Session, target: CloudTarget, draft: string, text: s
     state.attachments = state.attachments.filter(path => !filePaths.includes(path));
     remoteChoice = LOCAL;
     await reloadSessions();
-    state.query = ''; await selectSession(started.id, true);
+    await selectSession(started.id, true);
   } catch (error) {
     if (!accepted) restoreComposerDraft(s, draft);
     throw error;
@@ -6583,7 +6549,7 @@ async function sendRemote(s: Session, target: RemoteTarget, draft: string, text:
     if (remaining.length) state.browserAttachments.set(s.id, remaining); else state.browserAttachments.delete(s.id);
     state.attachments = state.attachments.filter(path => !filePaths.includes(path));
     await reloadSessions();
-    state.query = ''; await selectSession(sessionId, true);
+    await selectSession(sessionId, true);
     // A busy or dirty checkout on the host gave way to a worktree: say so once, under the prompt.
     const mirror = state.sessions.find(task => task.id === sessionId);
     if (started.note && mirror) showComposerNote(mirror, started.note);
@@ -6624,16 +6590,14 @@ function botSignals(bot: import('./bots').Bot, unread: Map<string, number>): Bot
   };
 }
 function renderBots(): void {
-  const bar = document.querySelector<HTMLElement>('#sidebar-bots'), panel = document.querySelector<HTMLElement>('#sidebar-bots-panel');
-  if (!bar || !panel) return;
+  const panel = document.querySelector<HTMLElement>('#sidebar-bots-panel');
+  if (!panel) return;
   const current = session(), open = state.view === 'conversation' ? current?.projectId : undefined;
   if (open) respondedBots.delete(open);
   const unread = syncSeen(sidebarBots, open, bot => state.sessions.filter(task => task.projectId === bot.projectId && task.lastResponseAt).map(task => task.lastResponseAt!));
   const markRead = panel.querySelector<HTMLButtonElement>('.bots-mark-read');
   if (markRead) markRead.hidden = unread.size === 0;
   document.querySelector('.sidebar')?.classList.toggle('bots-view', sidebarView === 'bots');
-  const barHtml = botsBarHtml(sidebarView, sidebarBots.length, unread.size);
-  if (!showsHtml(bar, barHtml)) morph(bar, barHtml);
   // The head (and its search field) is built once, so typing never loses focus.
   if (!panel.firstElementChild) {
     panel.innerHTML = botsPanelHeadHtml();
@@ -6944,7 +6908,7 @@ const settingsPageCommands = () => SECTIONS.flatMap(section => section.pages.map
 /** Every whitespace-separated word of the query appears somewhere in the text (case-insensitive). */
 const matchesWords = (text: string, query: string): boolean => { const hay = text.toLowerCase(); return query.toLowerCase().split(/\s+/).filter(Boolean).every(word => hay.includes(word)); };
 function renderCommands(query: string): void {
-  const commands = [{ action: 'new-task', label: 'New task', icon: 'plus', shortcut: shortcut('N') }, { action: 'new-chat', label: 'New chat (no project)', icon: 'chat', shortcut: '' }, { action: 'add-project', label: 'Open project', icon: 'folder', shortcut: '' }, { action: 'browser', label: 'Open browser', icon: 'globe', shortcut: '' }, { action: 'terminal', label: 'Toggle terminal', icon: 'terminal', shortcut: shortcut('J') }, { action: 'settings', label: 'Settings', icon: 'settings', shortcut: shortcut(',') }, { action: 'agent-usage', label: 'Agent usage', icon: 'activity', shortcut: '' }, { action: 'bots', label: 'Bots', icon: 'bot', shortcut: '' }, { action: 'import-conversations', label: 'Import conversations', icon: 'download', shortcut: '' }, { action: 'worktree', label: 'Create worktree', icon: 'branch', shortcut: '' }, { action: 'conversation-view', label: 'Conversation', icon: 'thread', shortcut: '' }, { action: 'board-view', label: 'Board', icon: 'kanban', shortcut: '' }, ...(session() && !session()!.archived ? [{ action: 'wake-later', label: 'Schedule a wake-up…', icon: 'clock', shortcut: '' }] : []), ...(githubEnabled() ? [{ action: 'github-view', label: 'GitHub', icon: 'github', shortcut: '' }] : []), ...(query ? settingsPageCommands() : [])].filter(c => matchesWords(`${c.label} ${'keywords' in c ? c.keywords : ''}`, query));
+  const commands = [{ action: 'new-task', label: 'New task', icon: 'plus', shortcut: shortcut('N') }, { action: 'new-chat', label: 'New chat (no project)', icon: 'chat', shortcut: '' }, { action: 'add-project', label: 'Open project', icon: 'folder', shortcut: '' }, { action: 'browser', label: 'Open browser', icon: 'globe', shortcut: '' }, { action: 'terminal', label: 'Toggle terminal', icon: 'terminal', shortcut: shortcut('J') }, { action: 'settings', label: 'Settings', icon: 'settings', shortcut: shortcut(',') }, { action: 'agent-usage', label: 'Agent usage', icon: 'activity', shortcut: '' }, { action: 'bots', label: 'Bots', icon: 'bot', shortcut: '' }, { action: 'toggle-bots-view', label: sidebarView === 'bots' ? 'Back to threads in the sidebar' : 'Bots in the sidebar', icon: 'bot', shortcut: '', keywords: 'show bots channels' }, { action: 'support', label: 'Help & support', icon: 'help', shortcut: '' }, { action: 'toggle-theme', label: currentTheme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode', icon: currentTheme() === 'dark' ? 'sun' : 'moon', shortcut: '', keywords: 'theme appearance dark light' }, { action: 'star-repository', label: 'Star PandaCode on GitHub', icon: 'github', shortcut: '', keywords: 'source code repository' }, { action: 'import-conversations', label: 'Import conversations', icon: 'download', shortcut: '' }, { action: 'worktree', label: 'Create worktree', icon: 'branch', shortcut: '' }, { action: 'conversation-view', label: 'Conversation', icon: 'thread', shortcut: '' }, { action: 'board-view', label: 'Board', icon: 'kanban', shortcut: '' }, ...(session() && !session()!.archived ? [{ action: 'wake-later', label: 'Schedule a wake-up…', icon: 'clock', shortcut: '' }] : []), ...(githubEnabled() ? [{ action: 'github-view', label: 'GitHub', icon: 'github', shortcut: '' }] : []), ...(query ? settingsPageCommands() : [])].filter(c => matchesWords(`${c.label} ${'keywords' in c ? c.keywords : ''}`, query));
   const tasks = listedSessions().filter(s => matchesWords(s.title, query)).slice(0, 12);
   $('#command-results').innerHTML = `${commands.length ? '<div class="command-section">Commands</div>' : ''}${commands.map(c => `<button data-action="${c.action}"${'page' in c ? ` data-id="${c.page}"` : ''} data-command="true">${icon(c.icon)}<span>${c.label}</span><kbd>${c.shortcut}</kbd></button>`).join('')}${tasks.length ? '<div class="command-section">Tasks</div>' : ''}${tasks.map(s => `<button data-action="select-task" data-id="${escape(s.id)}" data-command="true">${providerLogo(s.provider)}<span>${escape(s.title)}<small>${escape(state.projects.find(p => p.id === s.projectId)?.name)} · ${shortProvider(s.provider)}</small></span></button>`).join('')}${!commands.length && !tasks.length ? '<div class="inspector-empty">No matching tasks or commands.</div>' : ''}`;
   $('#command-results').querySelector('button')?.classList.add('command-selected');
@@ -6977,8 +6941,6 @@ async function action(name: string, element: HTMLElement): Promise<void> {
     case 'board-reopen': await changeBoardStage('review'); break;
     case 'project-task': await createTask(element.dataset.id!); break;
     case 'toggle-folder': {
-      // While filtering every folder shows its matches; a click must not quietly save open/closed.
-      if (state.query.trim()) break;
       const id = element.dataset.project!;
       if (element.getAttribute('aria-expanded') === 'true') state.collapsedFolders.add(id); else state.collapsedFolders.delete(id);
       saveCollapsedFolders(); renderNavigation(); break;
@@ -6987,7 +6949,6 @@ async function action(name: string, element: HTMLElement): Promise<void> {
     case 'sidebar-sort': await showSidebarSort(element); break;
     case 'view-menu': await showViewMenu(element); break;
     case 'folder-menu': { const heading = element.parentElement?.querySelector<HTMLElement>('.folder-heading'); if (heading) await showFolderMenu(heading); break; }
-    case 'clear-sidebar-filter': state.query = ''; renderNavigation(); $('#sidebar-filter').focus(); break;
     case 'toggle-folder-more': { const id = element.dataset.project!; if (!state.expandedFolders.delete(id)) state.expandedFolders.add(id); renderNavigation(); break; }
     case 'add-project': showOpenProject(); break;
     case 'browse-project': {
@@ -7004,13 +6965,12 @@ async function action(name: string, element: HTMLElement): Promise<void> {
     case 'sidebar-delete': sidebarTaskAction('delete', element.dataset.task!); break;
     case 'sidebar-more': { const row = element.closest('.task-row')?.querySelector<HTMLElement>('.task-item'); if (row) await showSidebarTaskMenu(row); break; }
     case 'toggle-section': {
-      if (state.query.trim()) break;
       const key = element.dataset.section!;
       if (!collapsedSections.delete(key)) collapsedSections.add(key);
       try { localStorage.setItem(COLLAPSED_SECTIONS_KEY, JSON.stringify([...collapsedSections])); } catch { /* per-launch preference only */ }
       renderNavigation(); break;
     }
-    case 'toggle-completed': if (state.query.trim()) break; completedOpen = !completedOpen; completedShown = COMPLETED_FIRST; try { localStorage.setItem(COMPLETED_OPEN_KEY, String(completedOpen)); } catch { /* per-launch preference only */ } renderNavigation(); break;
+    case 'toggle-completed': completedOpen = !completedOpen; completedShown = COMPLETED_FIRST; try { localStorage.setItem(COMPLETED_OPEN_KEY, String(completedOpen)); } catch { /* per-launch preference only */ } renderNavigation(); break;
     case 'select-project': await selectProject(element.dataset.id!); break;
     case 'toggle-theme': toggleTheme(); break;
     case 'colors-settings': await showColorsSettings(); break;
@@ -7058,6 +7018,7 @@ async function action(name: string, element: HTMLElement): Promise<void> {
     case 'rename': showRename(); break;
     case 'worktree': worktrees.openDialog(newTaskView() ? 'attach' : 'new'); break;
     case 'branch-menu': await worktrees.showMenu(element); break;
+    case 'star-repository': await call('open_external_url', { url: (await import('./about-settings')).PROJECT_LINKS.repository }); break;
     case 'open-url': if (element.dataset.url) await call('open_external_url', { url: element.dataset.url }); break;
     case 'board-import': github.showImport(state.projectFilter || project()?.id || state.projects[0]?.id || ''); break;
     case 'model': await showModel(element, actionTask(element)); break;
@@ -7238,7 +7199,7 @@ function resizePrompt(): void {
   if (prompt.style.overflowY !== overflow) prompt.style.overflowY = overflow;
 }
 window.addEventListener('pandacode-ui-scale-change', resizePrompt);
-document.addEventListener('input', event => { const input = event.target as HTMLInputElement; if (input.id === 'command-query') renderCommands(input.value); if (input.id === 'prompt') resizePrompt(); if (input.id === 'shared-channel-prompt' && state.sharedChannelId) state.sharedChannelDrafts.set(state.sharedChannelId, input.value); if (input.id === 'sidebar-filter') { state.query = input.value; renderNavigation(); } });
+document.addEventListener('input', event => { const input = event.target as HTMLInputElement; if (input.id === 'command-query') renderCommands(input.value); if (input.id === 'prompt') resizePrompt(); if (input.id === 'shared-channel-prompt' && state.sharedChannelId) state.sharedChannelDrafts.set(state.sharedChannelId, input.value); });
 document.addEventListener('scroll', event => {
   if (!state.sharedChannelId) return;
   const history = (event.target as Element | null)?.closest?.('.bc-history') as HTMLElement | null;
@@ -7246,6 +7207,7 @@ document.addEventListener('scroll', event => {
 }, true);
 document.addEventListener('change', event => {
   const input = event.target as HTMLInputElement;
+  if (input.id === 'live-scenes') setScenesEnabled(input.checked);
   if (input.id === 'daily-wallpapers') { wallpapers.setEnabled(input.checked); document.querySelector('.settings-wallpapers')?.toggleAttribute('hidden', !input.checked); }
   if (input.id === 'turn-checks') turnChecksSetEnabled(input.checked);
   // A switch toggles natively (the data-action click path cancels the default), then saves.
@@ -7451,7 +7413,7 @@ const agentUpdates = initializeAgentUpdates({
   providersChanged: async () => { await discoverSettingsProviders(); refreshModelLabels(); slashPicker?.refresh(true); },
 });
 window.addEventListener('pagehide', () => agentUpdates.dispose(), { once: true });
-renderThemeToggle(); render(); renderInspector();
+render(); renderInspector();
 // A failed boot still ends in a usable empty state (its error is reported by run()).
 bootPending = boot().finally(() => { bootPending = undefined; if (!projectsListed) { projectsListed = true; render(); } });
 run(bootPending);

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openPlus, pickFromPlus, plus } from './composer-more-helper';
 
 // The browser preview mirrors the native worktree rules; these tests exercise the
 // single branch control, in-place conversion, cleanup offers, and recovery.
@@ -30,12 +31,12 @@ test('one branch control: the prompt bar chip names the checkout and there is no
   await expect(page.locator('.composer-context')).toHaveCount(1);
   await expect(chip(page)).toContainText('feat/instant-search');
   await expect(page.locator('.statusbar')).toHaveCount(0);
-  await chip(page).click();
+  await pickFromPlus(page, chip(page));
   await expect(menu(page).getByRole('menuitem', { name: /New task in a worktree/ })).toBeVisible();
   await expect(menu(page).getByRole('menuitem', { name: /Work in a new worktree/ })).toHaveCount(0);
   await expect(menu(page)).toContainText('/Users/you/Projects/orbit');
   await page.keyboard.press('Escape');
-  await expect(chip(page)).toBeFocused();
+  await expect(plus(page)).toBeFocused();
 });
 
 test('an unstarted task converts in place and keeps its draft, title, and selection', async ({ page }) => {
@@ -45,7 +46,7 @@ test('an unstarted task converts in place and keeps its draft, title, and select
   await expect(page.locator('#prompt')).not.toHaveAttribute('data-session-id', 'session-1');
   const taskId = await page.locator('#prompt').getAttribute('data-session-id');
   await prompt(page).fill('Fix the login redirect loop when the session expires');
-  await chip(page).click();
+  await pickFromPlus(page, chip(page));
   await menu(page).getByRole('menuitem', { name: /Work in a new worktree/ }).click();
   const dialog = page.locator('#dialog');
   const branch = dialog.getByRole('textbox', { name: 'Branch name', exact: true });
@@ -62,7 +63,7 @@ test('an unstarted task converts in place and keeps its draft, title, and select
   await expect(chip(page)).toContainText('pandacode/login-loop');
   expect((await calls(page, 'attach_worktree')).at(-1).args).toMatchObject({ sessionId: taskId, branch: 'login-loop', base: 'main', existing: false });
   expect(await calls(page, 'create_worktree')).toHaveLength(0);
-  await chip(page).click();
+  await pickFromPlus(page, chip(page));
   await expect(menu(page).getByRole('menuitem', { name: /Remove worktree/ })).toBeVisible();
   await expect(menu(page).getByRole('menuitem', { name: /Push & open pull request/ })).toBeVisible();
   await page.keyboard.press('Escape');
@@ -71,7 +72,7 @@ test('an unstarted task converts in place and keeps its draft, title, and select
 test('an existing branch is offered for reuse instead of failing', async ({ page }) => {
   await probe(page);
   await page.locator('.new-task-button').click();
-  await chip(page).click();
+  await pickFromPlus(page, chip(page));
   await menu(page).getByRole('menuitem', { name: /Work in a new worktree/ }).click();
   const dialog = page.locator('#dialog');
   await dialog.getByRole('textbox', { name: 'Branch name', exact: true }).fill('reuse-me');
@@ -79,7 +80,7 @@ test('an existing branch is offered for reuse instead of failing', async ({ page
   await expect(dialog).toBeHidden();
   // A second task asking for the same branch name learns it exists and can reuse it.
   await page.locator('.new-task-button').click();
-  await chip(page).click();
+  await pickFromPlus(page, chip(page));
   await menu(page).getByRole('menuitem', { name: /Work in a new worktree/ }).click();
   await dialog.getByRole('textbox', { name: 'Branch name', exact: true }).fill('reuse-me');
   await dialog.getByRole('button', { name: 'Use a worktree', exact: true }).click();
@@ -96,7 +97,7 @@ test('an existing branch is offered for reuse instead of failing', async ({ page
 test('settling a clean worktree task offers removal and reports a kept unmerged branch', async ({ page }) => {
   await probe(page);
   await page.locator('.new-task-button').click();
-  await chip(page).click();
+  await pickFromPlus(page, chip(page));
   await menu(page).getByRole('menuitem', { name: /Work in a new worktree/ }).click();
   await page.locator('#dialog').getByRole('textbox', { name: 'Branch name', exact: true }).fill('cleanup-me');
   await page.locator('#dialog').getByRole('button', { name: 'Use a worktree', exact: true }).click();
@@ -121,12 +122,12 @@ test('a dirty worktree is never removed and cancel keeps the task active', async
     if (command === 'worktree_status') return { exists: true, branch: 'pandacode/dirty', changes: 2, clean: false, hasUpstream: false, ahead: 1, merged: false };
   `);
   await page.locator('.new-task-button').click();
-  await chip(page).click();
+  await pickFromPlus(page, chip(page));
   await menu(page).getByRole('menuitem', { name: /Work in a new worktree/ }).click();
   await page.locator('#dialog').getByRole('textbox', { name: 'Branch name', exact: true }).fill('dirty');
   await page.locator('#dialog').getByRole('button', { name: 'Use a worktree', exact: true }).click();
   await expect(page.locator('#dialog')).toBeHidden();
-  await chip(page).click();
+  await pickFromPlus(page, chip(page));
   await menu(page).getByRole('menuitem', { name: /Remove worktree/ }).click();
   const dialog = page.getByRole('dialog', { name: 'Remove worktree', exact: true });
   await expect(dialog).toContainText('2 uncommitted changes');
@@ -141,7 +142,7 @@ test('a dirty worktree is never removed and cancel keeps the task active', async
 test('a missing worktree folder is named in the chip and can be recreated', async ({ page }) => {
   await probe(page);
   await page.locator('.new-task-button').click();
-  await chip(page).click();
+  await pickFromPlus(page, chip(page));
   await menu(page).getByRole('menuitem', { name: /Work in a new worktree/ }).click();
   await page.locator('#dialog').getByRole('textbox', { name: 'Branch name', exact: true }).fill('vanish');
   await page.locator('#dialog').getByRole('button', { name: 'Use a worktree', exact: true }).click();
@@ -157,7 +158,7 @@ test('a missing worktree folder is named in the chip and can be recreated', asyn
   // A draft with a worktree is kept, not discarded; New task reopens it.
   await page.locator('.new-task-button').click();
   await expect(chip(page)).toContainText('Worktree missing');
-  await chip(page).click();
+  await pickFromPlus(page, chip(page));
   await menu(page).getByRole('menuitem', { name: 'Recreate worktree', exact: true }).click();
   await expect(page.locator('#toast')).toContainText('Worktree restored on pandacode/vanish');
   await expect(chip(page)).toContainText('pandacode/vanish');
@@ -165,47 +166,40 @@ test('a missing worktree folder is named in the chip and can be recreated', asyn
   await expect(page.locator('#inspector-content')).toContainText('pandacode/vanish');
 });
 
-test('the checkout items share one row with the model, the branch and PR at its far right', async ({ page }) => {
+test('the checkout, the branch and a linked PR are rows of the + menu, and nothing sits below the control row', async ({ page }) => {
   await page.goto('/');
   await page.locator('#navigation .task-item', { hasText: 'Add keyboard shortcuts' }).click();
   const tray = page.locator('#composer-area .composer-tray');
   const branch = tray.locator('#branch-chip'), pull = tray.locator('.link-chip');
-  await expect(branch).toBeVisible();
-  await expect(pull).toBeVisible();
-  await expect(tray.locator('.composer-local')).toBeVisible();
+  for (const parked of [branch, pull, tray.locator('.composer-local')]) { await expect(parked).toHaveCount(1); await expect(parked).toBeHidden(); }
   // No directory name, no context meter, and nothing below the tray.
   await expect(page.locator('#composer .composer-project')).toHaveCount(0);
   await expect(page.locator('#composer').getByRole('meter')).toHaveCount(0);
   expect(await page.locator('#composer').evaluate(form => form.lastElementChild!.classList.contains('composer-tray'))).toBe(true);
-  const fits = () => tray.evaluate(el => {
-    const edge = el.getBoundingClientRect().right, items = [...el.querySelectorAll<HTMLElement>('button,.composer-local,.branch-chip,.link-chip')].filter(item => item.offsetWidth);
-    return { overflow: el.scrollWidth - el.clientWidth, past: items.filter(item => item.getBoundingClientRect().right > edge + 1).length, tops: new Set(items.map(item => Math.round(item.getBoundingClientRect().top + item.offsetHeight / 2))).size };
-  });
-  const last = (await pull.boundingBox())!, box = (await tray.boundingBox())!;
-  expect(box.x + box.width - (last.x + last.width)).toBeLessThan(8);
-  expect((await branch.boundingBox())!.x).toBeLessThan(last.x);
-  expect(await fits()).toEqual({ overflow: 0, past: 0, tops: 1 });
+  const rows = async () => (await openPlus(page)).getByRole('menuitem').evaluateAll(items => items.map(item => item.getAttribute('aria-label')!));
+  const expected = [await tray.locator('.composer-local').getAttribute('aria-label'), await branch.getAttribute('aria-label'), await pull.getAttribute('aria-label')];
+  expect((await rows()).slice(-3)).toEqual(expected);
+  await page.keyboard.press('Escape');
+  // A narrow composer lists the same rows: the menu never drops what the old row hid for room.
   await page.locator('#composer-area').evaluate(el => { el.style.maxWidth = '420px'; });
-  await expect(tray.locator('.composer-local')).toBeHidden();
-  await expect(pull).toBeVisible();
-  expect(await fits()).toEqual({ overflow: 0, past: 0, tops: 1 });
+  expect((await rows()).slice(-3)).toEqual(expected);
 });
 
 test('the prompt box is one card with no fold button', async ({ page }) => {
   await page.goto('/');
   const box = page.locator('#composer-area .composer');
-  await expect(box.locator('.composer-local')).toBeVisible();
+  await expect(box.locator('.composer-local')).toHaveCount(1);
   await expect(page.locator('#composer-area').getByRole('button', { name: /checkout details/ })).toHaveCount(0);
 });
 
 test('the branch menu switches the checkout to main or another local branch', async ({ page }) => {
   await probe(page);
   await expect(chip(page)).toContainText('feat/instant-search');
-  await chip(page).click();
+  await pickFromPlus(page, chip(page));
   await menu(page).getByRole('menuitem', { name: /Switch to main/ }).click();
   await expect(page.locator('#toast')).toContainText('Switched to main');
   await expect(chip(page)).toContainText('main');
-  await chip(page).click();
+  await pickFromPlus(page, chip(page));
   await expect(menu(page).getByRole('menuitem', { name: /Switch to main/ })).toHaveCount(0);
   await menu(page).getByRole('menuitem', { name: /Other branch/ }).click();
   const picker = page.locator('.choice-menu[aria-label="Switch branch"]');
@@ -238,12 +232,12 @@ for (const theme of ['dark', 'light'] as const) {
 test('merges a worktree into main locally, then offers to remove it', async ({ page }) => {
   await probe(page);
   await page.locator('.new-task-button').click();
-  await chip(page).click();
+  await pickFromPlus(page, chip(page));
   await menu(page).getByRole('menuitem', { name: /Work in a new worktree/ }).click();
   await page.locator('#dialog').getByRole('textbox', { name: 'Branch name', exact: true }).fill('ship-it');
   await page.locator('#dialog').getByRole('button', { name: 'Use a worktree', exact: true }).click();
   await expect(page.locator('#dialog')).toBeHidden();
-  await chip(page).click();
+  await pickFromPlus(page, chip(page));
   await menu(page).getByRole('menuitem', { name: /^Merge into main/ }).click();
   await expect(page.locator('#toast')).toContainText('Merged 1 commit from pandacode/ship-it into main');
   // The branch is merged now, so the cleanup offer removes the folder and the branch.
@@ -267,12 +261,12 @@ test('a merge that conflicts says so and leaves the worktree alone', async ({ pa
     if (command === 'merge_worktree') throw new Error('Merging pandacode/clash into main conflicts in src/app.ts. Nothing was changed; merge main into the worktree, resolve it there, and try again.');
   `);
   await page.locator('.new-task-button').click();
-  await chip(page).click();
+  await pickFromPlus(page, chip(page));
   await menu(page).getByRole('menuitem', { name: /Work in a new worktree/ }).click();
   await page.locator('#dialog').getByRole('textbox', { name: 'Branch name', exact: true }).fill('clash');
   await page.locator('#dialog').getByRole('button', { name: 'Use a worktree', exact: true }).click();
   await expect(page.locator('#dialog')).toBeHidden();
-  await chip(page).click();
+  await pickFromPlus(page, chip(page));
   await menu(page).getByRole('menuitem', { name: /^Merge into main/ }).click();
   await expect(page.locator('#toast')).toContainText('Couldn’t merge: Merging pandacode/clash into main conflicts in src/app.ts');
   await expect(page.getByRole('dialog', { name: 'Remove worktree', exact: true })).toHaveCount(0);

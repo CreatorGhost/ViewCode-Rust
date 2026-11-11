@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { toggleTheme } from './rail-helper';
 
 const live = (page: Page) => page.getByRole('region', { name: 'Jev live browser', exact: true });
 const frame = (page: Page) => live(page).getByRole('img', { name: 'Jev browser live view', exact: true });
@@ -106,7 +107,7 @@ test('auto-watches a running agent task, streams frames and actions, and preserv
   await emitFrame(page, await image(page, '#c6d9b5'), { sequence: 2, elapsedMs: 2_500 });
   expect(await frame(page).evaluate(element => element === (window as any).__jevLiveOriginalFrame)).toBe(true);
   await page.screenshot({ path: '/private/tmp/pandacode-jev-live-dark.png' });
-  await page.locator('#theme-toggle').click();
+  await toggleTheme(page);
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   await page.screenshot({ path: '/private/tmp/pandacode-jev-live-light.png' });
   await page.setViewportSize({ width: 390, height: 844 });

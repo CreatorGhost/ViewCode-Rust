@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { pickFromPlus } from './composer-more-helper';
 
 /* Images and attached context on a task that runs on another computer (PandaCode Connect):
  * the first prompt (remote_start_task) and follow-ups (send_message on the mirror) carry
@@ -33,7 +34,7 @@ async function newTaskOnStudio(page: Page) {
   await expect(panel.getByRole('button', { name: 'Sign out' })).toBeVisible();
   await page.getByRole('button', { name: /^back/i }).click();
   await page.locator('.new-task-button').click();
-  await page.locator('#composer-computer').click();
+  await pickFromPlus(page, page.locator('#composer-computer'));
   await page.getByRole('menuitemradio', { name: 'Studio iMac' }).click();
   await prompt(page).waitFor();
 }
@@ -94,8 +95,8 @@ test('a follow-up on a mirror sends images from paste, drop and the + menu, with
 
   await pasteImage(page, 'follow-up.png');
   await dropImage(page, 'dropped.png');
-  await page.getByRole('button', { name: 'Attach files for context' }).click();
-  await page.getByRole('dialog', { name: 'Attach', exact: true }).getByRole('menuitem', { name: /Attach files…/ }).click();
+  await page.getByRole('button', { name: 'Add files and tools' }).click();
+  await page.getByRole('dialog', { name: 'Add files and tools', exact: true }).getByRole('menuitem', { name: /Attach files…/ }).click();
   // Pasted, dropped and picked images, the dropped notes and the picked PDF.
   await expect(chips(page)).toHaveCount(5);
   await prompt(page).fill('Now these too');

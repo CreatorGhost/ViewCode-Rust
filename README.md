@@ -52,8 +52,8 @@ embedded editor engine.
 - **Tile up to six threads.** Drag a thread from the sidebar, `⌘/Ctrl`-click it or
   choose **Open beside** to see threads side by side. The focused tile is the full
   thread, the others update live, and `⌘⌥←/→` moves between them.
-- **A sidebar that sorts itself.** Tasks sit in Active, Finished or Settled, plus
-  Pinned, with a filter field and keyboard navigation.
+- **A sidebar that sorts itself.** Tasks sit in Active and Finished, plus Pinned, with
+  settled ones behind an "N more" fold, and keyboard navigation.
 - **A floating action dock.** Panels, Agents, Run, Deploy and task actions float over
   the thread and take no layout space.
 - **Three views.** Conversation, Board and GitHub, from the view menu beside the
@@ -93,7 +93,7 @@ embedded editor engine.
 - **Bots.** Put an agent behind Telegram, Slack, Discord, WhatsApp or a local web
   chat; each conversation is an ordinary task. The sidebar's **Bots** view lists
   every bot with its latest message. See [bots](docs/bots.md).
-- **Projectless chats.** **New chat** starts a conversation with no codebase, in its
+- **Projectless chats.** **New chat (no project)** in Go to anything (⌘K) starts a conversation with no codebase, in its
   own folder under `~/PandaCode Chats`. See [chats](docs/chats.md).
 - **Named connections and environment variables.** Keep profiles such as "Claude Work"
   and "Claude Personal", and set global or per-agent environment variables and a custom

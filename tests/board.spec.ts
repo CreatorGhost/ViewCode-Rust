@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { toggleTheme } from './rail-helper';
 // The workspace view (Conversation, Board, GitHub) is picked from the sidebar's view menu.
 const showView = async (page: Page, name: string) => { await page.getByRole('button', { name: /^Workspace view: / }).click(); await page.getByRole('menuitemradio', { name, exact: true }).click(); };
 
@@ -302,7 +303,7 @@ test.describe('project board', () => {
   });
 
   test('opens a task with the keyboard and fits its panel in a narrow light-mode window', async ({ page }) => {
-    await page.getByRole('button', { name: 'Dark mode', exact: true }).click();
+    await toggleTheme(page);
     await openBoard(page);
     await queueTask(page, 'Check compact layouts', 'Keep controls reachable at smaller window sizes.');
     await details(page).getByRole('button', { name: 'Close task details', exact: true }).click();
@@ -335,7 +336,7 @@ test('the sidebar view menu switches views, marks the current one and stays reac
   await page.goto('/');
   await page.locator('#navigation .task-item').first().waitFor();
   const trigger = page.getByRole('button', { name: 'Workspace view: Conversation', exact: true });
-  await expect(page.locator('.sidebar .brand')).toContainText('PandaCode');
+  await expect(page.locator('.sidebar .brand .brand-name')).toHaveCount(0);
   await expect(page.locator('.sidebar .brand #view-menu')).toBeVisible();
   await expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
   await expect(page.locator('.workspace-header .view-switch')).toHaveCount(0);

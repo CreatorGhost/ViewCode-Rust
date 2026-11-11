@@ -86,15 +86,3 @@ export function projectComparator(sort: ProjectSort, projects: readonly Project[
   }
   return recent;
 }
-
-/** Lower-case text a sidebar filter matches: title, branch, linked PR or issue, project. */
-export function filterText(task: Session, projectName = ''): string {
-  const link = task.pullRequest ?? task.issue;
-  return [task.title, task.worktreeBranch ?? '', link ? `#${link.number} ${link.title}` : '', projectName].join('\n').toLocaleLowerCase();
-}
-export function matchesFilter(task: Session, query: string, projectName = ''): boolean {
-  const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
-  if (!words.length) return true;
-  const text = filterText(task, projectName);
-  return words.every(word => text.includes(word));
-}

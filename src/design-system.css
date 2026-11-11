@@ -457,8 +457,7 @@ html[data-theme] .secondary-button:not(:disabled):active{scale:var(--ds-press)}
 input,select,textarea{border-radius:var(--ds-radius-control);transition:background-color var(--ds-ease-out) ease-out,box-shadow var(--ds-ease-out) ease-out}
 :where(select),:where(dialog,.settings-content) :where(input:not([type=checkbox],[type=radio],[type=range],[type=color]),textarea){background:var(--ds-card-inner);box-shadow:inset 0 0 0 1px var(--ds-border)}
 /* A field framed by its wrapper: focus set by script (a panel opening, ⌘F) is a hairline; the wrapper's own --focus ring needs the keyboard. */
-html[data-theme]:not([data-keyboard-focus]) :is(#inspector .search-field,.browser-address,.btw-composer,.team-model-search,.import-search,dialog .command-search):focus-within,
-html[data-theme]:not([data-keyboard-focus]) .sidebar-search:has(:focus-visible){box-shadow:inset 0 0 0 1px var(--ds-border-strong)}
+html[data-theme]:not([data-keyboard-focus]) :is(#inspector .search-field,.browser-address,.btw-composer,.team-model-search,.import-search,dialog .command-search):focus-within{box-shadow:inset 0 0 0 1px var(--ds-border-strong)}
 /* Zero-specificity hover, so fields a component frames itself (menu and search boxes) keep their own look. */
 :where(input:not([type=checkbox],[type=radio],[type=range]),select,textarea):hover{background:var(--ds-fill)}
 input[type=checkbox]:not([role=switch],[class*=switch]),input[type=radio]{accent-color:var(--ds-primary-bg)}

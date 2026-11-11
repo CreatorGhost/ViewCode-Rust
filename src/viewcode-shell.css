@@ -60,15 +60,6 @@ html[data-native-platform=macos] .workspace:not(.sidebar-collapsed,.board-view,.
 /* The shell's icon buttons, as a column at the rail's foot. */
 .project-rail .sidebar-bottom{flex:none;flex-direction:column;align-items:center;gap:2px;margin:0;padding:0}
 .project-rail .sidebar-bottom>button{flex:none;width:32px;height:32px;padding:0}
-.project-rail .sidebar-bottom>#theme-toggle{margin-left:0}
-.project-rail .sidebar-bots{padding:0}
-.project-rail .sidebar-bots:empty{display:none}
-.project-rail .sidebar-bots-bar{position:relative;justify-content:center;width:32px;height:32px;padding:0;gap:0;border:0;border-radius:var(--ds-radius-control);background:none;box-shadow:none;color:var(--muted)}
-.project-rail .sidebar-bots-bar:hover{background:var(--ds-row-hover);color:var(--text)}
-.project-rail .sidebar-bots-bar[aria-pressed=true]{background:var(--ds-fill-hover);color:var(--text)}
-.project-rail .sidebar-bots-bar>.icon:first-child{--icon-size:var(--icon-sm);--icon-stroke:var(--icon-stroke-sm);color:inherit}
-.project-rail .sidebar-bots-bar>:is(span:not(.sidebar-bots-unread),small,.icon:last-child){position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-.project-rail .sidebar-bots-bar>.sidebar-bots-unread{position:absolute;top:5px;right:5px;margin:0}
 
 @media(max-height:620px){.rail-usage{display:none}}
 @media(max-width:650px){
@@ -89,11 +80,9 @@ html[data-theme] .workspace>.sidebar .sidebar-actions>.new-task-button{height:32
 .workspace>.sidebar .project-filter:is(:hover,[aria-expanded=true]){color:var(--text)}
 .workspace>.sidebar .project-filter>.task-app-icon{display:none}
 .workspace>.sidebar .sidebar-projects>.icon-button{width:24px;height:24px;color:var(--faint)}
-.workspace>.sidebar .sidebar-search{height:30px;margin:2px 8px 6px;border-color:transparent;background:var(--ds-fill)}
 
 /* Sections sit straight on the frame: no cards, a small muted heading. */
-.workspace>.sidebar .task-group:not(.completed-group){padding:0;border:0;border-radius:0;background:none;box-shadow:none}
-.workspace>.sidebar .completed-group::before{border:0;background:var(--frame,var(--sidebar));box-shadow:none;inset:0}
+.workspace>.sidebar .task-group{padding:0;border:0;border-radius:0;background:none;box-shadow:none}
 .workspace>.sidebar .group-heading{height:28px;padding:0 10px;font-size:var(--ds-text-chip);font-weight:var(--weight-medium);color:var(--faint)}
 .workspace>.sidebar .group-heading>span{font-size:var(--ds-text-chip);color:var(--faint)}
 .workspace>.sidebar .task-group>.task-list{gap:1px}
@@ -122,6 +111,8 @@ html[data-theme] .workspace[data-wallpaper]>.sidebar .task-row:has(>.task-item.s
 .workspace>.sidebar .task-link[data-attention]{background:color-mix(in srgb,var(--ds-danger) 14%,transparent);color:var(--ds-danger)}
 .workspace>.sidebar .folder-more{height:28px;padding:0 10px;font-size:var(--ds-text-chip);color:var(--faint)}
 .workspace>.sidebar .folder-more:hover{color:var(--text)}
+/* The fold that ends the list: Finished rows past the cap and every settled thread wait behind it. */
+.workspace>.sidebar .navigation>.more-fold{flex:none;margin-top:2px}
 
 /* ---------- Main pane header: the title, then the dock as a row of small icons ---------- */
 .breadcrumb>.crumb-title,.breadcrumb>.crumb-title:last-child{max-width:none;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-weight:var(--weight-medium)}
@@ -169,20 +160,22 @@ html .workspace .new-task-page .composer-area{max-width:648px}
 .conversation-pane .composer-area .composer .composer-actions,
 .conversation-pane .composer-area .composer>.composer-tray>.composer-tools{display:contents}
 .conversation-pane .composer-area .composer .composer-input>textarea{flex:0 0 100%;min-height:64px;padding:10px 8px 8px}
-/* The row: attach and the permission mode lead; the model, the mic and Send close it. */
+/* The row: `+` and the access mode lead; the model, the mic and Send close it. */
 .conversation-pane .composer-area .composer .composer-actions>*,
 .conversation-pane .composer-area .composer .composer-tools>*{flex:none;order:5}
 .conversation-pane .composer-area .composer .composer-actions>[data-action=attach]{order:1;width:32px;height:32px}
 .conversation-pane .composer-area .composer .composer-tools>.mode-picker{order:2}
 /* A wrapping row wraps before it shrinks, so the model's width is capped to what the row has left (the composer is a size container) and its name truncates instead. */
-.conversation-pane .composer-area .composer .composer-tools>.model-picker{order:6;flex:0 1 auto;min-width:0;max-width:max(44px,calc(100cqw - 440px));margin-left:auto}
+.conversation-pane .composer-area .composer .composer-tools>.model-picker{order:6;flex:0 1 auto;min-width:0;max-width:max(44px,calc(100cqw - 300px));margin-left:auto}
 .conversation-pane .composer-area .composer .composer-actions>.composer-pill{order:9;margin-left:6px}
 .conversation-pane .composer-area .composer .composer-actions>:not([data-action=attach],.composer-pill){order:8}
-/* Where it runs (computer, folder, branch, linked PR) is a quiet last row of the card. */
-.workspace .conversation-pane .composer-area .composer>.composer-tray>.composer-context:not(.bot-thread *){order:10;flex:0 0 100%;display:flex;align-items:center;gap:2px;min-height:0;margin:2px 0 0;padding:4px 0 0;border:0;border-top:1px solid var(--ds-border);border-radius:0;background:none}
-.workspace .conversation-pane .composer-area .composer-tray .composer-context>:is(.composer-computer,.composer-local,.branch-chip,.link-chip){height:28px;font-size:var(--ds-text-meta)}
-.workspace .conversation-pane .composer-area .composer-tray .composer-context .icon{--icon-size:var(--icon-sm);--icon-stroke:var(--icon-stroke-sm)}
-.conversation-pane .composer-tray :is(.model-picker,.mode-picker,.composer-team-button,.composer-saver-button,.composer-council-button){height:32px;font-size:var(--ds-text-ui)}
+/* Every other control (team, saver, council, computer, branch, linked PR) is parked: drawn by its own
+ * module, invisible, laid over `+`, whose menu lists and presses them (composer-more.ts). What one
+ * opens is placed from its box, so each fills the host, and the host sits on `+`. */
+.conversation-pane .composer-area .composer{position:relative}
+.conversation-pane .composer-area .composer .composer-parked{position:absolute;left:8px;bottom:8px;flex:none;width:32px;height:32px;overflow:hidden;visibility:hidden;pointer-events:none}
+.conversation-pane .composer-area .composer .composer-parked :is(button,[role=img],.branch-chip-fixed){position:absolute;inset:0;display:block!important;width:auto;height:auto;min-width:0;max-width:none;margin:0;padding:0;scale:1}
+.conversation-pane .composer-tray :is(.model-picker,.mode-picker){height:32px;font-size:var(--ds-text-ui)}
 /* The mode says its name, and both pickers show they open a menu. */
 .conversation-pane .composer-tray .mode-picker>.sr-only{position:static;width:auto;height:auto;margin:0;overflow:visible;clip-path:none}
 .conversation-pane .composer-tray :is(.model-picker,.mode-picker)>.icon:last-child{display:block;--icon-size:12px;color:var(--faint)}
@@ -190,7 +183,7 @@ html .workspace .new-task-page .composer-area{max-width:648px}
 @container composer (max-width:560px){
   .conversation-pane .composer-tray .mode-picker>.sr-only{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%)}
   .conversation-pane .composer-tray :is(.model-picker,.mode-picker)>.icon:last-child{display:none}
-  .conversation-pane .composer-area .composer .composer-tools>.model-picker{max-width:max(44px,calc(100cqw - 350px))}
+  .conversation-pane .composer-area .composer .composer-tools>.model-picker{max-width:max(44px,calc(100cqw - 200px))}
   .conversation-pane .composer-area .composer .composer-actions>.composer-pill{margin-left:2px}
 }
 /* Send: a round light button. */

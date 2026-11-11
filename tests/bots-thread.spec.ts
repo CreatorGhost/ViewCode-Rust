@@ -1,15 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
+import { showBotsView } from './rail-helper';
 
 /* A bot's conversation (src/bot-thread.ts): chat bubbles, hover actions (copy, reply, react),
  * the working indicator, a steps row per finished turn and the empty state. */
 const sidebar = (page: Page) => page.getByRole('region', { name: 'Bots', exact: true });
 const transcript = (page: Page) => page.locator('#transcript');
 
-async function showBotsView(page: Page): Promise<void> {
-  const bar = page.locator('.sidebar-bots-bar');
-  if (await bar.getAttribute('aria-pressed') !== 'true') await bar.click();
-  await expect(sidebar(page)).toBeVisible();
-}
 /** Sample bots: Writer is working, Ledger is idle with an empty conversation. */
 async function openSample(page: Page, name: string): Promise<void> {
   await page.goto('/?bots=sample');

@@ -208,16 +208,20 @@ test('a failed move to No project reports the error and leaves the text and atta
   expect(await callsNamed(page, 'discard_draft')).toHaveLength(0);
 });
 
-test('issue 193: New chat opens one chat, even when the native refresh lands first and on a second click', async ({ page }) => {
+test('issue 193: New chat opens one chat, even when the native refresh lands first and on a second pick', async ({ page }) => {
   await seedConnection(page);
   await page.goto('/');
   await expect(page.locator('.task-item.selected')).toHaveCount(1);
   const before = await page.locator('#navigation .task-item').count();
-  await page.getByRole('button', { name: 'New chat', exact: true }).click();
+  // New chat has no sidebar button: it starts from Go to anything.
+  await page.keyboard.press('ControlOrMeta+k');
+  await page.getByRole('button', { name: 'New chat (no project)' }).click();
   const prompt = page.getByRole('textbox', { name: 'Message your coding agent', exact: true });
   await expect(page.locator('.chat-welcome')).toBeVisible();
   await expect(page.locator('#navigation .task-item')).toHaveCount(before + 1);
-  await page.getByRole('button', { name: 'New chat', exact: true }).click();
+  // New chat has no sidebar button: it starts from Go to anything.
+  await page.keyboard.press('ControlOrMeta+k');
+  await page.getByRole('button', { name: 'New chat (no project)' }).click();
   await expect(prompt).toBeFocused();
   await expect(page.locator('#navigation .task-item')).toHaveCount(before + 1);
   expect(await callsNamed(page, 'chat_create')).toHaveLength(1);

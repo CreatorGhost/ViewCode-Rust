@@ -16,7 +16,7 @@ async function open(page: Page): Promise<void> {
   await expect(row(page, 'session-1')).toHaveAttribute('aria-current', 'page');
 }
 
-test('the list is a single Tab stop and arrow keys move between rows and headings', async ({ page }) => {
+test('the list is a single Tab stop and arrow keys move between rows', async ({ page }) => {
   await open(page);
   expect(await tabStops(page)).toEqual(['session-1']);
   await row(page, 'session-1').focus();
@@ -24,14 +24,11 @@ test('the list is a single Tab stop and arrow keys move between rows and heading
   await expect(row(page, 'session-2')).toBeFocused();
   expect(await tabStops(page)).toEqual(['session-2']);
   await page.keyboard.press('ArrowUp');
+  await expect(row(page, 'session-1')).toBeFocused();
+  // Finished has no heading: the first row is the first stop (tests/sidebar-sections.spec.ts folds Active with ← and →).
+  await expect(page.locator('#navigation .section-fold')).toHaveCount(0);
   await page.keyboard.press('ArrowUp');
-  const heading = page.locator('.section-fold[data-section="review"]');
-  await expect(heading).toBeFocused();
-  // ← closes the section, → opens it again; the closed state is remembered.
-  await page.keyboard.press('ArrowLeft');
-  await expect(heading).toHaveAttribute('aria-expanded', 'false');
-  await page.keyboard.press('ArrowRight');
-  await expect(heading).toHaveAttribute('aria-expanded', 'true');
+  await expect(row(page, 'session-1')).toBeFocused();
   await page.keyboard.press('End');
   await expect(row(page, 'session-4')).toBeFocused();
   await page.keyboard.press('Enter');
@@ -60,24 +57,24 @@ test('⌘1…9 open the nth task and ⌘⇧[ / ] step through tasks', async ({ p
   await expect(row(page, 'session-2')).toHaveAttribute('aria-current', 'page');
 });
 
-test('/ focuses the filter from the sidebar and ⌘Z undoes settling a task', async ({ page }) => {
+test('⌘↩ settles a task behind the fold and ⌘Z undoes it', async ({ page }) => {
   await open(page);
-  await row(page, 'session-2').focus();
-  await page.keyboard.press('/');
-  await expect(page.getByRole('searchbox', { name: 'Filter tasks', exact: true })).toBeFocused();
-  await page.keyboard.press('Escape');
+  const fold = page.locator('#navigation > .more-fold');
+  await expect(fold).toHaveCount(0);
   await row(page, 'session-3').focus();
   const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
   await page.keyboard.press(`${mod}+Enter`);
   await expect(page.locator('#toast')).toContainText('Task settled');
-  await expect(page.locator('#navigation [data-thread-group="completed"]')).toBeVisible();
+  // The settled thread waits behind the fold that ends the list.
+  await expect(fold).toHaveText('1 more');
+  await expect(row(page, 'session-3')).toHaveCount(0);
   await page.locator('#navigation').focus().catch(() => undefined);
   await page.keyboard.press(`${mod}+z`);
-  await expect(page.locator('#navigation [data-thread-group="completed"]')).toHaveCount(0);
+  await expect(fold).toHaveCount(0);
   await expect(row(page, 'session-3')).toHaveCount(1);
 });
 
-test('jump shortcuts never fire while typing, and / focuses the filter from the page body', async ({ page }) => {
+test('jump shortcuts never fire while typing', async ({ page }) => {
   await open(page);
   const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
   const prompt = page.getByRole('textbox', { name: 'Message your coding agent', exact: true });
@@ -86,32 +83,10 @@ test('jump shortcuts never fire while typing, and / focuses the filter from the 
   await page.keyboard.press(`${mod}+Shift+BracketRight`);
   await expect(row(page, 'session-1')).toHaveAttribute('aria-current', 'page');
   await expect(prompt).toBeFocused();
-  await prompt.fill('a/b');
-  await expect(page.getByRole('searchbox', { name: 'Filter tasks', exact: true })).not.toBeFocused();
-  await prompt.fill('');
-  await page.evaluate(() => (document.activeElement as HTMLElement).blur());
-  await page.keyboard.press('/');
-  await expect(page.getByRole('searchbox', { name: 'Filter tasks', exact: true })).toBeFocused();
-});
-
-test('/ also works from the transcript, but not on a control outside the list, and is left alone when the filter is hidden', async ({ page }) => {
-  await open(page);
-  const filter = page.getByRole('searchbox', { name: 'Filter tasks', exact: true });
-  await page.locator('#transcript').evaluate(node => { node.tabIndex = -1; node.focus(); });
-  await page.keyboard.press('/');
-  await expect(filter).toBeFocused();
-  await filter.press('Escape');
-  await page.getByRole('button', { name: 'Workspace view: Conversation', exact: true }).focus();
-  await page.keyboard.press('/');
-  await expect(filter).not.toBeFocused();
-  await page.setViewportSize({ width: 600, height: 800 });
-  await expect(filter).toBeHidden();
-  await page.locator('#transcript').evaluate(node => node.focus());
-  const prevented = await page.evaluate(() => new Promise<boolean>(resolve => {
-    document.addEventListener('keydown', event => resolve(event.defaultPrevented), { once: true });
-    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true }));
-  }));
-  expect(prevented).toBe(false);
+  // / is an ordinary character: the sidebar has no filter for it to open.
+  await prompt.pressSequentially('a/b');
+  await expect(prompt).toHaveValue('a/b');
+  await expect(prompt).toBeFocused();
 });
 
 test('in the sort menu ↓/↑ step over the per-section row, ←/→ move along it; focus looks like hover', async ({ page }) => {

@@ -5,7 +5,7 @@ test.describe('voice input', () => {
   test('wave pointer restores prompt focus and the locked selection from another control', async ({ page }) => {
     await open(page, 'delayed'); await prompt(page).fill('Keep this draft.');
     await prompt(page).evaluate(el => el.setSelectionRange(5, 9)); await start(page);
-    await page.getByRole('button', { name: 'Attach files for context', exact: true }).focus();
+    await page.getByRole('button', { name: 'Add files and tools', exact: true }).focus();
     await page.locator('.voice-wave-canvas').click({ position: { x: 10, y: 10 } });
     await expect(prompt(page)).toBeFocused();
     expect(await prompt(page).evaluate(el => [el.selectionStart, el.selectionEnd])).toEqual([5, 9]);
@@ -76,7 +76,7 @@ test.describe('voice input', () => {
     await expect(pill(page).getByRole('button', { name: 'Stop and transcribe', exact: true })).toBeFocused();
     await page.keyboard.press('Tab'); await expect(pill(page).getByRole('button', { name: 'Cancel dictation', exact: true })).toBeFocused();
     await page.keyboard.press('Tab');
-    await expect(page.getByRole('button', { name: 'Attach files for context', exact: true })).toBeFocused();
+    await expect(page.getByRole('button', { name: 'Add files and tools', exact: true })).toBeFocused();
     await page.keyboard.press('Shift+Tab');
     await expect(pill(page).getByRole('button', { name: 'Cancel dictation', exact: true })).toBeFocused();
     await page.keyboard.press('Shift+Tab'); await expect(pill(page).getByRole('button', { name: 'Stop and transcribe', exact: true })).toBeFocused();

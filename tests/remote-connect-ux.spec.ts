@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { pickFromPlus } from './composer-more-helper';
 
 async function showRemoteSettings(page: Page) {
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
@@ -17,9 +18,9 @@ async function chooseStudioOnNewTask(page: Page) {
   await page.getByRole('button', { name: /^back/i }).click();
   await page.locator('.new-task-button').click();
   const computer = page.locator('#composer-computer');
-  await computer.click();
+  await pickFromPlus(page, computer);
   await page.getByRole('menuitemradio', { name: 'Studio iMac' }).click();
-  await expect(computer).toHaveAccessibleName('Computer: Studio iMac');
+  await expect(computer).toHaveAttribute('aria-label', 'Computer: Studio iMac');
 }
 async function startMirror(page: Page, text = 'Mirror connection task') {
   await page.addInitScript(() => { (window as any).__remoteStartStep = 0; });
@@ -89,9 +90,9 @@ test('presence loss keeps the chosen computer and lists offline devices with Ret
   const computer = page.locator('#composer-computer');
   await expect(computer).toHaveAttribute('aria-haspopup', 'menu');
   await page.evaluate(() => (window as any).__remoteOnline('dev-studio', false));
-  await expect(computer).toHaveAccessibleName(/Computer: Studio iMac.*Offline/);
-  await expect(computer).not.toHaveAccessibleName(/This computer/);
-  await computer.click();
+  await expect(computer).toHaveAttribute('aria-label', /Computer: Studio iMac.*Offline/);
+  await expect(computer).not.toHaveAttribute('aria-label', /This computer/);
+  await pickFromPlus(page, computer);
   const menu = page.getByRole('menu', { name: 'Run on' });
   const studio = menu.getByRole('menuitemradio', { name: 'Studio iMac' });
   const laptop = menu.getByRole('menuitemradio', { name: 'Old laptop' });
@@ -111,7 +112,7 @@ test('presence loss keeps the chosen computer and lists offline devices with Ret
   expect(await page.evaluate(() => (window as any).__remoteReconnects)).toBe(1);
   await page.evaluate(() => (window as any).__remoteOnline('dev-studio', true));
   await expect(page.getByRole('button', { name: 'Send message' })).toBeVisible();
-  await expect(computer).toHaveAccessibleName('Computer: Studio iMac');
+  await expect(computer).toHaveAttribute('aria-label', 'Computer: Studio iMac');
 });
 
 test('an offline mirror has a compact last-seen status and Retry resubscribes without a spinner', async ({ page }) => {
@@ -273,7 +274,7 @@ test('a chosen computer that is no longer paired is labelled and offers another'
   await chooseStudioOnNewTask(page);
   await page.evaluate(() => (window as any).__remoteRevoke('dev-studio'));
   const computer = page.locator('#composer-computer');
-  await expect(computer).toHaveAccessibleName('Computer: Studio iMac · Not paired');
+  await expect(computer).toHaveAttribute('aria-label', 'Computer: Studio iMac · Not paired');
   const note = page.locator('#composer-area .remote-missing-note');
   await expect(note).toContainText('Studio iMac is no longer paired.');
   await note.getByRole('button', { name: 'Choose another' }).click();

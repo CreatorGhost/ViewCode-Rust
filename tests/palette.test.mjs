@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { contrast, fromOklch, mix, parseHex, toHex, toOklch } from '../src/color.ts';
-import { ACCENT_CLEARANCE, INFO, STATUS, STATUS_CLEARANCE, TONE_FLOOR, TONE_HUES, WARNING, accentTokens, warnClearOf, dominantColor, vsixTokens } from '../src/palette-core.ts';
+import { ACCENT_CLEARANCE, DEFAULT_ACCENT, INFO, STATUS, STATUS_CLEARANCE, TONE_FLOOR, TONE_HUES, WARNING, accentTokens, warnClearOf, dominantColor, vsixTokens } from '../src/palette-core.ts';
 
 const rgb = hex => parseHex(hex).rgb;
 const ratio = (a, b) => contrast(rgb(a), rgb(b));
@@ -16,7 +16,7 @@ test('OKLCH round-trips sRGB and keeps out-of-gamut colors in gamut', () => {
 });
 
 test('any accent hue yields readable buttons, links and selection in both modes', () => {
-  const bases = { light: '#ffffff', dark: '#151515' };
+  const bases = { light: '#fbfbf9', dark: '#0e0e0e' };
   for (let hue = 0; hue < 360; hue += 15) {
     const source = fromOklch({ l: 0.6, c: 0.15, h: hue });
     for (const mode of ['light', 'dark']) {
@@ -25,6 +25,28 @@ test('any accent hue yields readable buttons, links and selection in both modes'
       assert.ok(ratio(t['--accent-ink'], t['--accent-dim']) >= 4.5, `${mode} hue ${hue}: ink on dim`);
       assert.ok(ratio(t['--focus'], bases[mode]) >= 3, `${mode} hue ${hue}: focus ring`);
       assert.match(t['--accent-rgb'], /^\d+ \d+ \d+$/);
+    }
+  }
+});
+
+test('the default accent (a fresh profile, the Obsidian teal) is readable on the default surfaces in both modes', () => {
+  // Panel, frame and raised surface of the plain default look (styles.css), with no wallpaper or scene behind them.
+  const surfaces = { light: ['#fbfbf9', '#eeefec', '#ffffff'], dark: ['#0e0e0e', '#080808', '#161616'] };
+  const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /--bg:#fbfbf9;--sidebar:#eeefec;--panel:#ffffff;/);
+  assert.match(css, /--bg:#0e0e0e;--sidebar:#080808;--panel:#161616;/);
+  assert.deepEqual(DEFAULT_ACCENT, { dark: '#2dd4bf', light: '#0f8577' });
+  for (const mode of ['light', 'dark']) {
+    const t = accentTokens(rgb(DEFAULT_ACCENT[mode]), mode);
+    // The derived accent keeps the teal's hue.
+    assert.ok(Math.abs(toOklch(rgb(t['--accent'])).h - toOklch(rgb(DEFAULT_ACCENT[mode])).h) < 2, `${mode}: hue kept`);
+    assert.ok(ratio(t['--on-accent'], t['--accent']) >= 4.5, `${mode}: text on accent`);
+    assert.ok(ratio(t['--accent-ink'], t['--accent-dim']) >= 4.5, `${mode}: ink on dim`);
+    for (const surface of surfaces[mode]) {
+      assert.ok(ratio(t['--focus'], surface) >= 3, `${mode}: focus ring on ${surface}`);
+      // Accent text (links, the agent's name on the New thread page) and the accent as a mark (unread dot, selection bar).
+      assert.ok(ratio(mode === 'dark' ? t['--accent'] : t['--accent-ink'], surface) >= 4.5, `${mode}: accent text on ${surface}`);
+      assert.ok(ratio(t['--accent'], surface) >= (mode === 'dark' ? 3 : 2.4), `${mode}: accent mark on ${surface}`);
     }
   }
 });
@@ -98,11 +120,11 @@ test('state tones clear 4.5:1 on the page, a card and their own fill, in every p
   };
   // Page, card on the page, the frame, card on the frame.
   const on = (bg, text, frame, card) => [bg, frame].flatMap(base => [base, toHex(mix(rgb(base), rgb(text), card))]);
-  check('dark', 'dark', on('#151515', '#e2e2e2', '#0e0e0e', 0.02));
-  check('light', 'light', on('#ffffff', '#242423', toHex(mix(rgb('#f5f5f3'), rgb('#242423'), 0.04)), 0.03));
+  check('dark', 'dark', on('#0e0e0e', '#ededed', '#080808', 0.02));
+  check('light', 'light', on('#fbfbf9', '#1f2322', toHex(mix(rgb('#eeefec'), rgb('#1f2322'), 0.04)), 0.03));
   // Increase Contrast: halfway to the text.
-  check('dark contrast', 'dark', on('#151515', '#e2e2e2', '#0e0e0e', 0.02), 0.5, '#e2e2e2');
-  check('light contrast', 'light', on('#ffffff', '#242423', '#f5f5f3', 0.03), 0.5, '#242423');
+  check('dark contrast', 'dark', on('#0e0e0e', '#ededed', '#080808', 0.02), 0.5, '#ededed');
+  check('light contrast', 'light', on('#fbfbf9', '#1f2322', '#eeefec', 0.03), 0.5, '#1f2322');
   // The darkest surface a light wallpaper puts under them and the brightest a dark one does, sampled across all 21 scenes at 20% and 80% visibility.
   check('dark wallpaper', 'dark', ['#343632'], 0.7, '#ffffff');
   check('light wallpaper', 'light', ['#dedfdf'], 0.9, '#242423');
@@ -200,7 +222,7 @@ test('needs-you amber turns away from an accent near it (classic yellow), and ke
   const hue = hex => toOklch(rgb(hex)).h;
   const gap = (a, b) => { const d = Math.abs(a - b) % 360; return Math.min(d, 360 - d); };
   for (const mode of ['light', 'dark']) {
-    const page = mode === 'dark' ? '#151515' : '#ffffff';
+    const page = mode === 'dark' ? '#0e0e0e' : '#fbfbf9';
     for (const accent of ['#ffd43b', '#f5b041', '#e3b24f', '#ff8a3d']) {
       const tokens = accentTokens(rgb(accent), mode);
       const warn = tokens['--warning'] ?? WARNING[mode];
@@ -220,7 +242,7 @@ test('the light meter warn fill clears 3:1 on its track for every accent, scene 
   const darker = hex => { const { l, c, h } = toOklch(rgb(hex)); return toHex(fromOklch({ l: l * lightness, c, h })); };
   const { wallpaperAccents } = await import('../src/wallpaper-accents.ts');
   const accentHues = [...Array.from({ length: 24 }, (_, i) => i * 15), ...Object.values(wallpaperAccents).map(hex => toOklch(rgb(hex)).h)];
-  const bases = [{ name: 'PandaCode light', bg: '#ffffff', text: '#242423' }, ...themes.filter(theme => theme.kind === 'light').map(theme => {
+  const bases = [{ name: 'PandaCode light', bg: '#fbfbf9', text: '#1f2322' }, ...themes.filter(theme => theme.kind === 'light').map(theme => {
     const { tokens } = vsixTokens({ id: 'x', name: theme.name, extension: 'x', kind: theme.kind, colors: theme.colors });
     return { name: theme.name, bg: tokens['--bg'], text: tokens['--text'], accentHue: toOklch(rgb(tokens['--accent'])).h };
   })];

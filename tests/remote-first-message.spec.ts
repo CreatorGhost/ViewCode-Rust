@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { pickFromPlus } from './composer-more-helper';
 
 /* A prompt sent to another computer shows at once (src/main.ts sendRemote): the turn below it
  * reports the start's stages, then streams the host's events. Its history is copied from the
@@ -16,7 +17,7 @@ async function sendToStudio(page: Page, text: string) {
   await expect(panel.getByRole('button', { name: 'Sign out' })).toBeVisible();
   await page.getByRole('button', { name: /^back/i }).click();
   await page.locator('.new-task-button').click();
-  await page.locator('#composer-computer').click();
+  await pickFromPlus(page, page.locator('#composer-computer'));
   await page.getByRole('menuitemradio', { name: 'Studio iMac' }).click();
   await page.getByRole('textbox', { name: 'Message your coding agent' }).fill(text);
   await page.getByRole('textbox', { name: 'Message your coding agent' }).press('Enter');

@@ -97,6 +97,8 @@ export function mountSky(pane: HTMLElement, workspace: HTMLElement, options: Sky
   const layer = document.createElement('div');
   layer.className = 'thread-sky';
   layer.setAttribute('aria-hidden', 'true');
+  // Hidden until a scene is wanted (`refresh`): scenes are opt-in, so a mount may never show.
+  layer.hidden = true;
   const canvas = document.createElement('canvas');
   // The outgoing scene's last frame, copied here on a thread switch and faded out over the new one (opacity only).
   const fade = document.createElement('canvas');

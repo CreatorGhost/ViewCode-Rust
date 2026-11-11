@@ -1,8 +1,8 @@
 import './theme-settings.css';
 import { escape, icon } from './dom';
-import { CLASSIC, SWATCHES, palette, type AccentChoice, type VsixTheme } from './palette';
+import { CLASSIC, DEFAULT_ACCENT, SWATCHES, palette, type AccentChoice, type VsixTheme } from './palette';
 
-/* Colors: the accent (wallpaper, classic, a swatch or any color) and VS Code themes
+/* Colors: the accent (the default teal, wallpaper, classic, a swatch or any color) and VS Code themes
  * imported from a .vsix or installed from Open VSX by extension ID. */
 
 export type ThemeSettingsHost = {
@@ -16,6 +16,7 @@ const SWATCH_NAMES = ['Blue', 'Green', 'Purple', 'Pink', 'Orange', 'Teal'];
 export function colorsSummary(): string {
   if (palette.vsix) return `${palette.vsix.name} · VS Code theme`;
   const accent = palette.accent;
+  if (accent.mode === 'default') return 'Default accent';
   if (accent.mode === 'wallpaper') return palette.sky ? 'Sky blue accent' : 'Accent follows the wallpaper';
   if (accent.mode === 'classic') return 'Classic yellow accent';
   const index = SWATCHES.indexOf(accent.color);
@@ -54,9 +55,11 @@ export function mountThemeSettings(host: HTMLElement, options: ThemeSettingsHost
     // Until a custom colour is picked the swatch is a hue wheel, never a copy of one of the swatches beside it.
     const custom = own ? current.color : '#808080';
     const option = (choice: AccentChoice, label: string, swatch: string, extra = '', kind = '') => `<button type="button" role="radio" class="accent-choice" aria-checked="${checked(choice)}" data-accent='${escape(JSON.stringify(choice))}' ${locked ? 'disabled' : ''} ${extra}><span class="accent-swatch${kind}" style="--swatch:${escape(swatch)}"></span><span>${label}</span></button>`;
+    const base = document.documentElement.dataset.theme === 'light' ? DEFAULT_ACCENT.light : DEFAULT_ACCENT.dark;
     accents.innerHTML = [
-      palette.sky ? option({ mode: 'wallpaper' }, 'Sky', palette.wallpaperAccent ?? CLASSIC, 'title="The calm blue of the thread\'s sky"', ' accent-swatch-sky')
-        : option({ mode: 'wallpaper' }, 'Wallpaper', palette.wallpaperAccent ?? CLASSIC, 'title="The most vivid color of the current wallpaper"'),
+      option({ mode: 'default' }, 'Default', base, 'title="The default teal"'),
+      palette.sky ? option({ mode: 'wallpaper' }, 'Sky', palette.wallpaperAccent ?? base, 'title="The calm blue of the thread\'s sky"', ' accent-swatch-sky')
+        : option({ mode: 'wallpaper' }, 'Wallpaper', palette.wallpaperAccent ?? base, 'title="The most vivid color of the current wallpaper"'),
       option({ mode: 'classic' }, 'Classic', CLASSIC),
       ...SWATCHES.map((color, i) => option({ mode: 'custom', color }, SWATCH_NAMES[i], color)),
       `<label class="accent-choice accent-custom ${own && !locked ? 'accent-custom-on' : ''}"><span class="accent-swatch${own ? '' : ' accent-swatch-pick'}" style="--swatch:${escape(custom)}"></span><span>Custom</span><input type="color" value="${escape(custom)}" aria-label="Custom accent color" ${locked ? 'disabled' : ''}></label>`,
@@ -67,7 +70,8 @@ export function mountThemeSettings(host: HTMLElement, options: ThemeSettingsHost
   function ownAccent(): string {
     const accent = palette.accent;
     if (accent.mode === 'custom') return accent.color;
-    return accent.mode === 'wallpaper' ? palette.wallpaperAccent ?? CLASSIC : CLASSIC;
+    const base = document.documentElement.dataset.theme === 'light' ? DEFAULT_ACCENT.light : DEFAULT_ACCENT.dark;
+    return accent.mode === 'classic' ? CLASSIC : accent.mode === 'wallpaper' && palette.wallpaperAccent || base;
   }
   function renderThemes(): void {
     const active = palette.vsix?.id ?? '';

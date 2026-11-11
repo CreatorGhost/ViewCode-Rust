@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { enableScenes } from './scene-helper';
 import { readdirSync, readFileSync } from 'node:fs';
 
 /** The thread is a window onto a live scene (src/sky-window.ts, src/scenes/) while Wallpapers is off, which is the
@@ -12,12 +13,40 @@ const frames = (page: Page) => page.evaluate(() => (window as any).__sky.frames 
 
 async function open(page: Page, time = '12:00', theme: 'light' | 'dark' = 'light', scene = 'sky'): Promise<void> {
   await page.addInitScript(value => localStorage.setItem('pandacode.theme', value), theme);
+  await enableScenes(page);
   await page.goto(`/?sky=${time}&scene=${scene}`);
   await expect(page.locator('#prompt')).toBeEnabled();
   await expect(page.locator('#transcript .message').first()).toBeVisible();
 }
 
-test('the sky is the default scene and the Wallpapers switch starts off', async ({ page }) => {
+test('a fresh profile shows no scene: the thread is a plain panel until Live scenes is turned on', async ({ page }) => {
+  await page.goto('/?sky=12:00');
+  await expect(page.locator('#prompt')).toBeEnabled();
+  const workspace = page.locator('.workspace');
+  await expect(workspace).not.toHaveAttribute('data-scene');
+  await expect(workspace).not.toHaveAttribute('data-wallpaper');
+  await expect(sky(page)).toBeHidden();
+  // The main pane is its own flat surface, not a window onto anything.
+  expect(await page.locator('.main-pane').evaluate(node => { const style = getComputedStyle(node); return [style.backgroundColor !== 'rgba(0, 0, 0, 0)', style.backgroundImage]; })).toEqual([true, 'none']);
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('region', { name: 'Settings', exact: true }).getByRole('tab', { name: 'Appearance', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: 'Wallpapers', exact: true })).not.toBeChecked();
+  const scenes = page.getByRole('checkbox', { name: 'Live scenes', exact: true });
+  await expect(scenes).not.toBeChecked();
+  await scenes.check();
+  await expect(workspace).toHaveAttribute('data-scene', 'sky');
+  expect(await page.evaluate(() => localStorage.getItem('pandacode.threadScenes'))).toBe('on');
+  // The choice is saved, and turning it off again brings the plain panel back.
+  await page.reload();
+  await expect(workspace).toHaveAttribute('data-scene', 'sky');
+  await expect(sky(page)).toBeVisible();
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('region', { name: 'Settings', exact: true }).getByRole('tab', { name: 'Appearance', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Live scenes', exact: true }).uncheck();
+  await expect(workspace).not.toHaveAttribute('data-scene');
+});
+
+test('with Live scenes on, the sky is the scene and the Wallpapers switch starts off', async ({ page }) => {
   await open(page);
   await expect(sky(page)).toBeVisible();
   await expect(page.locator('.workspace')).toHaveAttribute('data-scene', 'sky');

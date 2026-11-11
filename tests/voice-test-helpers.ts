@@ -1,5 +1,6 @@
 // Shared helpers for the voice-input-*.spec.ts browser suites.
 import { expect, type Page } from '@playwright/test';
+import { pickFromPlus } from './composer-more-helper';
 
 export const prompt = (page: Page) => page.getByRole('textbox', { name: 'Message your coding agent', exact: true });
 export const pill = (page: Page) => page.getByRole('group', { name: 'Voice dictation', exact: true });
@@ -90,6 +91,6 @@ export async function chooseSendTarget(page: Page, target: string) {
     await expect(remote.getByRole('button', { name: 'Sign out', exact: true })).toBeVisible();
   }
   await settings.getByRole('button', { name: 'Back to the workspace', exact: true }).click();
-  await page.locator('.new-task-button').click(); await page.locator('#composer-computer').click();
+  await page.locator('.new-task-button').click(); await pickFromPlus(page, page.locator('#composer-computer'));
   await page.getByRole('menuitemradio', { name: target === 'cloud' ? 'Cloud · E2B' : 'Studio iMac', exact: true }).click();
 }
