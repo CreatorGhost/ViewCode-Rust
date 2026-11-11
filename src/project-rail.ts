@@ -1,14 +1,12 @@
-/** The rail at the window's left edge: project tiles, one usage ring per agent, then the shell's
+/** The rail at the window's left edge: project tiles, then at its foot one usage ring and the shell's
  * icon buttons (`.sidebar-bottom`, which `main.ts` moves in). Pure markup; `main.ts` draws it. */
 import { escape } from './dom';
 import { providerLogo } from './provider-logos';
-import type { Provider, ProviderId } from './types';
-import { usagePeek } from './usage-peek';
+import type { ProviderId } from './types';
+import { usagePeek, usageTone } from './usage-peek';
 
 /** Tiles shown before the rest fold into the "+N" tile. */
 export const RAIL_PROJECTS = 5;
-/** Rings shown; every agent stays in the Usage dialog a ring opens. */
-export const RAIL_RINGS = 4;
 /** Tints in `viewcode-shell.css` (`.rail-tile[data-tint]`), each a design-system tone. */
 const TINTS = 7;
 
@@ -49,13 +47,13 @@ export function railProjectsHtml(projects: readonly RailProject[], filterId: str
 }
 
 const RADIUS = 13;
-/** One ring per installed agent: the arc is the plan's most used window, as last checked. */
-export function railUsageHtml(providers: readonly Provider[], shortName: (id: ProviderId) => string, now = Date.now()): string {
-  return providers.filter(provider => provider.installed).slice(0, RAIL_RINGS).map(provider => {
-    const percent = usagePeek(provider.id, now)?.percent ?? null, name = escape(shortName(provider.id));
-    const level = percent === null ? 'unknown' : percent >= 100 ? 'danger' : percent >= 80 ? 'warn' : 'normal';
-    const label = percent === null ? `${name} usage: not checked yet` : `${name} usage: ${percent}% used`;
-    const arc = percent === null ? '' : `<circle class="rail-ring-arc" cx="16" cy="16" r="${RADIUS}" pathLength="100" stroke-dasharray="${percent} 100" transform="rotate(-90 16 16)"/>`;
-    return `<button type="button" class="rail-ring" data-action="agent-usage" data-provider="${provider.id}" data-level="${level}" aria-label="${label}" title="${label}"><span class="rail-ring-dial"><svg viewBox="0 0 32 32" aria-hidden="true"><circle class="rail-ring-track" cx="16" cy="16" r="${RADIUS}"/>${arc}</svg>${providerLogo(provider.id, 'rail-ring-logo')}</span><span class="rail-ring-label" aria-hidden="true">${percent === null ? '–' : `${percent}%`}</span></button>`;
-  }).join('');
+/** The ring: its arc is the plan's most used window, as last checked; the agent's mark sits in the middle.
+ * It opens the Usage dialog, which lists every agent. Near a limit the dial takes a state tone. */
+export function railUsageHtml(provider: ProviderId | undefined, shortName: (id: ProviderId) => string, now = Date.now()): string {
+  if (!provider) return '';
+  const percent = usagePeek(provider, now)?.percent ?? null, name = escape(shortName(provider));
+  const tone = usageTone(percent);
+  const label = percent === null ? `${name} usage: not checked yet` : `${name} usage: ${percent}% used`;
+  const arc = percent === null ? '' : `<circle class="rail-ring-arc" cx="16" cy="16" r="${RADIUS}" pathLength="100" stroke-dasharray="${percent} 100" transform="rotate(-90 16 16)"/>`;
+  return `<button type="button" class="rail-ring" data-action="agent-usage" data-provider="${provider}" data-percent="${percent ?? ''}" aria-label="${label}" title="${label}"><span class="rail-ring-dial"><svg viewBox="0 0 32 32" aria-hidden="true"${tone ? ` data-state-tone="${tone}"` : ''}><circle class="rail-ring-track" cx="16" cy="16" r="${RADIUS}"/>${arc}</svg>${providerLogo(provider, 'rail-ring-logo')}</span></button>`;
 }

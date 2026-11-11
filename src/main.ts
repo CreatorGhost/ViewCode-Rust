@@ -5,7 +5,7 @@ import { PROJECT_LIMIT, readCollapsed, shownTasks } from './sidebar-tree';
 import { SCENES_EVENT, scenesEnabled, setScenesEnabled } from './scene-preference';
 import { isParkedChoice, menuAnchor, mountComposerMore, parkedItems, pressParked } from './composer-more';
 import { railProjectsHtml, railUsageHtml } from './project-rail';
-import { USAGE_PEEK_EVENT } from './usage-peek';
+import { USAGE_PEEK_EVENT, usageRingAgent } from './usage-peek';
 import { composerGlow, composerGlowEnabled, GLOW_EVENT, setComposerGlowEnabled } from './composer-glow';
 import { COLLAPSED_SECTIONS_KEY, COMPLETED_OPEN_KEY, UNREVIEWED_KEY, readOpen, sectionOf, sidebarSections, type HeldSection } from './sidebar-sections';
 import { PER_PROJECT, PROJECT_ORDER_KEY, SORT_KEY, compareManual, readProjectOrder, readSort, taskComparator, type SidebarSort } from './sidebar-sort';
@@ -511,7 +511,7 @@ const ACTIVITY_WINDOW = 24 * 60 * 60 * 1000;
 const SORT_ICON = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16m-3-3 3 3 3-3M17 20V4m-3 3 3-3 3 3"/></svg>';
 const $app = document.querySelector<HTMLDivElement>('#app')!;
 $app.innerHTML = `<div class="workspace" data-tauri-drag-region>
-  <nav id="project-rail" class="project-rail" aria-label="Projects and shortcuts" data-tauri-drag-region><div id="rail-projects" class="rail-projects" role="group" aria-label="Projects"></div><div id="rail-usage" class="rail-usage" role="group" aria-label="Usage by agent"></div></nav>
+  <nav id="project-rail" class="project-rail" aria-label="Projects and shortcuts" data-tauri-drag-region><div id="rail-projects" class="rail-projects" role="group" aria-label="Projects"></div><div id="rail-usage" class="rail-usage"></div></nav>
   <aside id="workspace-sidebar" class="sidebar" aria-label="Projects and tasks">
     <div class="brand" data-tauri-drag-region>${button('view-menu', 'Workspace view: Conversation', 'thread', 'view-menu', 'id="view-menu" aria-haspopup="menu" aria-expanded="false"')}</div>
     <div class="sidebar-actions"><button class="new-task-button" data-action="new-task">${icon('edit')}<span>New thread</span><kbd>${shortcut('N')}</kbd></button><button class="search-trigger" data-action="search">${icon('search')}<span>Search</span><kbd>${shortcut('K')}</kbd></button></div>
@@ -1502,19 +1502,20 @@ function taskSignal(s: Session, now: number): { status: string; statusLabel: str
   const word = status === 'attention' ? answer ? 'Answer' : 'Approval' : status === 'failed' ? statusLabel : status === 'limited' ? (limitReset(s.limitedUntil, now) ? `Limited · ${limitReset(s.limitedUntil, now)}` : 'Limited') : '';
   return { status, statusLabel, word };
 }
-/** The rail's project tiles and usage rings. A redraw only happens when the markup changed, and keeps focus on the same tile. */
+/** The rail's project tiles and its usage ring. A redraw only happens when the markup changed, and keeps focus on the same tile. */
 function renderRail(): void {
   const paint = (host: HTMLElement, html: string) => {
     if (showsHtml(host, html)) return;
     // An open project list keeps its anchor: replacing the "+N" tile would cancel the menu.
     if (host.querySelector('[aria-expanded="true"]') || pendingMenuOpen && host.contains(pendingMenuOpen.anchor)) return;
     const focused = host.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
-    const key = focused?.dataset.id ? `[data-id="${CSS.escape(focused.dataset.id)}"]` : focused?.dataset.provider ? `[data-provider="${CSS.escape(focused.dataset.provider)}"]` : focused ? `[data-action="${CSS.escape(focused.dataset.action ?? '')}"]` : '';
+    const key = focused?.dataset.id ? `[data-id="${CSS.escape(focused.dataset.id)}"]` : focused ? `[data-action="${CSS.escape(focused.dataset.action ?? '')}"]` : '';
     host.innerHTML = html;
     if (key) host.querySelector<HTMLElement>(key)?.focus({ preventScroll: true });
   };
   paint($('#rail-projects'), railProjectsHtml(userProjects(), state.projectFilter, session()?.projectId ?? state.projectId));
-  paint($('#rail-usage'), railUsageHtml(state.providers, shortProvider));
+  // One ring: the open thread's agent, or with no thread open the agent closest to its limit.
+  paint($('#rail-usage'), railUsageHtml(usageRingAgent(state.providers, session()?.provider), shortProvider));
 }
 window.addEventListener(USAGE_PEEK_EVENT, () => renderRail());
 /** The shell's icon buttons live at the rail's foot; at ≤650px the sidebar is the icon rail and takes them back. */
