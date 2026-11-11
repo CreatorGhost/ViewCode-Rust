@@ -17,6 +17,7 @@ pub(crate) mod mirror;
 pub(crate) mod orchestrate;
 pub(crate) mod routes;
 mod secrets;
+pub(crate) mod self_relay;
 mod socket;
 mod start;
 
@@ -63,6 +64,8 @@ impl Device {
 
 type Reply = tokio::sync::oneshot::Sender<Result<Value>>;
 
+/// GitHub sign-in and sign-out belong to the shared relay; Quick connect has its own switch.
+const QUICK_CONNECT_ACTIVE: &str = "Quick connect is on. Turn it off in its settings first.";
 const UNKNOWN_DEVICE: &str = "That computer is not on this account.";
 
 /// A device mirroring some of this computer's tasks, and the events waiting
@@ -231,6 +234,8 @@ impl Remote {
             "notifyEnabled": inner.settings.notify_enabled,
             "remoteFullAccess": inner.settings.remote_full_access,
             "connected": inner.connected,
+            // "quickConnect": the socket is on the user's own relay, not the build's shared one.
+            "relay": if config::self_relay_active() { "quickConnect" } else { "shared" },
         });
         if let Some(account) = &inner.settings.account {
             status["account"] = json!({"login": account.login, "avatarUrl": account.avatar_url});
@@ -341,6 +346,9 @@ fn cancel_sign_in(app: &tauri::AppHandle) {
 
 #[tauri::command]
 pub async fn remote_sign_in_start(app: tauri::AppHandle) -> Result<Value> {
+    if config::self_relay_active() {
+        return Err(QUICK_CONNECT_ACTIVE.into());
+    }
     let build = config::build().ok_or("Remote access is not configured in this build.")?;
     cancel_sign_in(&app);
     let (flow, view) = auth::start(&build).await?;
@@ -398,6 +406,9 @@ pub async fn remote_sign_in_finish(app: tauri::AppHandle) -> Result<Value> {
 
 #[tauri::command]
 pub async fn remote_sign_out(app: tauri::AppHandle) -> Result<Value> {
+    if config::self_relay_active() {
+        return Err(QUICK_CONNECT_ACTIVE.into());
+    }
     let (token, me) = {
         let state = remote(&app);
         let inner = state.lock();

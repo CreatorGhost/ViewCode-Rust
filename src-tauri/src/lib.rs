@@ -60,6 +60,7 @@ mod prompt_attachments;
 mod overlay;
 mod panda_router;
 mod provider_settings;
+mod quick_connect;
 mod remote;
 mod providers;
 mod session_titles;
@@ -4004,7 +4005,9 @@ fn setup_common(app: &tauri::App) -> crate::Result<PathBuf> {
         shutdown: AtomicU8::new(0),
     });
     cloud_agents::init(app.handle());
+    quick_connect::setup(app.handle(), &dir);
     remote::setup(app.handle(), &dir);
+    quick_connect::resume(app.handle());
     app.manage(browser::BrowserState::default());
     app.manage(simulator::Simulators::default());
     app.manage(vm::Vms::default());
@@ -4292,6 +4295,21 @@ pub fn run() {
                 remote::grants::remote_pair_code,
                 remote::grants::remote_pair_code_cancel,
                 remote::grants::remote_pair_redeem,
+                quick_connect::quick_connect_status,
+                quick_connect::quick_connect_start_setup,
+                quick_connect::quick_connect_prepare_tools,
+                quick_connect::quick_connect_sign_in,
+                quick_connect::quick_connect_continue,
+                quick_connect::quick_connect_choose_account,
+                quick_connect::quick_connect_cancel,
+                quick_connect::quick_connect_set_enabled,
+                quick_connect::quick_connect_remove,
+                quick_connect::quick_connect_pairing_create,
+                quick_connect::quick_connect_pairing_cancel,
+                quick_connect::quick_connect_devices,
+                quick_connect::quick_connect_revoke_device,
+                quick_connect::quick_connect_set_mode,
+                quick_connect::quick_connect_set_legacy_connect_visible,
                 remote::diagnostics::remote_diagnostics,
                 remote::diagnostics::remote_diagnostics_export,
                 remote_resubscribe,

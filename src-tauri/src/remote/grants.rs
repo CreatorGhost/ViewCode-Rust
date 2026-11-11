@@ -230,10 +230,21 @@ impl Grants {
             return Err(INVALID_CODE.into());
         }
         let granted = self.code.take().map(|code| code.scope).unwrap_or_default();
+        Ok(self.grant_at_least(peer, granted))
+    }
+
+    /// Gives `peer` the granted scope unless it already has a wider one.
+    fn grant_at_least(&mut self, peer: &Peer, granted: Scope) -> Scope {
         let current = self.scope_of(peer);
         let scope = if current.rank() >= granted.rank() { current } else { granted };
         self.set(peer, scope);
-        Ok(scope)
+        scope
+    }
+
+    /// Forgets a device altogether (its relay registration was removed).
+    fn forget(&mut self, device: &str) {
+        self.dirty |= self.store.devices.remove(device).is_some();
+        self.announced.retain(|key| !key.starts_with(&format!("{device}|")));
     }
 
     /// Every device with its scope, devices waiting for a decision first.
@@ -345,11 +356,32 @@ pub(crate) fn check(app: &tauri::AppHandle, device: &str, method: &str) -> Resul
 pub(crate) fn redeem(app: &tauri::AppHandle, device: &str, params: &Value) -> Result<Value> {
     let snap = snapshot(app);
     let peer = snap.peers.iter().find(|peer| peer.id == device).ok_or(super::UNKNOWN_DEVICE)?;
-    let code = params["code"].as_str().filter(|code| code.len() <= 32).ok_or(INVALID_CODE)?;
-    let scope = with(&snap.dir, |grants| grants.redeem(peer, code, chrono::Utc::now().timestamp()))?;
+    let code = params["code"].as_str().filter(|code| code.len() <= 64).ok_or(INVALID_CODE)?;
+    let now = chrono::Utc::now().timestamp();
+    // A Quick connect pairing: the phone scanned a link from this computer and sends the
+    // code derived from it. A blocked device is refused before the code is spent.
+    let scope = if crate::quick_connect::is_host_code(code) {
+        if with(&snap.dir, |grants| grants.blocks(device)) {
+            return Err(INVALID_CODE.into());
+        }
+        let granted = crate::quick_connect::redeem_host_code(app, code, now).and_then(|scope| Scope::parse(&scope)).map_err(|_| INVALID_CODE)?;
+        let scope = with(&snap.dir, |grants| grants.grant_at_least(peer, granted));
+        crate::quick_connect::paired(app, &peer.id, &peer.name, &peer.platform, &peer.fingerprint, scope.name());
+        scope
+    } else {
+        with(&snap.dir, |grants| grants.redeem(peer, code, now))?
+    };
     let _ = app.emit("remote://pair-code-used", json!({"deviceId": peer.id, "name": peer.name, "scope": scope.name()}));
     emit_grants(app);
     Ok(json!({"scope": scope.name()}))
+}
+
+/// Drops whatever was granted to `device`, after its registration was removed: pairing it
+/// again starts from nothing.
+pub(crate) fn forget(app: &tauri::AppHandle, device: &str) {
+    let dir = remote(app).dir.clone();
+    with(&dir, |grants| grants.forget(device));
+    emit_grants(app);
 }
 
 fn random_code() -> String {
@@ -424,6 +456,29 @@ mod tests {
         let peer = peer(id, fingerprint);
         grants.set(&peer, scope);
         peer
+    }
+
+    #[test]
+    fn a_quick_connect_pairing_grants_its_scope_and_revoking_forgets_the_device() {
+        let mut grants = Grants::default();
+        let phone = peer("phone", "f1");
+        // A phone that scanned the link starts pending and gets the pairing's scope.
+        assert_eq!(grants.decide(&phone, "tasks.list"), Verdict::Pending { announce: true });
+        assert_eq!(grants.grant_at_least(&phone, Scope::Control), Scope::Control);
+        assert_eq!(grants.decide(&phone, "task.send"), Verdict::Allow);
+        // Pairing again with a narrower code never takes access away.
+        assert_eq!(grants.grant_at_least(&phone, Scope::View), Scope::Control);
+        assert_eq!(grants.grant_at_least(&phone, Scope::Full), Scope::Full);
+        // Revoked: nothing is left, so the same phone waits for approval again.
+        grants.dirty = false;
+        grants.forget("phone");
+        assert!(grants.dirty && grants.store.devices.is_empty());
+        assert_eq!(grants.scope_of(&phone), Scope::Pending);
+        assert_eq!(grants.decide(&phone, "tasks.list"), Verdict::Pending { announce: true });
+        grants.dirty = false;
+        grants.forget("phone");
+        grants.forget("nobody");
+        assert!(grants.dirty, "the pending note from the last request was removed");
     }
 
     #[test]
