@@ -42,6 +42,7 @@ interface SettingsOptions {
   wallpapers: boolean;
   /** Live scenes behind the thread while Wallpapers is off. */
   scenes: boolean;
+  composerGlow: boolean;
   theme: 'light' | 'dark';
   preview: boolean;
   /** Runs the checkout's fast check after a clean turn and queues one repair on failure. */
@@ -150,6 +151,7 @@ function sectionHtml(id: SettingsPage, options: SettingsOptions): string {
         ${settingRow('Theme', `<button type="button" class="secondary-button" data-action="toggle-theme">${icon(options.theme === 'dark' ? 'sun' : 'moon')}Use ${options.theme === 'dark' ? 'light' : 'dark'}</button>`, 'Imported VS Code themes keep their own.')}
         ${switchRow('daily-wallpapers', 'Wallpapers', 'A picture behind the workspace that changes through the day.', options.wallpapers)}
         ${switchRow('live-scenes', 'Live scenes', 'With Wallpapers off, a sky or landscape behind each thread that follows the time of day.', options.scenes)}
+        ${switchRow('composer-glow', 'Composer glow', 'While an agent works, a light circles the message box in the project’s colour, or the accent.', options.composerGlow)}
       </div>
       <h3 class="settings-heading">Colors</h3><div class="settings-embed settings-colors" data-embed="colors"></div>
       <div class="settings-wallpapers" ${options.wallpapers ? '' : 'hidden'}><h3 class="settings-heading">Wallpapers</h3><div class="settings-embed" data-embed="wallpapers"></div></div>`;

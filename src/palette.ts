@@ -1,6 +1,6 @@
 import './palette.css';
 import { parseHex, toOklch } from './color';
-import { accentTokens, DEFAULT_ACCENT, statusClearOf, TONE_TOKENS, vsixTokens, type Tokens, type VsixTheme } from './palette-core';
+import { accentTokens, DEFAULT_ACCENT, PROJECT_TOKENS, projectTones, statusClearOf, TONE_TOKENS, vsixTokens, type Tokens, type VsixTheme } from './palette-core';
 export { DEFAULT_ACCENT } from './palette-core';
 import { wallpaperAccents } from './wallpaper-accents';
 export type { VsixTheme } from './palette-core';
@@ -16,7 +16,7 @@ const STORE = 'pandacode.palette';
 export const CLASSIC = '#ffd43b';
 export const SWATCHES = ['#4f8ef7', '#34c084', '#a86cf0', '#f0679b', '#ff8a3d', '#2fb8c4'];
 const TOKEN_NAMES = ['--bg', '--sidebar', '--panel', '--raised', '--border', '--text', '--muted', '--faint', '--success', '--danger',
-  '--accent', '--accent-rgb', '--accent-dim', '--accent-ink', '--focus', '--on-accent', '--accent-hover', '--accent-deep-rgb', '--accent-tint', '--accent-tint-strong', '--warning', '--info', ...TONE_TOKENS];
+  '--accent', '--accent-rgb', '--accent-dim', '--accent-ink', '--focus', '--on-accent', '--accent-hover', '--accent-deep-rgb', '--accent-tint', '--accent-tint-strong', '--warning', '--info', ...TONE_TOKENS, ...PROJECT_TOKENS];
 const root = document.documentElement;
 
 function read(): Saved {
@@ -48,8 +48,10 @@ function markReady(): void {
   cancelAnimationFrame(readyFrame);
   readyFrame = requestAnimationFrame(() => { readyFrame = requestAnimationFrame(() => root.setAttribute('data-ready', '')); });
 }
-function write(tokens: Tokens): void {
+function write(palette: Tokens): void {
   markReady();
+  // The project tones follow only the base, so they are derived here and never ride in the saved cache.
+  const tokens = { ...palette, ...projectTones(theme()) };
   for (const name of TOKEN_NAMES) {
     if (name in tokens) root.style.setProperty(name, tokens[name]); else root.style.removeProperty(name);
   }

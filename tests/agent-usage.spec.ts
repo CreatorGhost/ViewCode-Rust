@@ -84,7 +84,7 @@ async function openApp(page: Page, hold: string[] = [], failures: string[] = [],
   await expect(page.getByRole('textbox', { name: 'Message your coding agent' })).toBeEnabled();
 }
 
-/** Agent usage has no rail button: it opens from Go to anything, or from a usage ring on the rail. */
+/** Agent usage has no rail button: it opens from Go to anything, or from the usage ring at the rail's foot (tests/usage-ring.spec.ts). */
 async function openUsage(page: Page): Promise<void> {
   await openAgentUsage(page);
   await expect(dialog(page)).toBeVisible();

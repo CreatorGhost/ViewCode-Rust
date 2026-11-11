@@ -259,3 +259,29 @@ test('the light meter warn fill clears 3:1 on its track for every accent, scene 
     }
   }
 });
+
+test('every project colour has a tone that reads on the page, a card and every recorded theme, and the 18 stay apart', async () => {
+  const { PROJECT_HUES, PROJECT_TOKENS, projectTones } = await import('../src/palette-core.ts');
+  const types = readFileSync(new URL('../src/types.ts', import.meta.url), 'utf8');
+  const names = types.match(/export type ProjectColor = ([^;]+);/)[1].split('|').map(name => name.trim().replace(/'/g, ''));
+  assert.deepEqual(Object.keys(PROJECT_HUES), names, 'one tone per ProjectColor, in its order');
+  assert.equal(names.length, 18);
+  // What a glow in the tone is drawn on: the panel, the frame and the raised surface of the default look, then real themes.
+  const surfaces = { light: ['#fbfbf9', '#eeefec', '#ffffff'], dark: ['#0e0e0e', '#080808', '#161616'] };
+  for (const theme of themes) { const t = vsixTokens(theme).tokens; surfaces[theme.kind].push(t['--bg'], t['--sidebar'], t['--panel']); }
+  for (const mode of ['light', 'dark']) {
+    const tones = projectTones(mode);
+    assert.deepEqual(Object.keys(tones), PROJECT_TOKENS);
+    for (const [token, hex] of Object.entries(tones)) {
+      assert.match(hex, /^#[0-9a-f]{6}$/);
+      // A graphic, not text: WCAG 1.4.11 asks 3:1 against what it sits on.
+      for (const surface of surfaces[mode]) assert.ok(ratio(hex, surface) >= 3, `${mode} ${token} ${hex} on ${surface}: ${ratio(hex, surface).toFixed(2)}`);
+    }
+    // Neighbours stay tellable apart: no two tones closer than 8° of hue unless their chroma differs (gray).
+    const placed = Object.values(tones).map(hex => toOklch(rgb(hex)));
+    for (let a = 0; a < placed.length; a++) for (let b = a + 1; b < placed.length; b++) {
+      const gap = Math.abs(placed[a].h - placed[b].h) % 360, hue = Math.min(gap, 360 - gap);
+      assert.ok(hue >= 8 || Math.abs(placed[a].c - placed[b].c) >= 0.08, `${mode} ${names[a]} and ${names[b]} read alike`);
+    }
+  }
+});

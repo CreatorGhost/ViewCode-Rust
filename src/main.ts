@@ -5,7 +5,8 @@ import { PROJECT_LIMIT, readCollapsed, shownTasks } from './sidebar-tree';
 import { SCENES_EVENT, scenesEnabled, setScenesEnabled } from './scene-preference';
 import { isParkedChoice, menuAnchor, mountComposerMore, parkedItems, pressParked } from './composer-more';
 import { railProjectsHtml, railUsageHtml } from './project-rail';
-import { USAGE_PEEK_EVENT } from './usage-peek';
+import { USAGE_PEEK_EVENT, usageRingAgent } from './usage-peek';
+import { composerGlow, composerGlowEnabled, GLOW_EVENT, setComposerGlowEnabled } from './composer-glow';
 import { COLLAPSED_SECTIONS_KEY, COMPLETED_OPEN_KEY, UNREVIEWED_KEY, readOpen, sectionOf, sidebarSections, type HeldSection } from './sidebar-sections';
 import { PER_PROJECT, PROJECT_ORDER_KEY, SORT_KEY, compareManual, readProjectOrder, readSort, taskComparator, type SidebarSort } from './sidebar-sort';
 import './styles.css';
@@ -510,7 +511,7 @@ const ACTIVITY_WINDOW = 24 * 60 * 60 * 1000;
 const SORT_ICON = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16m-3-3 3 3 3-3M17 20V4m-3 3 3-3 3 3"/></svg>';
 const $app = document.querySelector<HTMLDivElement>('#app')!;
 $app.innerHTML = `<div class="workspace" data-tauri-drag-region>
-  <nav id="project-rail" class="project-rail" aria-label="Projects and shortcuts" data-tauri-drag-region><div id="rail-projects" class="rail-projects" role="group" aria-label="Projects"></div><div id="rail-usage" class="rail-usage" role="group" aria-label="Usage by agent"></div></nav>
+  <nav id="project-rail" class="project-rail" aria-label="Projects and shortcuts" data-tauri-drag-region><div id="rail-projects" class="rail-projects" role="group" aria-label="Projects"></div><div id="rail-usage" class="rail-usage"></div></nav>
   <aside id="workspace-sidebar" class="sidebar" aria-label="Projects and tasks">
     <div class="brand" data-tauri-drag-region>${button('view-menu', 'Workspace view: Conversation', 'thread', 'view-menu', 'id="view-menu" aria-haspopup="menu" aria-expanded="false"')}</div>
     <div class="sidebar-actions"><button class="new-task-button" data-action="new-task">${icon('edit')}<span>New thread</span><kbd>${shortcut('N')}</kbd></button><button class="search-trigger" data-action="search">${icon('search')}<span>Search</span><kbd>${shortcut('K')}</kbd></button></div>
@@ -1091,6 +1092,7 @@ wallpapers.subscribe(() => sky.refresh());
 const syncPaletteWallpaper = () => palette.setWallpaper(wallpapers.enabled ? wallpapers.currentId : scenesEnabled() ? SKY_SCENE : undefined);
 wallpapers.subscribe(syncPaletteWallpaper); syncPaletteWallpaper();
 window.addEventListener(SCENES_EVENT, () => { sky.refresh(); tiles.refreshScenes(); syncPaletteWallpaper(); });
+window.addEventListener(GLOW_EVENT, () => renderComposer());
 window.addEventListener('pandacode-theme-change', () => palette.refresh());
 const disposeSidebarResizing = initializeSidebarResizing($('.workspace'), $('.sidebar'));
 const disposeInspectorResizing = initializeSidebarResizing($('.workspace'), $('#inspector'), true);
@@ -1500,19 +1502,20 @@ function taskSignal(s: Session, now: number): { status: string; statusLabel: str
   const word = status === 'attention' ? answer ? 'Answer' : 'Approval' : status === 'failed' ? statusLabel : status === 'limited' ? (limitReset(s.limitedUntil, now) ? `Limited · ${limitReset(s.limitedUntil, now)}` : 'Limited') : '';
   return { status, statusLabel, word };
 }
-/** The rail's project tiles and usage rings. A redraw only happens when the markup changed, and keeps focus on the same tile. */
+/** The rail's project tiles and its usage ring. A redraw only happens when the markup changed, and keeps focus on the same tile. */
 function renderRail(): void {
   const paint = (host: HTMLElement, html: string) => {
     if (showsHtml(host, html)) return;
     // An open project list keeps its anchor: replacing the "+N" tile would cancel the menu.
     if (host.querySelector('[aria-expanded="true"]') || pendingMenuOpen && host.contains(pendingMenuOpen.anchor)) return;
     const focused = host.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
-    const key = focused?.dataset.id ? `[data-id="${CSS.escape(focused.dataset.id)}"]` : focused?.dataset.provider ? `[data-provider="${CSS.escape(focused.dataset.provider)}"]` : focused ? `[data-action="${CSS.escape(focused.dataset.action ?? '')}"]` : '';
+    const key = focused?.dataset.id ? `[data-id="${CSS.escape(focused.dataset.id)}"]` : focused ? `[data-action="${CSS.escape(focused.dataset.action ?? '')}"]` : '';
     host.innerHTML = html;
     if (key) host.querySelector<HTMLElement>(key)?.focus({ preventScroll: true });
   };
   paint($('#rail-projects'), railProjectsHtml(userProjects(), state.projectFilter, session()?.projectId ?? state.projectId));
-  paint($('#rail-usage'), railUsageHtml(state.providers, shortProvider));
+  // One ring: the open thread's agent, or with no thread open the agent closest to its limit.
+  paint($('#rail-usage'), railUsageHtml(usageRingAgent(state.providers, session()?.provider), shortProvider));
 }
 window.addEventListener(USAGE_PEEK_EVENT, () => renderRail());
 /** The shell's icon buttons live at the rail's foot; at ≤650px the sidebar is the icon rail and takes them back. */
@@ -2857,7 +2860,9 @@ function renderComposer(): void {
     : `<button type="submit" class="send-button" title="Send message (${shortcut('Enter')})" aria-label="Send message" ${togglingTeam ? 'disabled' : ''}>${icon('arrow')}</button>`;
   // The composer redraws on every session change; the orchestration slot's nodes outlive it.
   const orchestrationSlot = document.querySelector('#machine-orchestration');
-  $('#composer-area').innerHTML = `<form id="composer" class="composer ${running ? 'composer-running' : ''}" data-tip-side="below">${wakeStrip(s.id)}${queuePanel({ entries: state.queues.get(s.id) ?? [], hold: state.queueHolds.get(s.id) ?? null, running, steerable: !team && !offline, sendable: !botProjects.has(s.projectId) && !offline, editingId: state.queueEditing || null, busy: state.queueBusy.has(s.id), steering: steeringQueued, notSteered, agentName: botForThread()?.name ?? provider(s.provider)?.name })}${s.remoteDevice ? '' : council.strip(s.id)}<div id="attachments" class="attachments">${attachmentBar(s)}</div>${running && !team ? `<div class="composer-steer-bar"><button type="button" class="icon-button composer-steer-edit" data-action="steer-edit" title="Edit draft" aria-label="Edit draft">${icon('edit')}</button><button type="button" class="steer-button" data-action="steer" title="Steer: send into the running turn (${shortcut('Enter')})" aria-label="Steer the running turn">${STEER_ICON}<span class="sr-only">Steer</span></button><button type="button" class="icon-button composer-steer-clear" data-action="steer-clear" title="Clear draft" aria-label="Clear draft">${icon('close')}</button></div>` : !team && finishingStreams.has(s.id) && !finishingStreams.get(s.id)!.error ? '<div class="composer-steer-bar" data-holding aria-hidden="true"></div>' : ''}<div class="composer-input"><textarea id="prompt" dir="auto" data-session-id="${escape(s.id)}" aria-label="Message your coding agent" placeholder="${running ? (team ? 'Queue a follow-up…' : 'Queue a follow-up · ⌘↩ steers now') : composerPlaceholder()}" aria-description="${escape(promptDescription())}" rows="2"></textarea><div class="composer-actions">${button('attach', 'Add files and tools', 'plus', '', 'type="button" id="composer-more" aria-haspopup="menu" aria-expanded="false"')}${voiceButtonHtml}<span class="composer-pill">${sendControl}</span></div></div><div class="composer-toolbar composer-tray"><div class="composer-tools">${modelTriggerHtml(s, modelLocked, true)}${modeTriggerHtml(s, running || togglingTeam, true)}</div><div class="composer-parked">${teamButton(s)}${tokenSaver.button(s.id)}${s.remoteDevice ? '' : council.button(s.id)}${contextBarHtml(s, newTaskView())}</div></div></form>`;
+  // The glow is for an agent at work: a team held at its limit is active but idle.
+  const glow = composerGlow(running && !teamHeld(s.id), state.projects.find(item => item.id === s.projectId)?.color);
+  $('#composer-area').innerHTML = `<form id="composer" class="composer ${running ? 'composer-running' : ''} ${glow.className}"${glow.attributes} data-tip-side="below">${glow.ring}${wakeStrip(s.id)}${queuePanel({ entries: state.queues.get(s.id) ?? [], hold: state.queueHolds.get(s.id) ?? null, running, steerable: !team && !offline, sendable: !botProjects.has(s.projectId) && !offline, editingId: state.queueEditing || null, busy: state.queueBusy.has(s.id), steering: steeringQueued, notSteered, agentName: botForThread()?.name ?? provider(s.provider)?.name })}${s.remoteDevice ? '' : council.strip(s.id)}<div id="attachments" class="attachments">${attachmentBar(s)}</div>${running && !team ? `<div class="composer-steer-bar"><button type="button" class="icon-button composer-steer-edit" data-action="steer-edit" title="Edit draft" aria-label="Edit draft">${icon('edit')}</button><button type="button" class="steer-button" data-action="steer" title="Steer: send into the running turn (${shortcut('Enter')})" aria-label="Steer the running turn">${STEER_ICON}<span class="sr-only">Steer</span></button><button type="button" class="icon-button composer-steer-clear" data-action="steer-clear" title="Clear draft" aria-label="Clear draft">${icon('close')}</button></div>` : !team && finishingStreams.has(s.id) && !finishingStreams.get(s.id)!.error ? '<div class="composer-steer-bar" data-holding aria-hidden="true"></div>' : ''}<div class="composer-input"><textarea id="prompt" dir="auto" data-session-id="${escape(s.id)}" aria-label="Message your coding agent" placeholder="${running ? (team ? 'Queue a follow-up…' : 'Queue a follow-up · ⌘↩ steers now') : composerPlaceholder()}" aria-description="${escape(promptDescription())}" rows="2"></textarea><div class="composer-actions">${button('attach', 'Add files and tools', 'plus', '', 'type="button" id="composer-more" aria-haspopup="menu" aria-expanded="false"')}${voiceButtonHtml}<span class="composer-pill">${sendControl}</span></div></div><div class="composer-toolbar composer-tray"><div class="composer-tools">${modelTriggerHtml(s, modelLocked, true)}${modeTriggerHtml(s, running || togglingTeam, true)}</div><div class="composer-parked">${teamButton(s)}${tokenSaver.button(s.id)}${s.remoteDevice ? '' : council.button(s.id)}${contextBarHtml(s, newTaskView())}</div></div></form>`;
   // A refresh replaces the textarea and its native undo history with it (#277); the same thread's node goes back in carrying the refresh's attributes.
   if (oldPrompt && oldPrompt.dataset.sessionId === s.id) {
     const fresh = document.querySelector<HTMLTextAreaElement>('#prompt');
@@ -5917,7 +5922,7 @@ async function showSettings(section?: import('./settings').SettingsSection, inte
     if (host.hidden) return;
     settingsView = mountSettings(host, {
       providers: state.providers, defaultProvider: state.defaultProvider, defaultModel: defaultModelLabel(), activityExpanded: activityExpanded(),
-      compact: document.body.classList.contains('compact'), wallpapers: wallpapers.preferences.enabled, scenes: scenesEnabled(),
+      compact: document.body.classList.contains('compact'), wallpapers: wallpapers.preferences.enabled, scenes: scenesEnabled(), composerGlow: composerGlowEnabled(),
       theme: currentTheme(), preview, section, discover: discoverSettingsProviders,
       projects: { list: userProjects, remove: removeProject },
       turnChecks: turnChecksEnabled(),
@@ -7208,6 +7213,7 @@ document.addEventListener('scroll', event => {
 document.addEventListener('change', event => {
   const input = event.target as HTMLInputElement;
   if (input.id === 'live-scenes') setScenesEnabled(input.checked);
+  if (input.id === 'composer-glow') setComposerGlowEnabled(input.checked);
   if (input.id === 'daily-wallpapers') { wallpapers.setEnabled(input.checked); document.querySelector('.settings-wallpapers')?.toggleAttribute('hidden', !input.checked); }
   if (input.id === 'turn-checks') turnChecksSetEnabled(input.checked);
   // A switch toggles natively (the data-action click path cancels the default), then saves.

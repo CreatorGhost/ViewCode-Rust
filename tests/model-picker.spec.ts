@@ -209,6 +209,176 @@ test('effort is a segmented radiogroup that saves on choice', async ({ page }) =
   await expect(picker(page)).toBeVisible();
 });
 
+// ----- The effort track: stops that can be clicked, a thumb that can be dragged (src/effort-track.ts) -----
+
+const effortGroup = (page: Page) => picker(page).getByRole('radiogroup', { name: 'Effort' });
+const stop = (page: Page, name: string) => effortGroup(page).getByRole('radio', { name, exact: true });
+const thumb = (page: Page) => effortGroup(page).locator('.segment-thumb');
+const centre = async (page: Page, name: string) => { const box = (await stop(page, name).boundingBox())!; return { x: box.x + box.width / 2, y: box.y + box.height / 2, width: box.width }; };
+const thumbCentre = async (page: Page) => { const box = (await thumb(page).boundingBox())!; return box.x + box.width / 2; };
+/** The thumb rests on a stop: same box, nothing still sliding. */
+const restsOn = async (page: Page, name: string) => expect.poll(async () => {
+  const [a, b] = [await thumb(page).boundingBox(), await stop(page, name).boundingBox()];
+  return Math.abs(a!.x - b!.x) < 0.75 && Math.abs(a!.width - b!.width) < 0.75;
+}).toBe(true);
+
+test('the effort thumb is dragged along the track: it follows the pointer, lights the nearest stop and saves it on release', async ({ page }) => {
+  await open(page);
+  await expect(stop(page, 'Default')).toHaveAttribute('aria-checked', 'true');
+  await restsOn(page, 'Default');
+  const from = await centre(page, 'Default'), medium = await centre(page, 'Medium'), high = await centre(page, 'High');
+
+  // Grabbed by the thumb and moved: it stays under the pointer, with no easing between it and the hand.
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x + 2, from.y);
+  await expect(effortGroup(page)).not.toHaveAttribute('data-drag');
+  await page.mouse.move(high.x, high.y, { steps: 8 });
+  await expect(effortGroup(page)).toHaveAttribute('data-drag', 'move');
+  expect(await thumb(page).evaluate(node => getComputedStyle(node).transitionDuration.split(',').every(value => Number.parseFloat(value) === 0))).toBe(true);
+  expect(Math.abs(await thumbCentre(page) - high.x)).toBeLessThan(1.5);
+  // The stop under it lights up and the hint describes it; nothing is saved until the thumb is let go.
+  await expect(stop(page, 'High')).toHaveAttribute('data-near', '');
+  await expect(effortGroup(page).locator('[data-near]')).toHaveCount(1);
+  await expect(picker(page).locator('.model-menu-effort-hint')).toHaveText('Sample high effort.');
+  await expect(stop(page, 'Default')).toHaveAttribute('aria-checked', 'true');
+  expect((await task(page)).reasoningEffort ?? null).toBeNull();
+
+  // Let go between two stops: the thumb snaps to the nearer one, and that level is saved.
+  const between = medium.x + (high.x - medium.x) * 0.3;
+  await page.mouse.move(between, high.y, { steps: 4 });
+  expect(Math.abs(await thumbCentre(page) - between)).toBeLessThan(1.5);
+  await expect(stop(page, 'Medium')).toHaveAttribute('data-near', '');
+  await page.mouse.up();
+  await expect(stop(page, 'Medium')).toHaveAttribute('aria-checked', 'true');
+  await expect.poll(async () => (await task(page)).reasoningEffort).toBe('medium');
+  await restsOn(page, 'Medium');
+  await expect(effortGroup(page).locator('[data-near]')).toHaveCount(0);
+  await expect(effortGroup(page)).not.toHaveAttribute('data-drag');
+  await expect(trigger(page).locator('.model-effort')).toHaveText('Medium');
+  await expect(picker(page)).toBeVisible();
+});
+
+test('a drag begun off the thumb brings it to the pointer, and it never leaves the track', async ({ page }) => {
+  await open(page);
+  await restsOn(page, 'Default');
+  const names = await effortGroup(page).getByRole('radio').allTextContents(), last = names[names.length - 1];
+  const high = await centre(page, 'High'), end = await centre(page, last), first = await centre(page, 'Default');
+  // Pressed on a stop the thumb is not on: once the pointer travels, the thumb comes to it by its middle.
+  await page.mouse.move(high.x, high.y);
+  await page.mouse.down();
+  await page.mouse.move(high.x - 8, high.y, { steps: 2 });
+  await expect(effortGroup(page)).toHaveAttribute('data-drag', 'move');
+  expect(Math.abs(await thumbCentre(page) - (high.x - 8))).toBeLessThan(1.5);
+  // Far past the right end, and off the track altogether: the thumb stops on the last stop.
+  await page.mouse.move(end.x + 400, end.y + 120, { steps: 6 });
+  expect(Math.abs(await thumbCentre(page) - end.x)).toBeLessThan(1.5);
+  await expect(stop(page, last)).toHaveAttribute('data-near', '');
+  // And past the left end, on the first.
+  await page.mouse.move(first.x - 400, first.y, { steps: 6 });
+  expect(Math.abs(await thumbCentre(page) - first.x)).toBeLessThan(1.5);
+  await page.mouse.move(end.x + 400, end.y, { steps: 6 });
+  await page.mouse.up();
+  await expect(stop(page, last)).toHaveAttribute('aria-checked', 'true');
+  await expect.poll(async () => (await task(page)).reasoningEffort).toBe(await stop(page, last).getAttribute('data-effort'));
+  await restsOn(page, last);
+  // Letting go outside the picker did not close it, and the release was not taken for a click on High.
+  await expect(picker(page)).toBeVisible();
+  await expect(stop(page, 'High')).toHaveAttribute('aria-checked', last === 'High' ? 'true' : 'false');
+});
+
+test('a click on a stop slides the thumb there, the keys step it, and the level stays with the task', async ({ page }) => {
+  await open(page);
+  await restsOn(page, 'Default');
+  // A press that does not travel is a click on the stop: the thumb slides over (a translate transition, nothing else).
+  const high = await centre(page, 'High');
+  await page.mouse.move(high.x, high.y);
+  expect(await thumb(page).evaluate(node => { const style = getComputedStyle(node); return [style.transitionProperty, Number.parseFloat(style.transitionDuration) > 0]; })).toEqual(['translate', true]);
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect(effortGroup(page)).not.toHaveAttribute('data-drag');
+  await expect(stop(page, 'High')).toHaveAttribute('aria-checked', 'true');
+  await expect.poll(async () => (await task(page)).reasoningEffort).toBe('high');
+  await restsOn(page, 'High');
+  // Keys: Right and Down step up, Left and Up step down, Home and End jump; each saves, and focus follows the thumb.
+  const order = await effortGroup(page).getByRole('radio').evaluateAll(nodes => nodes.map(node => (node as HTMLElement).dataset.effort || null));
+  const at = order.indexOf('high');
+  await stop(page, 'High').focus();
+  for (const [key, index] of [['ArrowLeft', at - 1], ['ArrowRight', at], ['ArrowUp', at - 1], ['ArrowDown', at], ['End', order.length - 1], ['Home', 0]] as const) {
+    await page.keyboard.press(key);
+    await expect.poll(async () => (await task(page)).reasoningEffort ?? null, { message: key }).toBe(order[index]);
+    await expect(effortGroup(page).getByRole('radio').nth(index)).toBeFocused();
+    await expect(effortGroup(page).getByRole('radio').nth(index)).toHaveAttribute('aria-checked', 'true');
+  }
+  // Only the chosen stop is in the tab order.
+  expect(await effortGroup(page).getByRole('radio').evaluateAll(nodes => nodes.filter(node => (node as HTMLElement).tabIndex === 0).length)).toBe(1);
+
+  // The level belongs to the task: it is still there when the picker is opened again, and after another thread was open.
+  await stop(page, 'Medium').click();
+  await expect.poll(async () => (await task(page)).reasoningEffort).toBe('medium');
+  await page.keyboard.press('Escape');
+  await expect(picker(page)).toBeHidden();
+  await page.locator('.task-item[data-id="session-2"]').click();
+  await expect(page.locator('#prompt')).toHaveAttribute('data-session-id', 'session-2');
+  await page.locator('.task-item[data-id="session-1"]').click();
+  await expect(page.locator('#prompt')).toHaveAttribute('data-session-id', 'session-1');
+  await expect(trigger(page).locator('.model-effort')).toHaveText('Medium');
+  await trigger(page).click();
+  await expect(stop(page, 'Medium')).toHaveAttribute('aria-checked', 'true');
+  await restsOn(page, 'Medium');
+});
+
+test('the track has one stop per effort the model reports, after Default', async ({ page }) => {
+  await open(page);
+  // What the preview's harnesses report for a model (src/preview.ts): the picker must offer those levels and no others.
+  const reported = (provider: string) => page.evaluate(async id => {
+    const { invoke } = await import((window as any).__pandacodePreviewUrl);
+    const models = await invoke('list_provider_models', { provider: id });
+    return models.map((model: any) => ({ id: model.id, efforts: (model.reasoningEfforts ?? []).map((effort: any) => effort.name) }));
+  }, provider);
+  const names = await effortGroup(page).getByRole('radio').allTextContents();
+  expect(names[0]).toBe('Default');
+  expect(names.length).toBeGreaterThan(2);
+  expect(new Set(names).size).toBe(names.length);
+  // Another model, other levels: the track is redrawn with exactly those.
+  const pi = (await reported('pi'))[0];
+  expect(pi.efforts).toEqual(['Low', 'High']);
+  await picker(page).locator('[role="tab"][data-view="h:pi"]').click();
+  await picker(page).locator(`.model-menu-option[data-provider="pi"][data-model="${pi.id}"]`).click();
+  await expect.poll(async () => (await task(page)).provider).toBe('pi');
+  if (!await picker(page).isVisible()) await trigger(page).click();
+  await expect(effortGroup(page).getByRole('radio')).toHaveText(['Default', ...pi.efforts]);
+  // A drag over the shorter track still lands on a reported stop.
+  await restsOn(page, 'Default');
+  const from = await centre(page, 'Default'), high = await centre(page, 'High');
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(high.x - 6, high.y, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(async () => (await task(page)).reasoningEffort).toBe('high');
+  await restsOn(page, 'High');
+});
+
+test('with reduced motion the thumb lands at once, dragged or clicked', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await open(page);
+  await restsOn(page, 'Default');
+  const from = await centre(page, 'Default'), high = await centre(page, 'High');
+  await page.mouse.move(from.x, from.y);
+  const still = () => thumb(page).evaluate(node => getComputedStyle(node).transitionDuration.split(',').every(value => Number.parseFloat(value) === 0) && node.getAnimations().length === 0);
+  expect(await still()).toBe(true);
+  await page.mouse.down();
+  await page.mouse.move(high.x, high.y, { steps: 5 });
+  expect(Math.abs(await thumbCentre(page) - high.x)).toBeLessThan(1.5);
+  await page.mouse.up();
+  // No settle to wait for: the very next frame has it on the stop.
+  expect(await still()).toBe(true);
+  await expect(stop(page, 'High')).toHaveAttribute('aria-checked', 'true');
+  const [a, b] = [await thumb(page).boundingBox(), await stop(page, 'High').boundingBox()];
+  expect(Math.abs(a!.x - b!.x)).toBeLessThan(0.75);
+  await expect.poll(async () => (await task(page)).reasoningEffort).toBe('high');
+});
+
 test('teams: picking one sets the team, a plain model clears it', async ({ page }) => {
   await open(page);
   await picker(page).getByRole('tab', { name: 'Teams, 2' }).click();
