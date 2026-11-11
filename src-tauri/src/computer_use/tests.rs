@@ -1174,4 +1174,140 @@ mod gate {
         assert_eq!(dir, std::path::Path::new("state").join("computer-use").join("screenshots").join("thread_.._a_b_1"));
         assert_eq!((MAX_OBSERVED_ELEMENTS, DEFAULT_SCREENSHOT_SIZE, SCREENSHOTS_KEPT, SETTLE_DELAY_MS, APPROVAL_APP_NAME), (300, 1568, 8, 350, "Computer use"));
     }
+
+    #[test]
+    fn bypass_is_never_what_a_default_or_an_unreadable_setting_gives() {
+        assert_eq!(serde_json::to_value(Approvals::Bypass).unwrap(), json!("bypass"));
+        assert_eq!(serde_json::from_value::<Approvals>(json!("bypass")).unwrap(), Approvals::Bypass);
+        assert_ne!(Approvals::default(), Approvals::Bypass);
+        let own = own();
+        assert!(Guard::new(&own, Approvals::Bypass).bypass);
+        for approvals in [Approvals::Thread, Approvals::Risky, Approvals::Never] {
+            assert!(!Guard::new(&own, approvals).bypass, "{approvals:?}");
+        }
+        assert!(!Guard::from(&own).bypass, "a bare set of pids is the rule in force");
+    }
+
+    #[test]
+    fn bypass_turns_the_protected_apps_rule_off_everywhere() {
+        // Notes (pid 70) stands in for a window of the app's own process ancestry.
+        let own = HashSet::from([4242, 70]);
+        let gate = observed();
+        let (strict, off) = (Guard::from(&own), Guard::new(&own, Approvals::Bypass));
+        let (notes, vault) = (gate.targets.window(100).unwrap().clone(), gate.targets.window(101).unwrap().clone());
+        let own_app = AppWindow { app: "PandaCode", app_identifier: None, title: None, pid: Some(9) };
+        let own_tab = AppWindow { app: "Google Chrome", app_identifier: None, title: Some("PandaCode"), pid: Some(9) };
+        let system = AppWindow { app: "loginwindow", app_identifier: None, title: None, pid: Some(9) };
+        for window in [(&notes).into(), (&vault).into(), own_app, own_tab, system] {
+            assert!(is_denied(window, strict), "{window:?}");
+            assert!(!is_denied(window, off), "{window:?}");
+        }
+        for window in [100, 101] {
+            assert_eq!(refusal(observable_window(&gate.targets, window, strict)).0, ErrorCode::ProtectedApp);
+            assert_eq!(observable_window(&gate.targets, window, off).unwrap().id, window);
+        }
+        assert_eq!(refusal(resolve_input_target(&gate.targets, &press(100), strict)).0, ErrorCode::ProtectedApp);
+        assert!(resolve_input_target(&gate.targets, &press(100), off).is_ok());
+        assert_eq!(refusal(resolve_input_target(&gate.targets, &InputRequest::Focus { window: 101 }, strict)).0, ErrorCode::ProtectedApp);
+        assert!(resolve_input_target(&gate.targets, &InputRequest::Focus { window: 101 }, off).is_ok());
+        assert!(resolve_input_target(&gate.targets, &InputRequest::Move { shot: 100, x: 1, y: 1 }, off).is_ok());
+        // A screenshot: a password manager on top (unknown bounds count as on top), or the
+        // window itself being protected, no longer refuses it.
+        let listed = [driver_window(NOTES, "Notes", 70, "Shopping"), driver_window("wab12.2", "1Password", 71, "Vault")];
+        let nobody = HashSet::new();
+        assert!(protected_overlay(&listed, NOTES, &nobody) && protected_overlay(&listed, "wab12.2", &nobody) && protected_overlay(&listed, NOTES, strict));
+        assert!(!protected_overlay(&listed, NOTES, off) && !protected_overlay(&listed, "wab12.2", off));
+
+        // What is about the target, not about permission, stays.
+        assert_eq!(refusal(observable_window(&gate.targets, 999, off)).0, ErrorCode::UnknownWindow);
+        assert_eq!(refusal(resolve_input_target(&gate.targets, &press(999), off)).0, ErrorCode::UnknownRef);
+        assert_eq!(refusal(resolve_input_target(&gate.targets, &InputRequest::Move { shot: 999, x: 1, y: 1 }, off)).0, ErrorCode::UnknownShot);
+        assert_eq!(refusal(resolve_input_target(&gate.targets, &InputRequest::Move { shot: 100, x: 400, y: 1 }, off)).0, ErrorCode::InvalidArgument);
+    }
+
+    #[test]
+    fn bypass_asks_nothing_and_pauses_for_nothing() {
+        let own = own();
+        let mut gate = observed();
+        let delete_vault = gate.targets.record_observation(101, &[element("eab12.9", "button", "Delete vault")])[0];
+        // No Full access, an approval waiting somewhere, and the screen set to ask.
+        let sandboxed = turn("turn-1", false);
+        let hardest = |approvals| Live { approvals, screen: Screen::Ask, approval_pending: true, ..live(Some(&sandboxed), &own) };
+        let bypass = hardest(Approvals::Bypass);
+        assert!(bypass.bypass() && bypass.guard().bypass && !hardest(Approvals::Never).bypass());
+        for approvals in [Approvals::Thread, Approvals::Risky, Approvals::Never] {
+            assert_eq!(refusal(begin_input(&hardest(approvals), &gate, &press(delete_vault))).0, ErrorCode::ApprovalPending, "{approvals:?}");
+            let waiting_for_nothing = Live { approval_pending: false, ..hardest(approvals) };
+            assert_eq!(refusal(begin_input(&waiting_for_nothing, &gate, &press(delete_vault))).0, ErrorCode::ProtectedApp, "{approvals:?}");
+        }
+        // A destructive press in a password manager: no pause, no protected app, no question.
+        let (resolved, step) = begin_input(&bypass, &gate, &press(delete_vault)).unwrap();
+        assert_eq!(step, ScreenStep::Proceed);
+        assert_eq!(decide_input(Approvals::Bypass, &gate, &sandboxed, &press(delete_vault), &resolved, &Hit::NotApplicable), InputDecision::Allow { destructive: true });
+        for (destructive, granted) in [(false, false), (true, false), (false, true), (true, true)] {
+            assert!(!input_needs_approval(Approvals::Bypass, destructive, granted));
+        }
+        let checked = CheckedInput { request: &press(delete_vault), turn_id: "turn-1", resolved: &resolved, asked: false, destructive: true };
+        assert_eq!(final_check(&bypass, &gate, &checked, None), Ok(()));
+        // The helper's own target: a protected app, brought to the front, never asked about.
+        let vault = |element| DispatchTarget { window: driver_window("wab12.2", "1Password", 71, "Vault"), element, point: None, foreground: true };
+        assert_eq!(final_check(&bypass, &gate, &checked, Some(&vault(Some(identity("button", "Delete vault"))))), Ok(()));
+        assert_eq!(refusal(final_check(&hardest(Approvals::Never), &gate, &checked, None)).0, ErrorCode::ApprovalPending);
+
+        // Input that takes the screen does not ask to be shown, at the request or at the helper's check.
+        let quit = InputRequest::Key { window: 101, keys: "cmd+q".into() };
+        let (window, step) = begin_input(&bypass, &gate, &quit).unwrap();
+        assert_eq!(step, ScreenStep::Proceed);
+        assert_eq!(decide_input(Approvals::Bypass, &gate, &sandboxed, &quit, &window, &Hit::NotApplicable), InputDecision::Allow { destructive: true });
+        let checked = CheckedInput { request: &quit, turn_id: "turn-1", resolved: &window, asked: false, destructive: true };
+        assert_eq!(final_check(&bypass, &gate, &checked, Some(&vault(None))), Ok(()));
+        let asking = Live { approval_pending: false, ..hardest(Approvals::Never) };
+        let notes_key = InputRequest::Key { window: 100, keys: "enter".into() };
+        assert!(matches!(begin_input(&asking, &gate, &notes_key), Ok((_, ScreenStep::Ask(_)))), "without bypass the screen question is still asked");
+
+        // A click that turns out to land on a destructive control at dispatch goes through.
+        let click = InputRequest::Click { shot: 100, x: 10, y: 10, button: None, count: None };
+        let (shot, _) = begin_input(&bypass, &gate, &click).unwrap();
+        assert_eq!(decide_input(Approvals::Bypass, &gate, &sandboxed, &click, &shot, &Hit::Element(identity("button", "Delete list"))), InputDecision::Allow { destructive: true });
+        let checked = CheckedInput { request: &click, turn_id: "turn-1", resolved: &shot, asked: false, destructive: false };
+        let found = DispatchTarget { foreground: false, ..native(NOTES, Some(identity("button", "Delete list"))) };
+        assert_eq!(final_check(&bypass, &gate, &checked, Some(&found)), Ok(()));
+        let full = turn("turn-1", true);
+        assert_eq!(refusal(final_check(&live(Some(&full), &own), &gate, &checked, Some(&found))).1, "The target now looks destructive; look again and request approval.");
+    }
+
+    #[test]
+    fn bypass_keeps_the_mode_the_turn_and_the_target_checks() {
+        let own = own();
+        let mut gate = observed();
+        let running = turn("turn-1", false);
+        let bypass = Live { approvals: Approvals::Bypass, ..live(Some(&running), &own) };
+        // The mode still means what it says, and bypass is not part of admitting a request.
+        let request = json!({ "command": "press", "ref": 100 });
+        assert_eq!(refusal(admit(Mode::Off, &request)).0, ErrorCode::Off);
+        assert_eq!(refusal(admit(Mode::Observe, &request)).0, ErrorCode::ObserveOnly);
+        assert_eq!(refusal(admit(Mode::Control, &json!({ "command": "press" }))).0, ErrorCode::MissingArgument);
+        // A turn must be running, and it must still be the same one at the final check.
+        assert_eq!(refusal(begin_input(&Live { turn: None, ..bypass }, &gate, &press(100))).0, ErrorCode::NoTurn);
+        let (resolved, _) = begin_input(&bypass, &gate, &press(100)).unwrap();
+        let checked = CheckedInput { request: &press(100), turn_id: "turn-1", resolved: &resolved, asked: false, destructive: false };
+        assert_eq!(final_check(&bypass, &gate, &checked, Some(&native(NOTES, Some(identity("button", "Done"))))), Ok(()));
+        let next = turn("turn-2", false);
+        assert_eq!(refusal(final_check(&Live { turn: Some(&next), ..bypass }, &gate, &checked, None)), (ErrorCode::NoTurn, "The turn ended before the action ran.".into(), Some(Effect::NotDispatched)));
+        assert_eq!(refusal(final_check(&Live { turn: None, ..bypass }, &gate, &checked, None)).0, ErrorCode::NoTurn);
+        assert_eq!(refusal(final_check(&Live { mode: Mode::Observe, ..bypass }, &gate, &checked, None)), (ErrorCode::ObserveOnly, "Computer use no longer allows input.".into(), Some(Effect::NotDispatched)));
+        // The helper must be about to act on the window that was checked.
+        assert_eq!(refusal(final_check(&bypass, &gate, &checked, Some(&native("wab12.2", None)))).1, "The native target changed before dispatch.");
+        // Stale and unknown targets are refused as ever.
+        assert_eq!(refusal(begin_input(&bypass, &gate, &press(999))).0, ErrorCode::UnknownRef);
+        assert_eq!(refusal(begin_input(&bypass, &gate, &InputRequest::Click { shot: 100, x: 400, y: 0, button: None, count: None })).0, ErrorCode::InvalidArgument);
+        gate.targets.record_observation(100, &[element("eab12.5", "button", "Done")]);
+        gate.targets.record_shot(100, NewShot { handle: NOTES.into(), width: 400, height: 300, bounds: Rect { x: 100.0, y: 50.0, width: 800.0, height: 600.0 }, max_size: 1568 });
+        assert_eq!(refusal(begin_input(&bypass, &gate, &press(100))), (ErrorCode::StaleRef, "Ref 100 is from an older observation; observe again.".into(), Some(Effect::NotDispatched)));
+        assert_eq!(refusal(final_check(&bypass, &gate, &checked, None)).0, ErrorCode::StaleRef);
+        assert_eq!(refusal(begin_input(&bypass, &gate, &InputRequest::Move { shot: 100, x: 1, y: 1 })).0, ErrorCode::StaleShot);
+        gate.targets.record_windows(&[]);
+        assert_eq!(refusal(begin_input(&bypass, &gate, &press(102))).0, ErrorCode::StaleRef);
+        assert_eq!(refusal(begin_input(&bypass, &gate, &InputRequest::Focus { window: 100 })).0, ErrorCode::UnknownWindow);
+    }
 }

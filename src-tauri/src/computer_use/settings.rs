@@ -56,7 +56,13 @@ pub(crate) struct SettingsPatch {
     pub(crate) approvals: Option<Approvals>,
     #[serde(default)]
     pub(crate) screen: Option<Screen>,
+    /// Must be true in the call that turns on [`Approvals::Bypass`].
+    #[serde(default, rename = "acknowledgeRisk")]
+    pub(crate) acknowledge_risk: bool,
 }
+
+/// Why bypass was not turned on.
+pub(crate) const BYPASS_NEEDS_ACKNOWLEDGEMENT: &str = "Bypass all permissions removes every computer-use safeguard: nothing asks, and agents can operate password managers, system security dialogs and this app's own window. To turn it on, send acknowledgeRisk: true with the change.";
 
 pub(crate) fn read(store: &Store) -> crate::Result<Settings> {
     let content: Option<String> = store.db.query_row("SELECT content FROM computer_use_settings WHERE id=1", [], |row| row.get(0)).optional().map_err(|error| error.to_string())?;
@@ -64,6 +70,10 @@ pub(crate) fn read(store: &Store) -> crate::Result<Settings> {
 }
 
 pub(crate) fn update(store: &Store, patch: SettingsPatch) -> crate::Result<Settings> {
+    // Turning every safeguard off is never a side effect: each call that asks for it says so.
+    if patch.approvals == Some(Approvals::Bypass) && !patch.acknowledge_risk {
+        return Err(BYPASS_NEEDS_ACKNOWLEDGEMENT.into());
+    }
     let current = read(store)?;
     let next = Settings { mode: patch.mode.unwrap_or(current.mode), approvals: patch.approvals.unwrap_or(current.approvals), screen: patch.screen.unwrap_or(current.screen) };
     let content = serde_json::to_string(&next).map_err(|error| error.to_string())?;
@@ -112,6 +122,42 @@ mod tests {
         assert!(serde_json::from_value::<SettingsPatch>(serde_json::json!({"mode":"control","extra":1})).is_err());
         assert!(serde_json::from_value::<SettingsPatch>(serde_json::json!({"mode":"on"})).is_err());
         assert_eq!(serde_json::from_value::<SettingsPatch>(serde_json::json!({"screen":"ask"})).unwrap(), SettingsPatch { screen: Some(Screen::Ask), ..Default::default() });
+    }
+
+    #[test]
+    fn bypass_is_only_turned_on_by_a_call_that_acknowledges_the_risk() {
+        let (store, path) = store();
+        let bypass = SettingsPatch { approvals: Some(Approvals::Bypass), ..Default::default() };
+        assert_eq!(update(&store, bypass).unwrap_err(), BYPASS_NEEDS_ACKNOWLEDGEMENT);
+        assert!(BYPASS_NEEDS_ACKNOWLEDGEMENT.contains("acknowledgeRisk: true") && BYPASS_NEEDS_ACKNOWLEDGEMENT.contains("password managers"));
+        // A refused change changes nothing, not even the other fields it carried.
+        assert_eq!(update(&store, SettingsPatch { mode: Some(Mode::Control), ..bypass }).unwrap_err(), BYPASS_NEEDS_ACKNOWLEDGEMENT);
+        assert_eq!(read(&store).unwrap(), Settings::default());
+        // The acknowledgement alone turns nothing on.
+        assert_eq!(update(&store, SettingsPatch { acknowledge_risk: true, mode: Some(Mode::Control), ..Default::default() }).unwrap().approvals, Approvals::Thread);
+        let patch: SettingsPatch = serde_json::from_value(serde_json::json!({"approvals":"bypass","acknowledgeRisk":true})).unwrap();
+        assert_eq!(patch, SettingsPatch { acknowledge_risk: true, ..bypass });
+        let on = update(&store, patch).unwrap();
+        assert_eq!(on, Settings { mode: Mode::Control, approvals: Approvals::Bypass, screen: Screen::Allow });
+        assert_eq!(serde_json::to_value(on).unwrap()["approvals"], "bypass");
+        // It stays on across other changes, asking for it again needs the acknowledgement
+        // again, and switching away needs nothing.
+        assert_eq!(update(&store, SettingsPatch { screen: Some(Screen::Ask), ..Default::default() }).unwrap().approvals, Approvals::Bypass);
+        assert_eq!(update(&store, bypass).unwrap_err(), BYPASS_NEEDS_ACKNOWLEDGEMENT);
+        assert_eq!(read(&store).unwrap().approvals, Approvals::Bypass);
+        assert_eq!(update(&store, SettingsPatch { approvals: Some(Approvals::Risky), ..Default::default() }).unwrap().approvals, Approvals::Risky);
+        assert!(serde_json::from_value::<SettingsPatch>(serde_json::json!({"approvals":"bypass","acknowledgeRisk":"yes"})).is_err());
+        drop(store);
+        remove(&path);
+    }
+
+    #[test]
+    fn an_unreadable_setting_is_never_bypass() {
+        assert_eq!(Settings::from_stored(r#"{"mode":"control","approvals":"bypass"}"#).approvals, Approvals::Bypass, "only the exact stored word");
+        for stored in [r#"{"mode":"control","approvals":"Bypass"}"#, r#"{"mode":"control","approvals":"bypass "}"#, r#"{"mode":"control","approvals":true}"#, r#"{"mode":"control","approvals":["bypass"]}"#, r#"{"mode":"control","approvals":null}"#, r#"{"mode":"control"}"#, "[\"bypass\"]", "bypass"] {
+            assert_eq!(Settings::from_stored(stored).approvals, Approvals::Thread, "{stored}");
+        }
+        assert_eq!((Settings::default().approvals, Settings::UNREADABLE.approvals), (Approvals::Thread, Approvals::Thread));
     }
 
     #[test]

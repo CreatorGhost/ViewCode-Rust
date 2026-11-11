@@ -11,7 +11,7 @@
 
 use super::driver::{Authorize, DriverClient};
 use super::policy::{
-    admit, begin_input, decide_input, driver_error_to_computer_use_error, driver_request, final_check, hit_point, input_failure, internal_error, matches_query, observable_window, observation_failure, overlaid, own_process_floor,
+    admit, begin_input, decide_input, driver_error_to_computer_use_error, driver_request, final_check, hit_point, input_failure, internal_error, matches_query, observable_window, observation_failure, overlaid, own_process_floor, Guard,
     protected_overlay, screenshots_dir, validate_request, ApprovalAnswer, ApprovalOption, ApprovalPrompt, ApprovalResponse, AskOutcome, CheckedInput, ComputerUseError, Hit, InputDecision, InputRequest, Live, Mode, PendingApprovals, Request,
     ResolvedTarget, ScreenStep, ThreadGate, TurnContext, APPROVAL_APP_NAME, APPROVAL_TIMEOUT_SECS, DEFAULT_SCREENSHOT_SIZE, MAX_OBSERVED_ELEMENTS, SCREENSHOTS_KEPT, SETTLE_DELAY_MS,
 };
@@ -230,6 +230,11 @@ impl Service {
         decide(&live, gate)
     }
 
+    /// The protected-apps rule as the settings have it now; unreadable settings keep it on.
+    fn guard(&self) -> Guard<'_> {
+        Guard::new(&self.options.own_pids, self.host.settings().unwrap_or(Settings::UNREADABLE).approvals)
+    }
+
     fn with_gate<R>(&self, caller: &Caller, change: impl FnOnce(&mut ThreadGate) -> R) -> R {
         change(self.inner().gate(&caller.thread_id))
     }
@@ -322,7 +327,7 @@ impl Service {
     /// The window an observe or screenshot names, with its title and handle re-read: a
     /// cached record is checked first so a protected app costs no helper call.
     async fn fresh_window(&self, caller: &Caller, window_id: u64) -> Result<WindowRecord, ComputerUseError> {
-        let own = &self.options.own_pids;
+        let own = self.guard();
         self.with_gate(caller, |gate| observable_window(&gate.targets, window_id, own))?;
         let listed = self.listing().await.map_err(|failure| driver_error_to_computer_use_error(&failure, false))?;
         self.with_gate(caller, |gate| {
@@ -376,7 +381,7 @@ impl Service {
     /// Captures a window and makes the image its newest shot. Refused while a protected
     /// window overlaps it, asked before the capture and again after it.
     async fn capture(&self, caller: &Caller, window: &WindowRecord, max_size: u32) -> Result<Capture, ComputerUseError> {
-        let own = &self.options.own_pids;
+        let own = self.guard();
         match self.listing().await {
             Ok(listed) if protected_overlay(&listed, &window.handle, own) => return Ok(Capture::Overlaid),
             Ok(_) => {}
