@@ -56,7 +56,7 @@ test('/btw while the main thread runs opens a side thread without queueing or st
   await expect(page.getByRole('button', { name: 'Stop task', exact: true })).toBeVisible();
   // Its own messages only: no chip, nothing of the main thread, and no row in the sidebar.
   await expect(log(page).locator('.user-message .prompt-chip')).toHaveCount(0);
-  await expect(log(page).locator('.user-message')).toHaveText(/^\s*what does the index cost\?\s*$/);
+  await expect(log(page).locator('.user-message .user-prose')).toHaveText('what does the index cost?');
   await expect(log(page)).not.toContainText('Build the feature');
   await expect(page.locator(`.task-item[data-id="${sends[1].args.sessionId}"]`)).toHaveCount(0);
   await expect(page.locator('.btw-head small')).toHaveText('Ready · main running');
