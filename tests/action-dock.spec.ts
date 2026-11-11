@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { pickFromPlus } from './composer-more-helper';
 import { openInspectorTab } from './inspector-tab-helper';
 
 const dock = (page: Page) => page.getByRole('toolbar', { name: 'Workspace actions', exact: true });
@@ -499,7 +500,7 @@ test.describe('action dock', () => {
       await page.locator('.task-item:not(.selected)').first().click();
       await expect(agents(page)).toBeHidden();
       // A team brings it back.
-      await page.getByRole('button', { name: 'Team: off', exact: true }).click();
+      await pickFromPlus(page, page.locator('#team-trigger'));
       await page.getByRole('menuitemradio', { name: 'Balanced team', exact: true }).click();
       await expect(agents(page)).toBeVisible();
     });
@@ -528,7 +529,7 @@ test.describe('action dock', () => {
 
     test('a click pins it open, Escape closes it, and both a team and subagents show', async ({ page }) => {
       await open(page);
-      await page.getByRole('button', { name: 'Team: off', exact: true }).click();
+      await pickFromPlus(page, page.locator('#team-trigger'));
       await page.getByRole('menuitemradio', { name: 'Balanced team', exact: true }).click();
       await subagent(page, 'a', 'running');
       await agents(page).click();

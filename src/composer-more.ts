@@ -13,6 +13,9 @@ const PREFIX = 'parked:';
 export type ParkedItem = { id: string; label: string; description?: string; leading?: string; disabled?: boolean; separator?: boolean };
 
 const plus = () => document.querySelector<HTMLElement>(PLUS);
+const name = (el: HTMLElement): string => (el.getAttribute('aria-label') ?? el.textContent ?? '').trim();
+/** The rows of the menu last opened: id → the control's name. */
+const listed = new Map<string, string>();
 /** Parked controls in the order they were drawn: buttons, and the fixed notes (where the thread runs) among them. */
 function parked(): HTMLElement[] {
   return [...document.querySelectorAll<HTMLElement>(`${PARKED} :is(button,[role=img],.branch-chip-fixed)`)]
@@ -29,8 +32,10 @@ function detail(el: HTMLElement, label: string): string {
 
 /** One menu row per parked control. Fixed notes are listed disabled: they say where the thread runs. */
 export function parkedItems(): ParkedItem[] {
+  listed.clear();
   return parked().map((el, index) => {
-    const label = (el.getAttribute('aria-label') ?? el.textContent ?? '').trim();
+    const label = name(el);
+    listed.set(`${PREFIX}${index}`, label);
     const mark = el.querySelector('svg, img');
     const button = el instanceof HTMLButtonElement;
     return {
@@ -42,9 +47,11 @@ export function parkedItems(): ParkedItem[] {
 
 export const isParkedChoice = (id: string): boolean => id.startsWith(PREFIX);
 
-/** Presses the parked control a menu row stands for. */
+/** Presses the parked control a menu row stands for. The controls are redrawn under an open menu (git status
+ * arriving adds the branch, a turn ending links a PR), so the row is matched by the name it was listed with. */
 export function pressParked(id: string): void {
-  const el = parked()[Number(id.slice(PREFIX.length))];
+  const label = listed.get(id);
+  const el = parked().find(control => name(control) === label);
   if (!(el instanceof HTMLButtonElement) || el.disabled) return;
   el.click();
 }

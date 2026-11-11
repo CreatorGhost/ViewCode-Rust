@@ -168,17 +168,18 @@ test('choosing a bot cannot release the pending Team lock', async ({ page }) => 
   await page.evaluate(() => (window as any).__teamInvoke('bot_create', { input: {
     name: 'Test bot', role: 'Reviewer', instructions: 'Review code', provider: 'codex', model: '', mode: 'ask', heartbeatMinutes: 0,
   } }));
-  const bot = page.getByRole('button', { name: 'Bot: No bot', exact: true });
-  await expect(bot).toBeVisible();
+  // The bot chooser is parked behind the composer's + like Team.
+  const bot = page.locator('#composer-bot');
+  await expect(bot).toHaveAttribute('aria-label', 'Bot: No bot');
   await page.locator('#prompt').fill('Do not send before Team is ready');
   await gateModels(page);
   const team = teamTrigger(page);
   await chooseTeam(page, 'Balanced team');
   await expect(team).toHaveAttribute('aria-busy', 'true');
   await page.keyboard.press('Escape');
-  await bot.click();
+  await pickFromPlus(page, bot);
   await page.getByRole('menu', { name: 'Bot', exact: true }).getByRole('menuitemradio', { name: /Test bot/ }).click();
-  await expect(bot).toBeVisible();
+  await expect(bot).toHaveCount(1);
   await page.locator('#prompt').press('Enter');
   expect(await calls(page, 'send_message')).toHaveLength(0);
   await expect(page.locator('#prompt')).toHaveValue('Do not send before Team is ready');
@@ -208,23 +209,23 @@ test('Team releases queued follow-ups that arrived during setup', async ({ page 
 
 test('the classic team setup switch brings back Architect & workers', async ({ page }) => {
   await install(page);
-  await expect(page.getByRole('button', { name: 'Team: off', exact: true })).toBeVisible();
+  await expect(teamTrigger(page)).toHaveAttribute('aria-label', 'Team: off');
   await openAgents(page);
   await settings(page).getByRole('checkbox', { name: 'Classic team setup', exact: true }).check();
   await closeSettings(page);
-  const classic = page.getByRole('button', { name: 'Architect & workers', exact: true });
-  await expect(classic).toBeVisible();
-  await classic.click();
+  const classic = page.locator('#composer-area .composer-team-button[data-action="architect-setup"]');
+  await expect(classic).toHaveAttribute('aria-label', 'Architect & workers');
+  await pickFromPlus(page, classic);
   await expect(page.getByRole('heading', { name: 'Architect & workers', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Choose team profile', exact: true })).toBeVisible();
   // The choice survives a reload, and switching it off restores the automatic toggle.
   await page.reload();
   await page.locator('.task-item[data-id="session-2"]').click();
-  await expect(page.getByRole('button', { name: 'Architect & workers', exact: true })).toBeVisible();
+  await expect(classic).toHaveCount(1);
   await openAgents(page);
   await settings(page).getByRole('checkbox', { name: 'Classic team setup', exact: true }).uncheck();
   await closeSettings(page);
-  await expect(page.getByRole('button', { name: 'Team: off', exact: true })).toBeVisible();
+  await expect(teamTrigger(page)).toHaveAttribute('aria-label', 'Team: off');
 });
 
 test('a named agent team is a choice in the model picker and lists only its models', async ({ page }) => {
