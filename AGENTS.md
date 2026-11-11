@@ -54,6 +54,7 @@ Area → key files → detail (read it before touching the area).
 - Bots, chats: `src-tauri/src/bots*`, `chats.rs`; [docs/bots.md](docs/bots.md), [docs/chats.md](docs/chats.md) → [ref](docs/agent-reference.md#bots-and-chats).
 - Progress, design canvas, Skills manager, Rules & library, jj, capabilities, schedules, recipes, checks: `progress-pip.ts`, `design-canvas.ts`, `skill-manager*.ts`, `skills-library.ts`, `jj.rs`, `schedules.rs`, `recipes.rs`, `checks.rs`; matching `docs/*.md` → [ref](docs/agent-reference.md#smaller-features).
 - Code review (findings, ratings, review skill, playbooks): `src-tauri/src/review.rs`, `review/`; [docs/code-review.md](docs/code-review.md), port status in [docs/viewcode-port.md](docs/viewcode-port.md).
+- Computer use (gate rules only so far: modes, approvals, protected apps, stale targets, the helper's protocol): `src-tauri/src/computer_use.rs`, `computer_use/`, `native/computer-driver`; [docs/computer-use.md](docs/computer-use.md).
 - Voice input: `src/voice-*`, `src-tauri/src/voice*`, `scripts/speech-catalog.mjs`; [docs/voice-input.md](docs/voice-input.md) → [ref](docs/agent-reference.md#voice-input).
 - Preview mocks for new IPC: `src/preview.ts` → [ref](docs/agent-reference.md#preview-mocks).
 - Mobile app: `mobile/` (`npx tsc --noEmit && npm test && npx expo lint` there) → [ref](docs/agent-reference.md#mobile-app).
