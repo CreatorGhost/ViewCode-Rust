@@ -15,6 +15,9 @@ pub(crate) mod command;
 pub(crate) mod driver;
 pub(crate) mod policy;
 pub(crate) mod protocol;
+pub(crate) mod service;
+#[cfg(all(test, unix))]
+mod service_tests;
 pub(crate) mod settings;
 #[cfg(test)]
 mod stream_tests;
