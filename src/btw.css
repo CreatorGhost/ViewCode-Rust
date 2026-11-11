@@ -1,5 +1,6 @@
-/* The inspector's "By the way" side thread (src/btw-panel.ts). Its rows and composer use the main
-   transcript's and composer's own classes; this file only fits them to the panel's width. */
+/* The inspector's "By the way" side chat (src/btw-panel.ts, docs/side-chat.md). Its turns are the main
+   transcript's own turn cards and its composer the main composer's pieces; this file only fits them to
+   the panel's width. Tokens only, no colours of its own, so it follows whatever the shell's tokens become. */
 .btw-panel{display:flex;flex-direction:column;height:100%;min-height:0}
 .btw-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 8px 0;padding:8px 8px 8px 14px;border-radius:var(--ds-radius-card);background:var(--ds-card)}
 .btw-head>div:first-child{display:flex;flex-direction:column;min-width:0}
@@ -12,7 +13,11 @@
 .btw-panel .tool-trace>summary :is(.tool-trace-object,.tool-trace-command){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .btw-panel .btw-transcript :is(.message,.turn-activity,.tool-group,.tool-trace){min-width:0;max-width:100%}
 .btw-panel .btw-stream-region>*{max-width:830px;margin-left:auto;margin-right:auto}
-html .workspace:not(.side-thread) .btw-stream-region>:is(.turn-activity,.tool-activity,.tool-activity-status-row,.coordination-status,.turn-changes-row){padding-left:0}
+/* A turn card here is the main transcript's card (turn-card.css resets the same header inside #transcript). */
+html .workspace .btw-transcript .turn-card>.turn-activity{margin:0;padding:0}
+.btw-panel .btw-transcript .turn-card{margin:4px auto 16px}
+/* The card's changes footer keeps its file count and totals; the dot meter gives them the room (as in thread tiles). */
+.btw-panel .turn-changes.turn-card-foot .change-dots{display:none}
 .btw-panel .btw-transcript>.inspector-hint{margin:12px auto}
 .btw-composer-area{flex-shrink:0;padding:0 12px 12px}
 .btw-above:empty,.btw-above>:empty{display:none}
