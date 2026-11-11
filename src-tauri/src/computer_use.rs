@@ -12,6 +12,7 @@
 #![allow(dead_code)]
 
 pub(crate) mod command;
+pub(crate) mod driver;
 pub(crate) mod policy;
 pub(crate) mod protocol;
 pub(crate) mod settings;
