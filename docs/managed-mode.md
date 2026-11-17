@@ -175,6 +175,32 @@ organization adds its MCP server to the managed list.
 
 These apply to GLM Coding Plan and MiMo Token Plan too, because they run the same binary.
 
+## Keep awake
+
+A Mac that sleeps when its screen locks cuts an agent's connection mid-turn (a Cursor turn
+ends with `RetriableError: [unavailable] PING timed out`). While at least one agent turn is
+running, and only then, the app holds one macOS power assertion that prevents idle sleep
+(`PreventUserIdleSystemSleep`, the same one `caffeinate -i` holds). It is released when the
+last turn ends, however it ends: finished, stopped, failed or crashed. It is also released
+at exit, and by macOS itself if the app dies.
+
+- **Setting:** Settings → Agents → Advanced → Power, *Keep this computer awake while an
+  agent works*. On by default. Turning it off releases the assertion at once.
+- **Policy:** `keepAwake.allowed: false` turns it off for everyone on the computer; the
+  switch is then disabled and says so.
+- **No helper process.** The assertion is taken through IOKit inside the app, so nothing is
+  started for it, not even `/usr/bin/caffeinate`. It is listed under the app's name by
+  `pmset -g assertions`, where you and IT can see it.
+- **The limit.** This stops *idle* sleep. Closing the lid on battery power still puts the
+  Mac to sleep, as do a low battery and Apple menu → Sleep; the display can still turn off
+  and lock. A turn interrupted that way fails as before.
+- **Other platforms:** nothing is held on Linux or Windows; the setting is shown as
+  available on macOS.
+
+IPC: `keep_awake_state` → `{enabled, permitted, supported, active, turns}`;
+`keep_awake_set_enabled {enabled}`, which emits `keep-awake-changed`. The setting is saved
+in `keep-awake.json` in the app data folder.
+
 ## How it is enforced
 
 `src-tauri/src/launch_gate.rs` holds the decision: `launch_gate::allow(harness)`. It is

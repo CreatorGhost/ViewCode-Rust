@@ -91,3 +91,35 @@ test('without a scenario every sample harness is enabled, as before the gate', a
   await expect(card(panel, 'codex').getByRole('switch', { name: 'Enabled', exact: true })).toBeChecked();
   await expect(card(panel, 'codex').locator('.connection-state').first()).not.toHaveText('Not enabled');
 });
+
+// Settings → Agents → Advanced → Power: keep the computer awake while a turn runs.
+async function power(page: Page, query: string) {
+  await page.goto(`/${query}`);
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const settings = page.getByRole('region', { name: 'Settings', exact: true });
+  await settings.getByRole('tab', { name: 'Agents', exact: true }).click();
+  await settings.locator('#settings-panel-agents details.settings-fold>summary').click();
+  const embed = settings.locator('#settings-panel-agents [data-embed="keepAwake"]');
+  return { toggle: embed.getByRole('checkbox', { name: 'Keep this computer awake while an agent works', exact: true }), status: embed.locator('#keep-awake-status') };
+}
+
+test('keep awake is on by default and can be turned off', async ({ page }) => {
+  const { toggle } = await power(page, '');
+  await expect(toggle).toBeEnabled();
+  await expect(toggle).toBeChecked();
+  await toggle.uncheck();
+  await expect(toggle).not.toBeChecked();
+  expect(await page.evaluate(() => (window as unknown as { __keepAwakeCalls?: boolean[] }).__keepAwakeCalls)).toEqual([false]);
+  await toggle.check();
+  await expect(toggle).toBeChecked();
+});
+
+test('a policy turns keep awake off, and a platform without it says so', async ({ page }) => {
+  const managed = await power(page, '?gate=managed');
+  await expect(managed.toggle).toBeDisabled();
+  await expect(managed.toggle).not.toBeChecked();
+  await expect(managed.status).toHaveText('Turned off by your organization.');
+  const unsupported = await power(page, '?keepawake=unsupported');
+  await expect(unsupported.toggle).toBeDisabled();
+  await expect(unsupported.status).toHaveText('Available on macOS.');
+});

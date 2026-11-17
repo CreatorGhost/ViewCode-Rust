@@ -148,6 +148,8 @@ unarchived, completed (Settled) one.
 | launch_gate_state | {} | LaunchGateState: enabled ids, `firstRunPending`, `managed`, `strict`, policy source, `pinned`, `blocked`, every harness ([managed-mode.md](managed-mode.md#ipc)) |
 | launch_gate_set_enabled | {harness, enabled} | LaunchGateState; emits `launch-gate-changed` |
 | launch_gate_complete_first_run | {enabled: string[]} | LaunchGateState; refused once a choice exists |
+| keep_awake_state | {} | {enabled, permitted, supported, active, turns} ([managed-mode.md](managed-mode.md#keep-awake)) |
+| keep_awake_set_enabled | {enabled} | the same state; emits `keep-awake-changed` |
 | list_slash_commands | {sessionId, force?: boolean} | {commands: SlashCommand[], warnings: string[]} |
 | resolve_slash_command | {sessionId, text} | {action: string or null, arguments: string, acceptsAttachments: boolean} |
 | list_provider_models | {provider} | ProviderModel[] (identity, supported effort choices, optional default effort/context window) |

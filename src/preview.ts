@@ -190,6 +190,9 @@ function previewGateChange(args: any, firstRun: boolean): Record<string, unknown
   emit('launch-gate-changed', next);
   return next;
 }
+/** Keep awake: on by default; `?gate=managed` is a policy that turns it off; `?keepawake=unsupported` is a platform with nothing to hold. */
+let keepAwakeEnabled = true;
+const previewKeepAwake = () => { const permitted = gateScenario !== 'managed', supported = typeof location === 'undefined' || new URLSearchParams(location.search).get('keepawake') !== 'unsupported'; return { enabled: keepAwakeEnabled, permitted, supported, active: false, turns: 0 }; };
 /** The sample harnesses as discovery reports them: one that is not enabled is not usable. */
 const previewProviders = () => providers.map(provider => ({ ...provider, present: provider.installed, enabled: gateOn(provider.id), installed: provider.installed && gateOn(provider.id) }));
 function previewProviderConfiguration(): Record<string, unknown> {
@@ -2040,6 +2043,8 @@ export async function invoke<T>(command: string, args: Record<string, any>): Pro
     }
     case 'get_task': result = settleDraft(session(args.sessionId)); break;
     case 'list_providers': result = args.deviceId ? remoteProviders() : previewProviders(); break;
+    case 'keep_awake_state': result = previewKeepAwake(); break;
+    case 'keep_awake_set_enabled': ((window as any).__keepAwakeCalls ??= []).push(args.enabled); keepAwakeEnabled = Boolean(args.enabled); result = previewKeepAwake(); emit('keep-awake-changed', result); break;
     case 'launch_gate_state': result = previewLaunchGate(); break;
     case 'launch_gate_set_enabled': result = previewGateChange(args, false); break;
     case 'launch_gate_complete_first_run': result = previewGateChange(args, true); break;

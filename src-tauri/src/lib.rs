@@ -80,6 +80,7 @@ mod usage_keychain;
 mod usage_ledger;
 mod workspace;
 mod jj;
+mod keep_awake;
 mod launch_gate;
 mod tray;
 mod headless;
@@ -4004,6 +4005,7 @@ fn setup_common(app: &tauri::App) -> crate::Result<PathBuf> {
     }
     // Before anything below can start an agent: until this loads, the gate refuses everything.
     launch_gate::setup(&dir, &store);
+    keep_awake::setup(&dir);
     app.manage(AppState {
         store: Arc::new(Mutex::new(store)),
         agents: Arc::new(Mutex::new(HashMap::new())),
@@ -4076,6 +4078,7 @@ fn on_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
                 tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             }
             providers::shutdown_all();
+            keep_awake::shutdown();
             // Let pending pipe EOFs finish persistence after a forced cleanup.
             for _ in 0..20 {
                 if agents.lock().map(|a| a.is_empty()).unwrap_or(true) {
@@ -4097,6 +4100,7 @@ fn on_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
         app.state::<vm::Vms>().shutdown();
         cloud::aws_screen::close(None);
         providers::shutdown_all();
+        keep_awake::shutdown();
     }
 }
 
@@ -4330,6 +4334,8 @@ pub fn run() {
                 launch_gate::launch_gate_state,
                 launch_gate::launch_gate_set_enabled,
                 launch_gate::launch_gate_complete_first_run,
+                keep_awake::keep_awake_state,
+                keep_awake::keep_awake_set_enabled,
                 connections::connections_list,
                 connections::connection_save,
                 connections::connection_delete,

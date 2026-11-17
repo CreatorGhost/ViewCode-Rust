@@ -3257,6 +3257,8 @@ pub async fn run_with_tools(
     let result = if let Err(refused) = crate::launch_gate::allow(&config.provider) {
         Err(refused)
     } else {
+        // Held until this turn is over, however it ends (docs/managed-mode.md#keep-awake).
+        let _awake = crate::keep_awake::turn(&config.session_id);
         run_gated(config, sink.clone(), input, host, harness, pooled).await
     };
     if let Err(error) = &result {

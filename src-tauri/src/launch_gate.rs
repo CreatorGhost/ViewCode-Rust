@@ -194,6 +194,12 @@ pub(crate) fn enabled(harness: &str) -> bool {
     check(harness).is_ok()
 }
 
+/// Whether the organization's policy lets this app keep the computer awake during a turn
+/// (`keepAwake.allowed`). With no loaded policy, yes.
+pub(crate) fn keep_awake_permitted() -> bool {
+    read(|runtime| runtime.is_none_or(|runtime| runtime.gate.policy.keep_awake))
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct HarnessState {

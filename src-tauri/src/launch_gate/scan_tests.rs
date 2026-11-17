@@ -181,6 +181,14 @@ fn the_three_builders_ask_the_gate_before_anything_else() {
     }
 }
 
+#[test]
+fn keeping_awake_starts_no_helper() {
+    // The power assertion is taken through IOKit in this process: no `caffeinate` child.
+    let source = production(&std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/keep_awake.rs")).unwrap());
+    assert_eq!(count(&source, &["Command::new(", "CommandBuilder::new(", ".spawn()"]), 0);
+    assert!(source.contains("IOPMAssertionCreateWithName") && source.contains("IOPMAssertionRelease"));
+}
+
 /// Callers of `providers::locate`, which finds a harness binary without asking the gate.
 /// It is for showing where a binary is; nothing may start what it returns.
 const LOCATE: &[(&str, usize, &str)] = &[
