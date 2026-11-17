@@ -13,6 +13,8 @@ export interface ChangesViewDeps {
   choose(anchor: HTMLElement, title: string, items: { id: string; label: string; icon?: string; danger?: boolean; disabled?: boolean; selected?: boolean }[], onSelect: (id: string) => void): void;
   /** When given, the … menu offers to move the work into an isolated worktree. */
   worktree?(): void;
+  /** When given, the header offers an agent review of these changes (docs/code-review.md). */
+  review?(): void;
 }
 export interface ChangesView {
   /** Re-renders from `status`. Loaded patches are quietly refetched (at most once a second) when
@@ -94,6 +96,7 @@ export function mountChangesView(host: HTMLElement, deps: ChangesViewDeps): Chan
       <span class="cv-files"></span><span class="cv-adds"></span><span class="cv-dels"></span>
       <span class="cv-branch" hidden></span>
       <span class="cv-spacer"></span>
+      ${deps.review ? `<button type="button" class="cv-review" data-cv-action="review" aria-haspopup="dialog">${icon('search')}<span>Review</span></button>` : ''}
       ${iconButton('fold-all', 'Collapse all', FOLD, 'aria-pressed="false"')}
       ${iconButton('menu', 'More actions', icon('more'), 'aria-haspopup="menu"')}
     </div>
@@ -417,6 +420,7 @@ export function mountChangesView(host: HTMLElement, deps: ChangesViewDeps): Chan
           render();
         });
         break;
+      case 'review': deps.review?.(); break;
       case 'fold-all': {
         const fold = ![...entries.keys()].every(p => collapsed.has(p));
         for (const p of entries.keys()) toggle(p, fold);

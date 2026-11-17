@@ -1,0 +1,162 @@
+/* Code review (docs/code-review.md): the findings card in a review thread (review-card.ts), the start dialog
+ * (review-start.ts) and a project's review skill (review-skill.ts). Always loaded, since the transcript draws
+ * the card. Tokens only: severity and verdict colours sit on leading icons, fills stay neutral. */
+
+/* ---------- Findings card ---------- */
+.review-host{margin:6px auto 22px}
+.review-host[hidden]{display:none}
+.review-card{gap:4px;color:var(--text)}
+.review-card-head{display:flex;align-items:center;gap:10px;min-height:38px;padding:2px var(--ds-row-pad-x);color:var(--muted)}
+.review-card-mark{display:inline-flex;flex:none;color:var(--muted)}
+.review-card-mark .icon{--icon-size:18px}
+.review-card-title{flex:1;min-width:0;margin:0;overflow:hidden;font-size:var(--ds-text-body);font-weight:var(--weight-medium);letter-spacing:var(--ds-row-tracking);color:var(--text);white-space:nowrap;text-overflow:ellipsis}
+.review-card-scope{font-weight:var(--weight-regular);color:var(--muted)}
+.review-card-status{display:inline-flex;flex:none;align-items:center;gap:7px;font-size:var(--ds-text-sub);color:var(--faint);font-variant-numeric:tabular-nums;white-space:nowrap}
+.review-card[data-phase="starting"] .review-card-status,.review-card[data-phase="live"] .review-card-status{color:var(--muted)}
+/* While the reviewer works: the one state pulse, opacity only. */
+.review-live-dot{display:inline-block;flex:none;width:7px;height:7px;border-radius:50%;background:var(--ds-info)}
+@media(prefers-reduced-motion:no-preference){.review-live-dot{animation:state-pulse 1.6s ease-in-out infinite}}
+.review-card-note{margin:0;padding:4px var(--ds-row-pad-x) 10px;font-size:var(--ds-text-sub);color:var(--muted)}
+
+.review-summary{gap:4px;padding:8px 12px}
+.review-summary-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px;min-height:28px}
+.review-verdict{display:inline-flex;align-items:center;gap:8px;font-size:var(--ds-text-body);font-weight:var(--weight-medium);color:var(--text)}
+.review-verdict-icon{display:inline-flex;color:var(--muted)}
+.review-verdict-icon .icon{--icon-size:17px}
+.review-verdict[data-verdict="approve"] .review-verdict-icon{color:var(--ds-success)}
+.review-verdict[data-verdict="approve-with-nits"] .review-verdict-icon{color:var(--ds-info)}
+.review-verdict[data-verdict="request-changes"] .review-verdict-icon{color:var(--ds-warn)}
+.review-score{display:inline-flex;align-items:center;gap:8px;font-size:var(--ds-text-sub);color:var(--muted)}
+.review-score .ds-dots>span{width:8px;height:8px;border-radius:2px}
+.review-score .ds-dots>span.on{background:var(--muted)}
+.review-score-value{font-variant-numeric:tabular-nums;color:var(--faint)}
+.review-rereview{display:flex;align-items:center;gap:8px;margin:0;font-size:var(--ds-text-sub);color:var(--muted)}
+.review-rereview .icon{--icon-size:15px;color:var(--ds-tone-edit)}
+
+.review-group{display:flex;flex-direction:column;gap:2px;margin-top:6px}
+.review-group-head{display:flex;align-items:center;gap:8px;min-height:30px;margin:0;padding:0 var(--ds-row-pad-x);font-size:var(--ds-text-head);font-weight:var(--weight-regular);letter-spacing:var(--ds-row-tracking);color:var(--muted)}
+.review-group-count{font-size:var(--ds-text-meta);color:var(--faint);font-variant-numeric:tabular-nums}
+.review-findings{margin:0;padding:2px;list-style:none}
+.review-finding{display:flex;flex-direction:column;gap:6px;min-width:0;padding:10px 12px}
+.review-finding+.review-finding{border-top:1px solid var(--ds-border)}
+.review-finding-head{display:flex;align-items:flex-start;gap:10px;min-width:0}
+.review-sev-icon{display:inline-flex;flex:none;margin-top:1px;color:var(--muted)}
+.review-sev-icon .icon{--icon-size:18px}
+.review-sev-icon[data-severity="blocker"]{color:var(--ds-danger)}
+.review-sev-icon[data-severity="important"]{color:var(--ds-warn)}
+.review-sev-icon[data-severity="question"]{color:var(--ds-info)}
+.review-finding-title{flex:1;min-width:0;margin:0;font-size:var(--ds-text-body);font-weight:var(--weight-medium);letter-spacing:var(--ds-row-tracking);line-height:1.35;color:var(--ds-row-ink);overflow-wrap:anywhere}
+.review-confidence{flex:none;font-size:var(--ds-text-meta);color:var(--faint);font-variant-numeric:tabular-nums;line-height:22px}
+.review-finding-body{display:flex;flex-direction:column;gap:8px;min-width:0;padding-left:28px}
+.review-where{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0}
+.review-location{display:inline-flex;align-items:center;gap:6px;max-width:100%;min-height:24px;padding:0 8px;border-radius:var(--ds-radius-chip);background:var(--ds-fill);box-shadow:inset 0 0 0 1px var(--ds-chip-border);font-family:var(--mono);font-size:var(--ds-text-meta);color:var(--muted);cursor:pointer;transition:color var(--ds-ease-out) ease-out,background-color var(--ds-ease-out) ease-out}
+.review-location>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.review-location .icon{--icon-size:14px}
+.review-location:hover{background:var(--ds-fill-hover);color:var(--text);transition-duration:var(--ds-ease-in)}
+.review-location:active{scale:var(--ds-press)}
+.review-md{min-width:0;font-size:var(--ds-text-sub);line-height:1.5;color:var(--text);overflow-wrap:anywhere}
+.review-md>:first-child{margin-top:0}
+.review-md>:last-child{margin-bottom:0}
+.review-md p{margin:0 0 6px}
+.review-fix .review-md pre{margin:4px 0 0}
+.review-label{margin-right:8px;font-size:var(--ds-text-meta);font-weight:var(--weight-medium);letter-spacing:var(--ds-row-tracking);color:var(--muted)}
+.review-fix>.review-label{display:block;margin-bottom:2px}
+.review-rule{margin:0;padding:2px 0 2px 10px;border-left:2px solid var(--ds-border-strong);font-size:var(--ds-text-sub);color:var(--muted)}
+.review-lesson{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:0;font-size:var(--ds-text-sub);color:var(--muted)}
+.review-lesson .icon{--icon-size:15px;color:var(--ds-tone-team)}
+.review-lesson a,.review-lesson-meta a{color:var(--muted);text-decoration:underline;text-underline-offset:2px}
+.review-lesson a:hover,.review-lesson-meta a:hover{color:var(--text)}
+.review-finding-foot{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:-2px}
+.review-rate{display:inline-flex;gap:2px}
+.review-rate-button{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:var(--ds-radius-control);color:var(--muted);transition:color var(--ds-ease-out) ease-out,background-color var(--ds-ease-out) ease-out}
+.review-rate-button .icon{--icon-size:17px}
+.review-rate-button:hover{background:var(--ds-row-hover);color:var(--text);transition-duration:var(--ds-ease-in)}
+.review-rate-button:active{scale:var(--ds-press)}
+.review-rate-button[aria-pressed="true"]{background:var(--ds-fill-hover);color:var(--text)}
+.review-rate-button[data-rating="up"][aria-pressed="true"] .icon{color:var(--ds-success)}
+.review-rate-button[data-rating="down"][aria-pressed="true"] .icon{color:var(--ds-danger)}
+.review-reasons,.review-reason{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0;padding-top:8px;border-top:1px solid var(--ds-border);font-size:var(--ds-text-meta);color:var(--muted)}
+.review-reasons-label{margin-right:2px}
+.review-reason-chip{cursor:pointer;color:var(--muted);transition:color var(--ds-ease-out) ease-out,background-color var(--ds-ease-out) ease-out}
+.review-reason-chip:hover{background:var(--ds-fill-hover);color:var(--text);transition-duration:var(--ds-ease-in)}
+.review-reason .icon{--icon-size:14px;color:var(--ds-success)}
+.review-link{padding:0 4px;border-radius:4px;font-size:var(--ds-text-meta);color:var(--accent-ink,var(--accent));text-decoration:underline;text-underline-offset:2px}
+.review-card-foot{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px var(--ds-row-pad-x) 4px}
+.review-card-foot .ds-btn{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 12px}
+.review-card-foot .ds-btn .icon{--icon-size:16px;color:var(--muted)}
+.review-card :is(button,a):focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+
+/* A file opened at a finding's line (file-tabs.ts): the line keeps a quiet mark. */
+.code-line[data-line-target]{background:var(--ds-row-hover);box-shadow:inset 2px 0 0 var(--ds-border-strong)}
+
+/* Over a scene the card is a dense glass, as the turn card is. */
+html[data-theme] .workspace[data-scene] .conversation-pane .review-card{background:color-mix(in srgb,var(--bg) 92%,transparent);-webkit-backdrop-filter:blur(22px) saturate(1.25);backdrop-filter:blur(22px) saturate(1.25);text-shadow:none}
+html[data-theme] .workspace[data-scene] .conversation-pane .review-card .icon{filter:none}
+
+/* ---------- Start dialog ---------- */
+.review-start{display:flex;flex-direction:column;gap:14px}
+.review-start .dialog-description{margin:0}
+.review-start-field{display:flex;flex-direction:column;gap:6px}
+.review-start-field[hidden]{display:none}
+.review-start-field>.field-label{font-size:var(--ds-text-meta);font-weight:var(--weight-medium);color:var(--muted)}
+.review-optional{font-weight:var(--weight-regular);color:var(--faint)}
+.review-seg>button{height:32px;font-size:var(--ds-text-ui)}
+.review-start-hint{margin:0;font-size:var(--ds-text-meta);color:var(--muted)}
+.review-start textarea{width:100%;min-height:58px;resize:vertical;font:inherit;font-size:var(--ds-text-ui)}
+.review-start-error{margin:0;font-size:var(--ds-text-meta);color:var(--ds-danger)}
+.review-start-foot{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.review-start-foot .ds-btn,.review-start-foot .ds-btn-primary{height:34px}
+.review-start-agent{display:flex;align-items:center;gap:6px;min-width:0;margin:0;font-size:var(--ds-text-meta);color:var(--muted)}
+.review-start-agent>span{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.review-start-agent .icon{--icon-size:15px;flex:none}
+
+/* ---------- Review skill dialog ---------- */
+.review-skill-dialog{width:min(640px,calc(100vw - 32px))}
+.review-skill{display:flex;flex-direction:column;gap:12px}
+.review-skill-loading{margin:0;color:var(--muted)}
+.review-skill-status .ds-row-sub{display:inline-flex;align-items:center;gap:7px;white-space:normal}
+.review-skill-icon{color:var(--ds-tone-team)}
+.review-skill-summary{margin:0;padding:2px var(--ds-row-pad-x) 6px;font-size:var(--ds-text-sub);line-height:1.5;color:var(--muted);white-space:pre-wrap}
+.review-skill-actions{display:flex;justify-content:flex-end;gap:8px;padding:2px 4px 4px}
+.review-skill-actions :is(.ds-btn,.ds-btn-primary){height:32px}
+.review-skill-lessons ul{margin:0;list-style:none}
+.review-lesson{align-items:flex-start;padding-top:8px;padding-bottom:8px}
+.review-lesson .ds-row-title{white-space:normal;overflow-wrap:anywhere}
+.review-lesson-meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin-top:4px;white-space:normal}
+.review-lesson-meta .ds-chip{height:20px}
+.review-lesson-meta .ds-chip[data-source="kept-breaking"]{color:var(--ds-warn)}
+.review-lesson-where{font-family:var(--mono);font-size:var(--ds-text-meta)}
+.review-lesson-standing{font-size:var(--ds-text-meta);color:var(--faint)}
+.review-lesson .ds-toggle{flex:none;margin-top:2px}
+.review-lesson .review-lesson-remove{flex:none;width:28px;height:28px;color:var(--muted)}
+.review-lesson .review-lesson-remove:hover{color:var(--text)}
+.review-lesson-add{display:flex;gap:8px}
+.review-lesson-add input{flex:1;min-width:0}
+.review-lesson-add .ds-btn{height:auto;min-height:34px}
+.review-skill-error{margin:0;font-size:var(--ds-text-meta);color:var(--ds-danger)}
+
+/* ---------- Reduced transparency, Increase Contrast, forced colours ---------- */
+@media(prefers-reduced-transparency:reduce){
+  html[data-theme] .workspace[data-scene] .conversation-pane .review-card{background:var(--bg);-webkit-backdrop-filter:none;backdrop-filter:none}
+}
+@media(prefers-contrast:more){
+  .review-card,.review-findings,.review-summary{border-color:var(--border);box-shadow:none}
+  .review-finding+.review-finding,.review-reasons,.review-reason{border-color:var(--border)}
+  .review-location,.review-reason-chip{box-shadow:inset 0 0 0 1px var(--border);color:var(--text)}
+  .review-rule{border-left-color:var(--text)}
+  .review-card-status,.review-confidence,.review-score-value,.review-group-count,.review-lesson-standing{color:var(--muted)}
+  html[data-theme] .workspace[data-scene] .conversation-pane .review-card{background:var(--bg);-webkit-backdrop-filter:none;backdrop-filter:none}
+}
+@media(forced-colors:active){
+  .review-card,.review-findings,.review-summary{border:1px solid CanvasText}
+  .review-finding+.review-finding,.review-reasons,.review-reason{border-color:CanvasText}
+  .review-location,.review-reason-chip,.review-rate-button{border:1px solid ButtonText;color:ButtonText}
+  .review-rate-button[aria-pressed="true"]{forced-color-adjust:none;background:Highlight;color:HighlightText}
+  .review-rate-button[aria-pressed="true"] .icon{color:HighlightText}
+  .review-sev-icon,.review-verdict-icon,.review-live-dot{color:CanvasText;background:none}
+  .review-live-dot{border:1px solid CanvasText}
+  .review-score .ds-dots>span{border:1px solid CanvasText;background:Canvas}
+  .review-score .ds-dots>span.on{background:CanvasText}
+  .review-link{color:LinkText}
+  .code-line[data-line-target]{outline:1px solid Highlight}
+}

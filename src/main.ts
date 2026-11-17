@@ -41,6 +41,8 @@ import './redesign/board.css';
 import './redesign/bots.css';
 import './viewcode-shell.css';
 import './voice-dictation.css';
+import './review.css';
+import { createReviewCards } from './review-card';
 import { mountActionDock, mountAgents, snapDockDuring } from './action-dock';
 import { setDocumentView } from './document-viewer';
 import { onQueueReorder, queuePanel, type HoldReason, type QueuedMessage } from './message-queue';
@@ -654,6 +656,44 @@ const fileTabs = createFileTabs({
   focusConversation: () => document.querySelector<HTMLElement>('#prompt')?.focus(),
   emptied: () => { if (state.inspectorTab === 'file') { state.inspectorTab = threadDefault(inspectorTabs); renderInspector(); } },
 });
+/* Code review (docs/code-review.md): the findings card in a review thread's transcript, the start dialog and the
+ * project's review skill. The dialogs load on first use; the card's styles are in review.css. */
+const reviewCards = createReviewCards({
+  call, notify, report,
+  running: id => isRunning(id),
+  projectOf: id => state.sessions.find(task => task.id === id)?.projectId,
+  openFile: (sessionId, path, line) => run(openFile(path, 'file', false, workspaceContext(state.sessions.find(task => task.id === sessionId)), false, line)),
+  rereview: (sessionId, activityId) => run(openReviewStart(state.sessions.find(task => task.id === sessionId), { threadId: sessionId, activityId })),
+  openSkill: projectId => run(openReviewSkillFor(projectId)),
+});
+/** The agent a review or a learning thread runs with: the thread's own, else the default for new tasks. */
+function reviewAgent(task?: Session): { provider: string; model: string; label: string } {
+  if (task) return { provider: task.provider, model: task.model ?? '', label: `${shortProvider(task.provider)} · ${modelLabel(task, false)}` };
+  const harness = state.providers.find(p => p.id === state.defaultProvider && p.installed) ?? state.providers.find(p => p.installed) ?? state.providers[0];
+  if (!harness) throw new Error('Open Settings to check your installed agents.');
+  return { provider: harness.id, model: rememberedModel(harness.id), label: shortProvider(harness.id) };
+}
+/** Opens the review start dialog for a thread's checkout, or the open project's folder without one. */
+async function openReviewStart(task = session(), rereview?: { threadId: string; activityId: string }, projectId?: string): Promise<void> {
+  const source = task && !chatTask(task) ? task : undefined;
+  const target = state.projects.find(p => p.id === (source?.projectId ?? projectId ?? state.projectId));
+  if (!target || isChatProject(target)) { notify('Open a project to review its changes.'); return; }
+  const agent = reviewAgent(source);
+  const { openReviewStart: open } = await import('./review-start');
+  open({ modal, closeModal, call, started: async id => { await reloadSessions(); if (state.view !== 'conversation') setWorkspaceView('conversation'); await selectSession(id); } }, {
+    projectId: target.id, projectName: target.name, ...(source ? { sourceSessionId: source.id } : {}),
+    where: source?.worktreePath ? 'this thread’s worktree' : `${target.name}’s folder`,
+    provider: agent.provider, model: agent.model, agentLabel: agent.label, ...(rereview ? { rereview } : {}),
+    ...(rereview ? { mode: reviewCards.state(rereview.threadId)?.started?.mode } : {}),
+  });
+}
+/** Opens a project's review skill. */
+async function openReviewSkillFor(projectId = session()?.projectId ?? state.projectId): Promise<void> {
+  const target = state.projects.find(p => p.id === projectId);
+  if (!target || isChatProject(target)) { notify('Open a project to see its review skill.'); return; }
+  const { openReviewSkill } = await import('./review-skill');
+  await openReviewSkill({ modal, call, learner: () => reviewAgent(), openThread: async id => { closeModal(); if (!state.sessions.some(task => task.id === id)) await reloadSessions(); await selectSession(id); } }, target);
+}
 const pullView = createPullView({
   call,
   openUrl: url => call('open_external_url', { url }),
@@ -2018,7 +2058,8 @@ function renderTranscript(preservePosition = false): void {
   const traceReopened = Boolean(liveTrace?.open && liveTrace.dataset.folded !== undefined && liveTrace.dataset.closing === undefined);
   const previousMarkdown = new Map([...transcript.querySelectorAll<HTMLElement>('[data-markdown]')]
     .map(node => [node.dataset.markdown!, node]));
-  transcript.innerHTML = `${state.messages.length === 0 && !bot ? '<div class="empty-conversation"><h2>What would you like to do?</h2><div class="prompt-suggestions"><button data-action="suggest" data-text="Explore this project and explain its architecture.">Explore this project '+icon('chevron')+'</button><button data-action="suggest" data-text="Review the current changes for bugs and suggest improvements.">Review my changes '+icon('chevron')+'</button></div></div>' : ''}${saved.map(turn => turnHtml(turn, s.id, Boolean(bot))).join('')}${earlier ? turnLeadHtml(earlier) : ''}<div id="stream-region"></div><div id="team-progress-host" class="turn-changes-row" hidden></div>`;
+  transcript.innerHTML = `${state.messages.length === 0 && !bot ? '<div class="empty-conversation"><h2>What would you like to do?</h2><div class="prompt-suggestions"><button data-action="suggest" data-text="Explore this project and explain its architecture.">Explore this project '+icon('chevron')+'</button><button data-action="review-start" aria-haspopup="dialog">Review my changes '+icon('chevron')+'</button></div></div>' : ''}${saved.map(turn => turnHtml(turn, s.id, Boolean(bot))).join('')}${earlier ? turnLeadHtml(earlier) : ''}<div id="stream-region"></div><div id="team-progress-host" class="turn-changes-row" hidden></div><div id="review-host" class="review-host" hidden></div>`;
+  reviewCards.attach(transcript.querySelector<HTMLElement>('#review-host'), s.id);
   paintSavedMarkdown(transcript, state.messages, previousMarkdown, workspaceContext(), followTranscript);
   watchReplies(transcript);
   reusableMarkdown = previousMarkdown;
@@ -5059,6 +5100,7 @@ function showChangesView(target: HTMLElement, key: string): void {
       notify,
       choose: (anchor, title, items, onSelect) => void showChoices(anchor, { title, width: 260, actions: !items.some(item => item.selected !== undefined), items, onSelect: id => { closeChoiceMenu(); onSelect(id); } }),
       worktree: () => worktrees.openDialog(newTaskView() ? 'attach' : 'new'),
+      review: () => run(openReviewStart()),
     });
     changesViewKey = key;
   }
@@ -5211,14 +5253,14 @@ async function previewFile(path: string, context = workspaceContext(), active?: 
   if (!browserPanel) throw new Error('Browser could not be opened.');
   await browserPanel.navigate(file.url);
 }
-async function openFile(path: string, kind: 'file' | 'diff', staged = false, context = workspaceContext(), source = false): Promise<void> {
+async function openFile(path: string, kind: 'file' | 'diff', staged = false, context = workspaceContext(), source = false, line?: number): Promise<void> {
   const p = project(); if (!p) return;
   // Files open as tabs in the inspector's Open files view beside their task's conversation.
   if (kind === 'file') {
     if (context.sessionId && context.sessionId !== state.sessionId) await selectSession(context.sessionId);
     if (context.sessionId && context.sessionId !== state.sessionId) return;
     if (state.view !== 'conversation' && !state.boardPanel) setWorkspaceView('conversation');
-    fileTabs.open(path, context, source);
+    fileTabs.open(path, context, source, line);
     ++fileRequest; inspectorSuppressed = false; state.inspector = true; state.inspectorTab = 'file'; state.selectedKind = ''; renderInspector(); return;
   }
   const request = ++fileRequest, generation = state.generation; const content = await call<string>('git_diff', { ...context, path, staged }); if (request !== fileRequest || p.id !== state.projectId || generation !== state.generation) return;
@@ -5764,6 +5806,8 @@ async function showProjectMenu(anchor: HTMLElement, id: string, point?: { x: num
   const used = userProjects().filter(other => other.id !== id && other.color).map(other => other.color!);
   await showChoices(anchor, { title: `${project.name}: project actions`, point, actions: true, width: 280, items: [
     { id: 'new', label: 'New task', icon: 'plus' },
+    { id: 'review', label: 'Review changes…', icon: 'search' },
+    { id: 'review-skill', label: 'Review skill…', icon: 'spark' },
     ...(folders ? [{ id: 'collapse', label: 'Collapse other projects', icon: 'folder' }] : []),
     ...projectColorChoices(project.color, used),
     { id: 'reveal', label: isMac ? 'Reveal in Finder' : isWindows ? 'Show in Explorer' : 'Open folder', icon: 'folder', separator: true },
@@ -5774,6 +5818,8 @@ async function showProjectMenu(anchor: HTMLElement, id: string, point?: { x: num
     closeChoiceMenu();
     if (color !== undefined) { await setProjectColor(id, color); return; }
     if (choice === 'new') { await createTask(id); return; }
+    if (choice === 'review') { const open = session(); await openReviewStart(open?.projectId === id ? open : undefined, undefined, id); return; }
+    if (choice === 'review-skill') { await openReviewSkillFor(id); return; }
     if (choice === 'reveal') { await call('reveal_path', { path: project.path }); return; }
     if (choice === 'remove') { showRemoveProject(project); return; }
     for (const other of userProjects()) if (other.id !== id) state.collapsedFolders.add(other.id);
@@ -6947,7 +6993,7 @@ const settingsPageCommands = () => SECTIONS.flatMap(section => section.pages.map
 /** Every whitespace-separated word of the query appears somewhere in the text (case-insensitive). */
 const matchesWords = (text: string, query: string): boolean => { const hay = text.toLowerCase(); return query.toLowerCase().split(/\s+/).filter(Boolean).every(word => hay.includes(word)); };
 function renderCommands(query: string): void {
-  const commands = [{ action: 'new-task', label: 'New task', icon: 'plus', shortcut: shortcut('N') }, { action: 'new-chat', label: 'New chat (no project)', icon: 'chat', shortcut: '' }, { action: 'add-project', label: 'Open project', icon: 'folder', shortcut: '' }, { action: 'browser', label: 'Open browser', icon: 'globe', shortcut: '' }, { action: 'terminal', label: 'Toggle terminal', icon: 'terminal', shortcut: shortcut('J') }, { action: 'settings', label: 'Settings', icon: 'settings', shortcut: shortcut(',') }, { action: 'agent-usage', label: 'Agent usage', icon: 'activity', shortcut: '' }, { action: 'bots', label: 'Bots', icon: 'bot', shortcut: '' }, { action: 'toggle-bots-view', label: sidebarView === 'bots' ? 'Back to threads in the sidebar' : 'Bots in the sidebar', icon: 'bot', shortcut: '', keywords: 'show bots channels' }, { action: 'support', label: 'Help & support', icon: 'help', shortcut: '' }, { action: 'toggle-theme', label: currentTheme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode', icon: currentTheme() === 'dark' ? 'sun' : 'moon', shortcut: '', keywords: 'theme appearance dark light' }, { action: 'star-repository', label: 'Star PandaCode on GitHub', icon: 'github', shortcut: '', keywords: 'source code repository' }, { action: 'import-conversations', label: 'Import conversations', icon: 'download', shortcut: '' }, { action: 'worktree', label: 'Create worktree', icon: 'branch', shortcut: '' }, { action: 'conversation-view', label: 'Conversation', icon: 'thread', shortcut: '' }, { action: 'board-view', label: 'Board', icon: 'kanban', shortcut: '' }, ...(session() && !session()!.archived ? [{ action: 'wake-later', label: 'Schedule a wake-up…', icon: 'clock', shortcut: '' }] : []), ...(githubEnabled() ? [{ action: 'github-view', label: 'GitHub', icon: 'github', shortcut: '' }] : []), ...(query ? settingsPageCommands() : [])].filter(c => matchesWords(`${c.label} ${'keywords' in c ? c.keywords : ''}`, query));
+  const commands = [{ action: 'new-task', label: 'New task', icon: 'plus', shortcut: shortcut('N') }, { action: 'new-chat', label: 'New chat (no project)', icon: 'chat', shortcut: '' }, { action: 'add-project', label: 'Open project', icon: 'folder', shortcut: '' }, { action: 'browser', label: 'Open browser', icon: 'globe', shortcut: '' }, { action: 'terminal', label: 'Toggle terminal', icon: 'terminal', shortcut: shortcut('J') }, { action: 'settings', label: 'Settings', icon: 'settings', shortcut: shortcut(',') }, { action: 'agent-usage', label: 'Agent usage', icon: 'activity', shortcut: '' }, { action: 'bots', label: 'Bots', icon: 'bot', shortcut: '' }, { action: 'toggle-bots-view', label: sidebarView === 'bots' ? 'Back to threads in the sidebar' : 'Bots in the sidebar', icon: 'bot', shortcut: '', keywords: 'show bots channels' }, { action: 'support', label: 'Help & support', icon: 'help', shortcut: '' }, { action: 'toggle-theme', label: currentTheme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode', icon: currentTheme() === 'dark' ? 'sun' : 'moon', shortcut: '', keywords: 'theme appearance dark light' }, { action: 'star-repository', label: 'Star PandaCode on GitHub', icon: 'github', shortcut: '', keywords: 'source code repository' }, { action: 'import-conversations', label: 'Import conversations', icon: 'download', shortcut: '' }, { action: 'worktree', label: 'Create worktree', icon: 'branch', shortcut: '' }, { action: 'conversation-view', label: 'Conversation', icon: 'thread', shortcut: '' }, { action: 'board-view', label: 'Board', icon: 'kanban', shortcut: '' }, ...(session() && !session()!.archived ? [{ action: 'wake-later', label: 'Schedule a wake-up…', icon: 'clock', shortcut: '' }] : []), ...(project() && !isChatProject(project()) ? [{ action: 'review-start', label: 'Review my changes…', icon: 'search', shortcut: '', keywords: 'code review find issues quick deep security audit' }, { action: 'review-skill', label: 'Review skill', icon: 'spark', shortcut: '', keywords: 'code review lessons learn' }] : []), ...(githubEnabled() ? [{ action: 'github-view', label: 'GitHub', icon: 'github', shortcut: '' }] : []), ...(query ? settingsPageCommands() : [])].filter(c => matchesWords(`${c.label} ${'keywords' in c ? c.keywords : ''}`, query));
   const tasks = listedSessions().filter(s => matchesWords(s.title, query)).slice(0, 12);
   $('#command-results').innerHTML = `${commands.length ? '<div class="command-section">Commands</div>' : ''}${commands.map(c => `<button data-action="${c.action}"${'page' in c ? ` data-id="${c.page}"` : ''} data-command="true">${icon(c.icon)}<span>${c.label}</span><kbd>${c.shortcut}</kbd></button>`).join('')}${tasks.length ? '<div class="command-section">Tasks</div>' : ''}${tasks.map(s => `<button data-action="select-task" data-id="${escape(s.id)}" data-command="true">${providerLogo(s.provider)}<span>${escape(s.title)}<small>${escape(state.projects.find(p => p.id === s.projectId)?.name)} · ${shortProvider(s.provider)}</small></span></button>`).join('')}${!commands.length && !tasks.length ? '<div class="inspector-empty">No matching tasks or commands.</div>' : ''}`;
   $('#command-results').querySelector('button')?.classList.add('command-selected');
@@ -7147,6 +7193,8 @@ async function action(name: string, element: HTMLElement): Promise<void> {
     case 'approval-allow-all': case 'approval-deny-all': { const sessionId = actionTask(element)?.id ?? state.sessionId; for (const id of [...state.streams.get(sessionId)?.approvals.keys() ?? []]) await respondApproval(sessionId, id, name === 'approval-allow-all'); break; }
     case 'approval-group': { const id = actionTask(element)?.id ?? state.sessionId; if (!approvalGroupsOpen.delete(id)) approvalGroupsOpen.add(id); renderApprovalBar(); btwPanel.refresh(); break; }
     case 'approval-details': { const key = (actionTask(element)?.id ?? state.sessionId) + element.dataset.request; if (!approvalDetails.delete(key)) approvalDetails.add(key); renderApprovalBar(); btwPanel.refresh(); break; }
+    case 'review-start': await openReviewStart(); break;
+    case 'review-skill': await openReviewSkillFor(); break;
     case 'suggest': { const prompt = document.querySelector<HTMLTextAreaElement>('#prompt'); if (prompt) { prompt.value = element.dataset.text!; prompt.focus(); } break; }
   }
 }
@@ -7341,6 +7389,11 @@ async function boot(): Promise<void> {
   await subscribe('sessions-deleted', event => removeDeletedSessions(event.sessionIds));
   await subscribe('sessions-changed', () => run(reloadSessions()));
   await subscribe('project-changed', projectChanged);
+  // A review thread's findings or ratings, or a project's review skill, changed (here, in another window, or by its agent).
+  await subscribe('review-changed', event => {
+    reviewCards.changed(event?.sessionId);
+    if (document.querySelector('.review-skill')) void import('./review-skill').then(({ refreshReviewSkill }) => refreshReviewSkill(event?.projectId, state.projects.find(p => p.id === event?.projectId)?.name ?? '')).catch(report);
+  });
   // A side chat expired, was closed or became a full thread: its thread's panel re-reads its list.
   await subscribe('side-chats-changed', event => { if (event.parentId && sideChatsLoaded.has(event.parentId)) run(loadSideChats(event.parentId)); });
   await subscribe('mirror-messages' as 'queue-changed', (event: { sessionId: string; older?: boolean }) => run(mirrorMessages(event)));

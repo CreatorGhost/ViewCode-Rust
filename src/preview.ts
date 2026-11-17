@@ -23,6 +23,7 @@ import { createPreviewSkillManager } from './preview-skill-manager';
 import { previewCapabilities } from './preview-capabilities';
 import { recipesCommand } from './preview-recipes';
 import { PROJECT_COLORS } from './palette-core';
+import { createPreviewReview, reviewMessages, reviewSessions } from './preview-review';
 import { openCodePreviewKey, openCodePreviewModels, previewOpenCodeChoices, previewOpenCodeSelection } from './preview-opencode';
 const turnChanges = createPreviewTurnChanges();
 let quickConnect: ReturnType<typeof import('./preview-quick-connect').createPreviewQuickConnect> | undefined;
@@ -59,6 +60,9 @@ const slowTurn = typeof location !== 'undefined' && new URLSearchParams(location
 /** ?shortreply: the command finishes, then a one-line reply too short to fill the space its folded trace gave up. */
 const shortReply = typeof location !== 'undefined' && new URLSearchParams(location.search).has('shortreply');
 const showCards = typeof location !== 'undefined' && new URLSearchParams(location.search).has('cards');
+// Code review (src/preview-review.ts): ?review adds a finished review, one in progress and a re-review to orbit.
+const showReview = typeof location !== 'undefined' && new URLSearchParams(location.search).has('review');
+if (showReview) sessions = [...reviewSessions(now), ...sessions];
 if (showCards) sessions = [{ id: 'session-cards', projectId: 'project-1', title: 'Turn cards', provider: 'claude', model: 'sonnet', mode: 'ask', status: 'idle', createdAt: now - 30000, updatedAt: now + 4000, archived: false, worktreePath: null, resumeId: null, lastResponseAt: now - 1000 }, ...sessions];
 // The preview persists sidebar preferences only, never sample conversation data.
 const THREAD_ORDER_KEY = 'pandacode.preview.threadOrder';
@@ -217,7 +221,7 @@ const cardMessages: Message[] = [
   { id: 9007, sessionId: 'session-cards', role: 'assistant', content: 'Search now responds as you type.\n\n- **The index is built once.** `createSearchIndex()` moved out of the input handler, so a keystroke only queries it.\n- **Rendering is limited to the visible rows.** `renderResults()` draws the first 50 matches and the list virtualizes the rest.\n- **Keyboard navigation is unchanged.** ↑/↓ still move the selection and Enter opens the result; the existing tests cover both.\n\nI also added a test that types ten characters in a row and checks the index is built only once. Every search test passes.\n\nOne follow-up worth considering: the index is rebuilt when the data set changes, which happens on every sync. If syncs get frequent, an incremental update would avoid the rebuild entirely.', createdAt: now - 1000 },
 ];
 const showTrace = typeof location !== 'undefined' && new URLSearchParams(location.search).has('trace');
-const messages: Record<string, Message[]> = { ...(showCards ? { 'session-cards': cardMessages } : {}), ...(showTrace ? { 'session-5': traceMessages, [BRIEF_ID]: briefMessages, [GALLERY_ID]: galleryMessages } : {}), 'session-1': [
+const messages: Record<string, Message[]> = { ...(showReview ? reviewMessages(now) : {}), ...(showCards ? { 'session-cards': cardMessages } : {}), ...(showTrace ? { 'session-5': traceMessages, [BRIEF_ID]: briefMessages, [GALLERY_ID]: galleryMessages } : {}), 'session-1': [
   { id: 1, sessionId: 'session-1', role: 'user', content: 'Search feels a little slow. Can you make it respond instantly as I type, and keep the keyboard navigation working?', createdAt: now - 420000 },
   { id: 2, sessionId: 'session-1', role: 'assistant', content: 'I’ll trace how the search input updates the results, then check the keyboard interactions.', createdAt: now - 410000 },
   { id: 3, sessionId: 'session-1', role: 'tool', content: encodeTool({ id: 'sample-read', name: 'Read', status: 'completed', input: 'src/components/search.ts', output: sampleSource }), createdAt: now - 400000 },
@@ -1495,6 +1499,7 @@ async function previewVoice(command: string, args: Record<string, any>): Promise
   throw new Error(`Unknown voice command: ${command}`);
 }
 
+let previewReview: ReturnType<typeof createPreviewReview> | undefined;
 export async function invoke<T>(command: string, args: Record<string, any>): Promise<T> {
   if (command.startsWith('voice_')) return await previewVoice(command, args) as T;
   if (/^schedules?_|^scheduler_/.test(command)) return (await import('./preview-schedules')).invokeSchedules<T>(command, args, {
@@ -1504,6 +1509,7 @@ export async function invoke<T>(command: string, args: Record<string, any>): Pro
     send: async (sessionId, text) => { await invoke('send_message', { sessionId, text }); },
   });
   if (command.startsWith('tray_')) return trayCommand(command, args) as T;
+  if (command.startsWith('review_')) return await (previewReview ??= createPreviewReview({ sessions: () => sessions, projects: () => projects, messages, invoke, emit })).invoke(command, args) as T;
   // An if chain, not a switch: specs patch the first command switch in this file to record calls.
   if (command.startsWith('agents_dock_')) return previewAgentsDock<T>(command, args);
   if (command.startsWith('jj_')) return (await import('./preview-jj')).invokeJj<T>(command, args);

@@ -8,7 +8,8 @@ import type { OfficeKind } from './office-viewer';
 
 type Context = { projectId: string; sessionId?: string };
 /** `source` shows a viewer-handled file (e.g. an SVG) as text. */
-type Tab = { path: string; context: Context; content?: string | ArrayBuffer; reads?: number; source?: boolean; used?: number };
+/** `line` marks a line of code (a review finding's); `reveal` scrolls to it once, on the next draw with text. */
+type Tab = { path: string; context: Context; content?: string | ArrayBuffer; reads?: number; source?: boolean; used?: number; line?: number; reveal?: boolean };
 /** Document bytes kept for tabs not on screen, across all tasks; evicted tabs read their file again when shown. */
 const DOCUMENT_CACHE_BYTES = 64 * 1024 * 1024;
 /** PDF, Word, spreadsheet and image files arrive as bytes and draw in their own lazily loaded viewer. */
@@ -97,6 +98,13 @@ export function createFileTabs(deps: Deps) {
     if (typeof active.content === 'string') {
       renderDocument(body, active.path, active.content, path => deps.call<string>('workspace_image', { ...active.context, path }));
       body.scrollTop = scroll;
+      const row = active.line ? body.querySelectorAll<HTMLElement>('.code-line')[active.line - 1] : undefined;
+      if (row) {
+        row.dataset.lineTarget = '';
+        // The line sits a third of the way down, with the code that leads to it above.
+        if (active.reveal) body.scrollTop += row.getBoundingClientRect().top - body.getBoundingClientRect().top - body.clientHeight / 3;
+      }
+      if (typeof active.content === 'string') active.reveal = false;
       return;
     }
     const bytes = active.content, kind = officeKind(active.path)!;
@@ -187,13 +195,16 @@ export function createFileTabs(deps: Deps) {
       render();
       const tab = current(); if (tab) void load(tab);
     },
-    open(path: string, context: Context, source = false): void {
+    /** Opens a file's tab; `line` marks that line and scrolls to it. */
+    open(path: string, context: Context, source = false, line?: number): void {
       let entry = thread();
       if (!entry) { entry = { workspace, tabs: [], active: '' }; threads.set(key, entry); }
       const fresh: Tab = { path, context: { ...context }, ...(source ? { source } : {}) };
       const existing = entry.tabs.find(tab => tab.path === path);
       if (!existing) entry.tabs = [...entry.tabs, fresh];
       else if (Boolean(existing.source) !== source) entry.tabs = entry.tabs.map(tab => tab === existing ? fresh : tab);
+      const tab = entry.tabs.find(item => item.path === path)!;
+      tab.line = line; tab.reveal = line !== undefined;
       activate(path);
     },
     /** Re-reads the file on screen, e.g. after an agent run may have changed it. */

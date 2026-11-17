@@ -42,6 +42,24 @@
 .cv-dels, .cv-del { color: var(--danger); font-family: var(--mono); font-size: var(--text-2xs); }
 .cv-spacer { flex: 1 1 0; }
 .cv-branch { min-width: 4em; overflow: hidden; text-overflow: ellipsis; color: var(--faint); font-size: var(--ds-text-meta); }
+/* An agent review of these changes (review-start.ts): a small raised button with a hairline. */
+.cv-review {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--ds-radius-chip);
+  background: var(--ds-raised);
+  box-shadow: inset 0 0 0 1px var(--ds-border);
+  color: var(--muted) !important;
+  transition: color var(--ds-ease-out) ease-out, background-color var(--ds-ease-out) ease-out;
+}
+.cv-review .icon { flex: none; width: var(--icon-sm); height: var(--icon-sm); }
+.cv-review:hover { color: var(--text) !important; background: var(--ds-row-hover); transition-duration: var(--ds-ease-in); }
+@media (prefers-contrast: more) { .cv-review { box-shadow: inset 0 0 0 1px var(--border); color: var(--text) !important; } }
+@media (forced-colors: active) { .cv-review { border: 1px solid ButtonText; } }
 .cv-icon {
   width: 24px;
   height: 24px;
