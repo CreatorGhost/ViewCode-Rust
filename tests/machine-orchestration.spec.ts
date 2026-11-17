@@ -1,4 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
+import { showLegacyConnect } from './legacy-connect-helper';
+
+// These specs drive the older shared relay, hidden by default since Quick connect.
+test.beforeEach(async ({ page }) => { await showLegacyConnect(page); });
 
 /* Multi-machine orchestration on the preview's sample account (src/preview-remote.ts): the
  * Settings switch and linked computers, an agent's link request, the Lineage panel in the Agents

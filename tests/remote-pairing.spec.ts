@@ -1,4 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
+import { showLegacyConnect } from './legacy-connect-helper';
+
+// These specs drive the older shared relay, hidden by default since Quick connect.
+test.beforeEach(async ({ page }) => { await showLegacyConnect(page); });
 
 /* Scoped pairing on the preview's sample account (src/preview-remote.ts, src/preview-grants.ts):
  * approving or blocking a device that asks for access, the per-device access picker and the

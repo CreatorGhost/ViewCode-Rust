@@ -1,4 +1,8 @@
 import { expect, test } from '@playwright/test';
+import { showLegacyConnect } from './legacy-connect-helper';
+
+// These specs drive the older shared relay, hidden by default since Quick connect.
+test.beforeEach(async ({ page }) => { await showLegacyConnect(page); });
 
 test('connect diagnostics shows stages, routes and events, and reconnects', async ({ page }) => {
   await page.goto('/');

@@ -1,6 +1,6 @@
 import { expect, type Page } from '@playwright/test';
 
-// The rail's foot holds only Remote access, Pull requests and Settings. What used to sit beside them
+// The rail's foot holds only Connect phone, Pull requests and Settings. What used to sit beside them
 // (Bots, Help, Agent usage, the star, the theme toggle) is a command in Go to anything (⌘K).
 
 /** Runs a command from Go to anything by its name. */

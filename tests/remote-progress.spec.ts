@@ -1,5 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
 import { pickFromPlus } from './composer-more-helper';
+import { showLegacyConnect } from './legacy-connect-helper';
+
+// These specs drive the older shared relay, hidden by default since Quick connect.
+test.beforeEach(async ({ page }) => { await showLegacyConnect(page); });
 
 /* The strip above a New task's composer while it starts on another computer
  * (src/remote-progress.ts), driven by the preview host's stages (src/preview-remote.ts). */

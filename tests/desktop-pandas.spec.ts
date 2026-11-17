@@ -32,16 +32,16 @@ test.describe('desktop pandas', () => {
     await expect(page.locator('.sidebar>.brand')).toHaveText('');
   });
 
-  test('the rail foot holds only Remote access, Pull requests and Settings, with no logo; the 58px rail keeps them', async ({ page }) => {
+  test('the rail foot holds only Connect phone, Pull requests and Settings, with no logo; the 58px rail keeps them', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await open(page);
     const names = () => page.locator('.sidebar-bottom > *').evaluateAll(items => items.map(item => item.getAttribute('aria-label')));
-    expect(await names()).toEqual(['Remote access', 'Pull requests and issues', 'Settings']);
+    expect(await names()).toEqual(['Connect phone', 'Pull requests and issues', 'Settings']);
     await expect(page.locator('.project-rail .sidebar-bottom')).toHaveCount(1);
     await expect(page.locator('.star-panda, #theme-toggle, #support-button, #agent-usage-button, .sidebar-bots-bar')).toHaveCount(0);
     await page.setViewportSize({ width: 620, height: 940 });
     await expect.poll(() => page.locator('.sidebar').evaluate(node => node.getBoundingClientRect().width), { timeout: 15_000 }).toBe(58);
-    expect(await names()).toEqual(['Remote access', 'Pull requests and issues', 'Settings']);
+    expect(await names()).toEqual(['Connect phone', 'Pull requests and issues', 'Settings']);
     await expect(page.locator('.sidebar > .sidebar-bottom')).toBeVisible();
   });
 

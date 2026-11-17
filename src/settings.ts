@@ -19,7 +19,7 @@ import { mountSkillsLibrary, type SkillsLibraryHost } from './skills-library';
 import { call, subscribe } from './bridge';
 import { settleIn, trackSegment } from './motion';
 import { mount as mountCapabilities } from './capabilities-panel';
-import { mountRemoteSettings } from './remote-settings';
+import { mountQuickConnectSettings } from './quick-connect-settings';
 import { mountSchedulesSettings } from './schedules-settings';
 import { appUpdates } from './app-updates';
 import type { RemoteHost } from './remote-types';
@@ -322,7 +322,7 @@ export function mountSettings(host: HTMLElement, options: SettingsOptions): Sett
       cleanups.push(mountOverlaySettings(panel.querySelector<HTMLElement>('#launcher-settings')!));
       cleanups.push(mountAgentsDockSettings(panel.querySelector<HTMLElement>('#agents-dock-settings')!));
     }
-    if (id === 'remote' && options.remote) cleanups.push(mountRemoteSettings(panel.querySelector<HTMLElement>('#remote-settings')!, options.remote));
+    if (id === 'remote' && options.remote) cleanups.push(mountQuickConnectSettings(panel.querySelector<HTMLElement>('#remote-settings')!, options.remote));
     if (id === 'general' && options.projects) cleanups.push(mountProjects(panel.querySelector<HTMLElement>('#projects-settings')!, options.projects));
     if (id === 'github' && options.github) cleanups.push(options.github(panel.querySelector<HTMLElement>('#github-settings')!));
     if (id === 'routing' && options.teams) cleanups.push(mountModelRouting(panel.querySelector<HTMLElement>('#model-routing-settings')!, { ...options.teams, providers: options.providers }));

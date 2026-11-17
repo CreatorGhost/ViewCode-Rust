@@ -1514,9 +1514,11 @@ export async function invoke<T>(command: string, args: Record<string, any>): Pro
   });
   if (command.startsWith('quick_connect_')) {
     const w = window as any;
-    // `__quickConnect` steers the mock; `__quickConnectPair(name?)` plays the phone scanning the link.
+    // `__quickConnect` steers the mock; `__quickConnectPair(name?)` plays the phone scanning the link and
+    // `__quickConnectAdvance()` moves a stepped setup (`__quickConnect.steps`) to its next step.
     const mock = quickConnect ??= (await import('./preview-quick-connect')).createPreviewQuickConnect(emit, () => (w.__quickConnect ??= {}));
     w.__quickConnectPair ??= mock.pair;
+    w.__quickConnectAdvance ??= mock.advance;
     w.__quickConnectCalls = (w.__quickConnect ??= {}).calls ??= [];
     return mock.invoke(command, args) as T;
   }

@@ -12,6 +12,8 @@ export interface RemoteHost {
   listen(name: string, callback: (event: any) => void): Promise<() => void>;
   notify(text: string): void;
   openUrl(url: string): Promise<void>;
+  /** Opens the Connect phone dialog (src/connect-phone.ts), on a connection choice when given. */
+  connectPhone?(mode?: import('./quick-connect-types').QuickConnectMode): void;
 }
 /** A computer the Run on menu can show, including an offline last-seen row. */
 export interface RemoteTarget { deviceId: string; name: string; platform: string; online: boolean; lastSeen: number | string | null }

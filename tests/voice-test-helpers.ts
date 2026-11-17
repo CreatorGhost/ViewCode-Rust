@@ -85,6 +85,8 @@ export async function chooseSendTarget(page: Page, target: string) {
     await settings.getByLabel('E2B API key').fill('preview');
     await settings.getByRole('form', { name: 'Connect E2B' }).locator('[type="submit"]').click();
   } else {
+    // The older shared relay is hidden unless asked for (src/quick-connect-settings.ts); the mock reads this when it starts.
+    await page.evaluate(() => { const w = window as any; w.__quickConnect = { ...(w.__quickConnect ?? {}), legacyVisible: true }; });
     await settings.getByRole('tab', { name: 'Remote access', exact: true }).click();
     const remote = settings.getByRole('tabpanel', { name: 'Remote access', exact: true });
     await remote.getByRole('button', { name: 'Sign in with GitHub', exact: true }).click();

@@ -1,0 +1,94 @@
+/* Connect phone (src/connect-phone.ts) and Settings → Remote access's Phone section (src/quick-connect-settings.ts).
+ * Tokens only: --ds-* surfaces, state tones on leading icons through data-state-tone, no literal colours. */
+dialog.connect-phone-dialog{width:min(460px,calc(100vw - 32px))}
+:is(.qc,.qc-settings) [data-state-tone="done"]{--state-tone:var(--ds-success)}
+:is(.qc,.qc-settings) [data-state-tone="warn"]{--state-tone:var(--ds-warn)}
+:is(.qc,.qc-settings) [data-state-tone="danger"]{--state-tone:var(--ds-danger)}
+
+.qc-body{display:grid;gap:14px;min-width:0}
+.qc-panel{display:grid;gap:12px;min-width:0}
+.qc-panel:empty{display:none}
+.qc-seg-sub>button{height:30px;font-size:var(--ds-text-ui)}
+.qc-head{display:flex;align-items:center;gap:8px;min-height:32px}
+.qc-head>h3,.qc-intro h3{flex:1;margin:0;font-size:var(--ds-text-body);font-weight:var(--weight-medium);color:var(--text)}
+.qc-menu{width:32px;height:32px}
+.qc-intro{display:flex;align-items:flex-start;gap:12px}
+.qc-intro-icon{flex:none;display:inline-grid;place-items:center;width:24px;height:24px;color:var(--muted)}
+.qc-intro p,.qc-lead{margin:4px 0 0;font-size:var(--ds-text-ui);line-height:1.5;color:var(--muted)}
+.qc-lead{margin:0;color:var(--text)}
+.qc-quiet{margin:0;font-size:var(--ds-text-meta);line-height:1.5;color:var(--muted)}
+.qc-link{display:inline;height:auto;padding:0;border:0;background:none;color:inherit;font:inherit;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.qc-link:hover{color:var(--text)}
+.qc-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.qc-actions>:is(.ds-btn,.ds-btn-primary)>.icon{--icon-size:var(--icon-sm,16px)}
+.qc-ghost{background:transparent;box-shadow:none;color:var(--muted)}
+.qc-ghost:not(:disabled):hover{background:var(--ds-row-hover);color:var(--text)}
+.qc-danger{color:var(--ds-danger)}
+:is(.qc,.qc-settings) :is(.ds-btn,.ds-btn-primary):disabled{opacity:.5;cursor:default}
+
+.qc-alert{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--ds-border);border-radius:var(--ds-radius-inner);background:var(--ds-card-inner)}
+.qc-alert>.icon{flex:none;--icon-size:18px;margin-top:1px}
+.qc-alert>p{margin:0;font-size:var(--ds-text-ui);line-height:1.5;color:var(--text);overflow-wrap:anywhere}
+.qc-details>summary{width:max-content;font-size:var(--ds-text-meta);color:var(--muted);cursor:pointer}
+.qc-details>summary:hover{color:var(--text)}
+.qc-details pre{max-height:12rem;margin:8px 0 0;padding:8px 10px;overflow:auto;border-radius:var(--ds-radius-control);background:var(--ds-fill);font:var(--ds-text-meta)/1.5 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;user-select:text}
+
+.qc-progress{display:flex;align-items:center;gap:8px;margin:0;font-size:var(--ds-text-ui);color:var(--muted)}
+.qc-checklist{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.qc-checklist>li{display:flex;align-items:flex-start;gap:10px;font-size:var(--ds-text-ui);color:var(--text)}
+.qc-checklist>li[data-state="pending"]{color:var(--muted)}
+.qc-check-mark{flex:none;display:inline-grid;place-items:center;width:18px;height:18px;margin-top:1px;color:var(--ds-glyph-faint)}
+.qc-check-mark>.icon{--icon-size:16px}
+.qc-check-mark>.icon[data-state-tone]{color:var(--state-tone)}
+.qc-check-mark>.support-spinner{width:14px;height:14px;color:var(--muted)}
+.qc-check-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.qc-check-text small{font-size:var(--ds-text-meta);line-height:1.5;color:var(--muted)}
+.qc-elapsed{color:var(--muted)}
+
+.qc-signin .ds-card-inner,.qc-confirm .ds-card-inner,.qc-unavailable .ds-card-inner{gap:10px;padding:12px}
+.qc-signin-lead,.qc-confirm p{margin:0;font-size:var(--ds-text-ui);line-height:1.5;color:var(--text)}
+.qc-confirm strong{font-size:var(--ds-text-body);font-weight:var(--weight-medium)}
+.qc-signin-code{display:flex;align-items:center;justify-content:center;gap:8px}
+.qc-code{font:600 var(--text-xl,1.5rem)/1 var(--mono);letter-spacing:.14em;color:var(--text);user-select:all}
+.qc-signin-url{margin:0;font:var(--ds-text-meta)/1.4 var(--mono);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;user-select:all}
+.qc-unavailable .ds-row{align-items:flex-start}
+.qc-reason{font-size:var(--ds-text-sub);line-height:1.45;color:var(--muted);white-space:normal}
+.qc-unavailable .ds-row-icon>.icon{color:var(--state-tone)}
+
+.qc-steps{display:grid;gap:6px;margin:0;padding:0;list-style:none;font-size:var(--ds-text-ui);color:var(--text)}
+.qc-steps>li{display:flex;align-items:baseline;gap:10px}
+.qc-steps>li>span{flex:none;display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--ds-fill);color:var(--muted);font-size:var(--ds-text-chip);font-variant-numeric:tabular-nums}
+.qc-code-area{display:flex;flex-direction:column;align-items:center;gap:10px}
+/* The QR plate keeps a light quiet zone in either theme: dark modules on the lightest token pair the theme has
+ * (page on text in dark, text on page in light). Forced colours keep these colours, so phones can still read it. */
+.qc-qr{--qr-paper:var(--bg);--qr-ink:var(--text);box-sizing:border-box;display:grid;place-items:center;width:232px;height:232px;padding:10px;border-radius:var(--ds-radius-inner);background:var(--qr-paper);color:var(--qr-ink);box-shadow:inset 0 0 0 1px var(--ds-border);forced-color-adjust:none}
+html[data-theme="dark"] .qc-qr{--qr-paper:var(--text);--qr-ink:var(--bg)}
+.qc-qr-svg{display:block;width:100%;height:100%}
+.qc-qr-state{box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;width:232px;min-height:232px;padding:16px;border:1px solid var(--ds-border);border-radius:var(--ds-radius-inner);text-align:center}
+.qc-qr-state>.icon{--icon-size:24px}
+.qc-qr-state>.icon[data-state-tone]{color:var(--state-tone)}
+.qc-qr-state strong{font-size:var(--ds-text-body);font-weight:var(--weight-medium)}
+.qc-qr-state small{font-size:var(--ds-text-meta);line-height:1.5;color:var(--muted)}
+.qc-qr-state>.qc-alert{width:100%;text-align:left}
+.qc-expiry{margin:0;font-size:var(--ds-text-meta);color:var(--muted);text-align:center}
+.qc-countdown{color:var(--text);font-variant-numeric:tabular-nums}
+.qc-uses{display:flex;align-items:center;gap:8px;min-width:0;font-size:var(--ds-text-meta);color:var(--muted)}
+.qc-uses>.icon{flex:none;--icon-size:14px}
+.qc-uses>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Settings → Remote access. */
+.qc-settings{display:grid;gap:4px;margin-bottom:18px}
+.qc-settings .ds-row-icon>.icon[data-state-tone]{color:var(--state-tone)}
+.qc-settings .ds-row-sub{white-space:normal}
+.qc-settings-extra{display:grid;gap:8px;padding:8px var(--ds-row-pad-x) 10px}
+.qc-device-confirm{background:var(--ds-row-hover)}
+.qc-empty{padding:12px var(--ds-row-pad-x)}
+.qc-settings>.qc-alert{margin-top:8px}
+
+@media(prefers-contrast:more){.qc-alert,.qc-qr-state{border-color:var(--text)}.qc-quiet,.qc-check-text small,.qc-reason{color:var(--text)}}
+@media(forced-colors:active){
+  .qc-alert,.qc-qr-state,.qc-steps>li>span{border:1px solid CanvasText}
+  :is(.qc,.qc-settings) [data-state-tone]{color:CanvasText}
+  /* The plate is painted by the app on purpose: a scanner needs dark modules on a light zone. */
+  .qc-qr{box-shadow:none;outline:1px solid CanvasText}
+}

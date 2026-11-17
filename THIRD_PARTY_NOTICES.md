@@ -94,6 +94,12 @@ transcribe.cpp vendors and statically links the components below, each MIT-licen
 
 The MIT text reproduced above applies to each, with the copyright line shown.
 
+## uqr 0.1.2 (QR code encoder)
+
+- Source: https://github.com/unjs/uqr (npm `uqr@0.1.2`, integrity `sha512-MJu7ypHq6QasgF5YRTjqscSzQp/W11zoUk6kvmlH+fmWEs63Y0Eib13hYFwAzagRJcVY8WVnlV+eBDUGMJ5IbA==`), a port of Project Nayuki's QR Code generator (https://www.nayuki.io/page/qr-code-generator-library)
+- Licence: MIT, Copyright (c) Project Nayuki; Copyright (c) 2023 Anthony Fu. The MIT text reproduced above applies, with these copyright lines; the full licence is also in `src/vendor/uqr/LICENSE`
+- Used in: `src/vendor/uqr/` (vendored unmodified), which draws the Quick connect pairing code in the Connect phone dialog, on this computer
+
 ## Rust crates added for voice input
 
 Licences as declared in each crate's crates.io metadata at the version in `src-tauri/Cargo.lock`. Where a crate offers a choice, PandaCode uses it under MIT.

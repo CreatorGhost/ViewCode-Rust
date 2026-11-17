@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-// The rail's one usage ring (src/project-rail.ts): at the rail's foot, directly above Remote access, Pull
+// The rail's one usage ring (src/project-rail.ts): at the rail's foot, directly above Connect phone, Pull
 // requests and Settings. It shows the open thread's agent; with no thread open, the agent closest to its limit.
 
 const rail = (page: Page) => page.locator('#project-rail');
@@ -41,7 +41,7 @@ test('there is one ring, at the foot of the rail directly above the three foot i
   await expect(rail(page).locator('.rail-ring-label')).toHaveCount(0);
   const foot = rail(page).locator('.sidebar-bottom > button');
   await expect(foot).toHaveCount(3);
-  expect(await foot.evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label')))).toEqual(['Remote access', 'Pull requests and issues', 'Settings']);
+  expect(await foot.evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label')))).toEqual(['Connect phone', 'Pull requests and issues', 'Settings']);
   const [box, first, tiles, host] = [await ring(page).boundingBox(), await foot.first().boundingBox(), await rail(page).locator('.rail-projects').boundingBox(), await rail(page).boundingBox()];
   // Directly above the icons, in their column, and nowhere near the middle of the rail.
   const gap = first!.y - (box!.y + box!.height);
@@ -52,7 +52,7 @@ test('there is one ring, at the foot of the rail directly above the three foot i
   expect(box!.y).toBeGreaterThan(host!.y + host!.height * 0.7);
   expect(box!.width).toBeLessThanOrEqual(32);
   // It follows the foot icons in the tab order's document order: tiles, the ring, then the icons.
-  expect(await rail(page).evaluate(node => [...node.querySelectorAll('button')].map(button => button.classList.contains('rail-tile') ? '' : button.getAttribute('aria-label')!.replace(/ usage: .*/, ' usage')).filter(Boolean))).toEqual(['Claude usage', 'Remote access', 'Pull requests and issues', 'Settings']);
+  expect(await rail(page).evaluate(node => [...node.querySelectorAll('button')].map(button => button.classList.contains('rail-tile') ? '' : button.getAttribute('aria-label')!.replace(/ usage: .*/, ' usage')).filter(Boolean))).toEqual(['Claude usage', 'Connect phone', 'Pull requests and issues', 'Settings']);
 });
 
 test('the ring shows the open thread\'s agent, by name and figure, and "not checked yet" until a check', async ({ page }) => {

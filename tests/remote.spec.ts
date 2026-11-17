@@ -1,5 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
 import { pickFromPlus } from './composer-more-helper';
+import { showLegacyConnect } from './legacy-connect-helper';
+
+// These specs drive the older shared relay, hidden by default since Quick connect.
+test.beforeEach(async ({ page }) => { await showLegacyConnect(page); });
 
 /* PandaCode Connect on the preview's sample account (src/preview-remote.ts): sign in, allow
  * remote control, then start a new task on another computer from the context bar. */

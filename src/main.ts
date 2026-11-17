@@ -519,7 +519,7 @@ $app.innerHTML = `<div class="workspace" data-tauri-drag-region>
     <div class="sidebar-projects"><button id="project-filter" class="project-filter" data-action="filter-projects" aria-label="Filter projects" aria-haspopup="dialog" aria-expanded="false"><span data-filter-label>All projects</span>${icon('down')}</button><button id="sidebar-sort" class="icon-button sidebar-sort" data-action="sidebar-sort" aria-label="Sort and view" title="Sort and view" aria-haspopup="menu" aria-expanded="false">${SORT_ICON}</button>${button('import-conversations', 'Import conversations', 'download', 'import-trigger')}${button('add-project', 'Open project', 'plus')}</div>
     <div class="navigation-frame"><div id="navigation" class="navigation"></div></div>
     <section id="sidebar-bots-panel" class="bots-panel" aria-label="Bots"></section>
-    <div class="sidebar-bottom"><button data-action="settings-page" data-id="remote" title="Remote access" aria-label="Remote access">${icon('phone')}</button>${button('rail-github', 'Pull requests and issues', 'pull')}<button data-action="settings" title="Settings (${shortcut(',')})" aria-label="Settings">${icon('settings')}</button></div>
+    <div class="sidebar-bottom"><button data-action="connect-phone" title="Connect phone" aria-label="Connect phone" aria-haspopup="dialog">${icon('phone')}</button>${button('rail-github', 'Pull requests and issues', 'pull')}<button data-action="settings" title="Settings (${shortcut(',')})" aria-label="Settings">${icon('settings')}</button></div>
   </aside>
   <main class="main-pane">
     <header class="workspace-header" data-tauri-drag-region="deep"><div class="header-leading" data-tauri-drag-region>${button('toggle-sidebar', 'Hide sidebar', 'sidebar', 'sidebar-toggle', 'id="sidebar-toggle" aria-controls="workspace-sidebar" aria-expanded="true" aria-keyshortcuts="Meta+B Control+B"')}<span id="view-divider" class="header-divider" aria-hidden="true" hidden></span><div id="breadcrumb" class="breadcrumb" data-tauri-drag-region></div></div><div class="header-actions">${preview ? '<span class="preview-status">Browser preview · sample data</span>' : ''}</div><div id="agents-dock-host"></div><div id="action-dock" class="action-dock" role="toolbar" aria-label="Workspace actions" aria-orientation="vertical" data-tauri-drag-region="false"><div class="action-dock-group" data-group="panels">${button('toggle-inspector', 'Toggle inspector', 'panel', 'active', 'id="inspector-toggle" aria-keyshortcuts="Meta+Shift+B Control+Shift+B"', `Toggle inspector (${shortcut('B', true)})`)}${button('terminal', 'Toggle terminal', 'terminal', '', 'id="terminal-toggle" aria-controls="terminal-drawer" aria-expanded="false" aria-keyshortcuts="Meta+J Control+J"', `Toggle terminal (${shortcut('J')})`)}${button('browser', 'Open browser', 'globe', '', 'id="browser-toggle"')}${button('moodboards', 'Project moodboards', 'images')}<button type="button" id="agents-toggle" class="agents-toggle" aria-label="Agents" aria-haspopup="dialog" aria-expanded="false" aria-controls="agents-flyout" data-dock-notip hidden>${icon('team')}<b class="dock-badge" aria-hidden="true" hidden></b></button></div><div class="action-dock-group" data-group="actions"><button type="button" class="header-run" id="run-project-button" data-action="run-project" aria-label="Run project" title="Run pandacode-run.sh" hidden>${icon('play')}<span>Run</span></button>${button('deploy', 'Deploy', 'upload', '', 'id="deploy-button" aria-haspopup="dialog"')}${button('task-menu', 'Task actions', 'more', '', 'id="task-menu-trigger" aria-haspopup="dialog" aria-expanded="false"')}</div><div class="action-dock-group" data-group="status"><button type="button" id="update-status" class="update-status" hidden>${icon('refresh')}<span>Restart to update</span></button></div></div><div id="agents-flyout" class="agents-flyout" data-tauri-drag-region="false" hidden><div id="subagents-host" class="subagents-host" hidden></div><div id="lineage-host" class="lineage-host"></div></div></header>
@@ -5244,6 +5244,7 @@ let wallpaperSettingsCleanup: (() => void) | undefined;
 let changeReviewCleanup: (() => void) | undefined;
 let providerSettingsCleanup: (() => void) | undefined;
 let agentUsageCleanup: (() => void) | undefined;
+let connectPhoneCleanup: (() => void) | undefined;
 let conversationImportCleanup: (() => void) | undefined;
 let openCodeModelsCleanup: (() => void) | undefined;
 let moodboardsCleanup: (() => void) | undefined;
@@ -5252,6 +5253,7 @@ function disposeSettingsViews(): void {
   botsView?.dispose(); botsView = undefined;
   boardMentionPicker?.dispose(); boardMentionPicker = undefined;
   agentUsageCleanup?.(); agentUsageCleanup = undefined;
+  connectPhoneCleanup?.(); connectPhoneCleanup = undefined;
   conversationImportCleanup?.(); conversationImportCleanup = undefined;
   moodboardsCleanup?.(); moodboardsCleanup = undefined;
   providerSettingsCleanup?.(); providerSettingsCleanup = undefined;
@@ -6286,7 +6288,7 @@ const userProjects = (): Project[] => state.projects.filter(project => !botProje
 const chatTask = (task: Session | undefined): boolean => Boolean(task && isChatProject(state.projects.find(p => p.id === task.projectId)));
 /* PandaCode Connect. A new task can start on another computer: the context bar offers the
  * signed-in account's targets; the started task is an ordinary session with `remoteDevice`. */
-const remoteHost: RemoteHost = { call, listen: (name, callback) => subscribe(name as 'remote://status', callback), notify, openUrl: url => call('open_external_url', { url }) };
+const remoteHost: RemoteHost = { call, listen: (name, callback) => subscribe(name as 'remote://status', callback), notify, openUrl: url => call('open_external_url', { url }), connectPhone: mode => { void openConnectPhone(mode); } };
 type RemoteAccountDevice = Omit<RemoteTarget, 'deviceId'> & { id: string; current: boolean; host: boolean };
 let remoteTargets: RemoteTarget[] = [], remoteChoice = LOCAL, remoteSignedIn = false, remoteConnected = false, remotePresenceReady = false;
 /** The chosen computer's last known name, for when it leaves the list (signed out or revoked). */
@@ -6925,6 +6927,26 @@ async function openBot(botId: string): Promise<void> {
   if (!state.sessions.some(task => task.id === id)) await reloadSessions();
   await selectSession(id, true);
 }
+/** Connect phone (src/connect-phone.ts, lazy): the connection choice, Quick connect's setup and the pairing code.
+ * Closing the dialog disposes it, which ends an unused code and drops its link from the page. */
+async function openConnectPhone(mode?: import('./quick-connect-types').QuickConnectMode): Promise<void> {
+  const dialog = modal('Connect phone', '<p class="dialog-description">Control PandaCode from the PandaCode phone app.</p><div id="connect-phone-host"><p class="dialog-loading" role="status">Loading…</p></div>', 'connect-phone-dialog');
+  const host = dialog.querySelector<HTMLElement>('#connect-phone-host')!;
+  try {
+    const { mountConnectPhone } = await import('./connect-phone');
+    if (!dialog.open || !host.isConnected) return;
+    connectPhoneCleanup = mountConnectPhone(host, remoteHost, { mode });
+  } catch {
+    if (dialog.open && host.isConnected) host.innerHTML = '<p role="alert">Unable to load Connect phone. Close this window and try again.</p>';
+  }
+}
+/** The older GitHub-based PandaCode Connect is hidden from Settings unless asked for (or still signed in). */
+async function toggleLegacyConnect(): Promise<void> {
+  const current = await call<import('./quick-connect-types').QuickConnectStatus>('quick_connect_status');
+  const next = await call<import('./quick-connect-types').QuickConnectStatus>('quick_connect_set_legacy_connect_visible', { visible: !current.legacyConnect.visible });
+  if (next.legacyConnect.visible) { notify('PandaCode Connect (GitHub) is shown in Settings → Remote access'); await showSettings('remote'); }
+  else notify(current.legacyConnect.signedIn ? 'PandaCode Connect stays shown while this computer is signed in to it' : 'PandaCode Connect (GitHub) is hidden');
+}
 async function showAgentUsage(): Promise<void> {
   const dialog = modal('Agent usage', '<div id="agent-usage-host"><p role="status">Loading usage panel…</p></div>', 'agent-usage-dialog');
   const host = dialog.querySelector<HTMLElement>('#agent-usage-host')!;
@@ -6947,7 +6969,7 @@ const settingsPageCommands = () => SECTIONS.flatMap(section => section.pages.map
 /** Every whitespace-separated word of the query appears somewhere in the text (case-insensitive). */
 const matchesWords = (text: string, query: string): boolean => { const hay = text.toLowerCase(); return query.toLowerCase().split(/\s+/).filter(Boolean).every(word => hay.includes(word)); };
 function renderCommands(query: string): void {
-  const commands = [{ action: 'new-task', label: 'New task', icon: 'plus', shortcut: shortcut('N') }, { action: 'new-chat', label: 'New chat (no project)', icon: 'chat', shortcut: '' }, { action: 'add-project', label: 'Open project', icon: 'folder', shortcut: '' }, { action: 'browser', label: 'Open browser', icon: 'globe', shortcut: '' }, { action: 'terminal', label: 'Toggle terminal', icon: 'terminal', shortcut: shortcut('J') }, { action: 'settings', label: 'Settings', icon: 'settings', shortcut: shortcut(',') }, { action: 'agent-usage', label: 'Agent usage', icon: 'activity', shortcut: '' }, { action: 'bots', label: 'Bots', icon: 'bot', shortcut: '' }, { action: 'toggle-bots-view', label: sidebarView === 'bots' ? 'Back to threads in the sidebar' : 'Bots in the sidebar', icon: 'bot', shortcut: '', keywords: 'show bots channels' }, { action: 'support', label: 'Help & support', icon: 'help', shortcut: '' }, { action: 'toggle-theme', label: currentTheme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode', icon: currentTheme() === 'dark' ? 'sun' : 'moon', shortcut: '', keywords: 'theme appearance dark light' }, { action: 'star-repository', label: 'Star PandaCode on GitHub', icon: 'github', shortcut: '', keywords: 'source code repository' }, { action: 'import-conversations', label: 'Import conversations', icon: 'download', shortcut: '' }, { action: 'worktree', label: 'Create worktree', icon: 'branch', shortcut: '' }, { action: 'conversation-view', label: 'Conversation', icon: 'thread', shortcut: '' }, { action: 'board-view', label: 'Board', icon: 'kanban', shortcut: '' }, ...(session() && !session()!.archived ? [{ action: 'wake-later', label: 'Schedule a wake-up…', icon: 'clock', shortcut: '' }] : []), ...(githubEnabled() ? [{ action: 'github-view', label: 'GitHub', icon: 'github', shortcut: '' }] : []), ...(query ? settingsPageCommands() : [])].filter(c => matchesWords(`${c.label} ${'keywords' in c ? c.keywords : ''}`, query));
+  const commands = [{ action: 'new-task', label: 'New task', icon: 'plus', shortcut: shortcut('N') }, { action: 'new-chat', label: 'New chat (no project)', icon: 'chat', shortcut: '' }, { action: 'add-project', label: 'Open project', icon: 'folder', shortcut: '' }, { action: 'browser', label: 'Open browser', icon: 'globe', shortcut: '' }, { action: 'terminal', label: 'Toggle terminal', icon: 'terminal', shortcut: shortcut('J') }, { action: 'settings', label: 'Settings', icon: 'settings', shortcut: shortcut(',') }, { action: 'agent-usage', label: 'Agent usage', icon: 'activity', shortcut: '' }, { action: 'connect-phone', label: 'Connect phone', icon: 'phone', shortcut: '', keywords: 'quick connect cloudflare qr pair mobile remote access' }, { action: 'legacy-connect', label: 'Show or hide PandaCode Connect (GitHub)', icon: 'github', shortcut: '', keywords: 'older shared relay legacy remote access sign in' }, { action: 'bots', label: 'Bots', icon: 'bot', shortcut: '' }, { action: 'toggle-bots-view', label: sidebarView === 'bots' ? 'Back to threads in the sidebar' : 'Bots in the sidebar', icon: 'bot', shortcut: '', keywords: 'show bots channels' }, { action: 'support', label: 'Help & support', icon: 'help', shortcut: '' }, { action: 'toggle-theme', label: currentTheme() === 'dark' ? 'Switch to light mode' : 'Switch to dark mode', icon: currentTheme() === 'dark' ? 'sun' : 'moon', shortcut: '', keywords: 'theme appearance dark light' }, { action: 'star-repository', label: 'Star PandaCode on GitHub', icon: 'github', shortcut: '', keywords: 'source code repository' }, { action: 'import-conversations', label: 'Import conversations', icon: 'download', shortcut: '' }, { action: 'worktree', label: 'Create worktree', icon: 'branch', shortcut: '' }, { action: 'conversation-view', label: 'Conversation', icon: 'thread', shortcut: '' }, { action: 'board-view', label: 'Board', icon: 'kanban', shortcut: '' }, ...(session() && !session()!.archived ? [{ action: 'wake-later', label: 'Schedule a wake-up…', icon: 'clock', shortcut: '' }] : []), ...(githubEnabled() ? [{ action: 'github-view', label: 'GitHub', icon: 'github', shortcut: '' }] : []), ...(query ? settingsPageCommands() : [])].filter(c => matchesWords(`${c.label} ${'keywords' in c ? c.keywords : ''}`, query));
   const tasks = listedSessions().filter(s => matchesWords(s.title, query)).slice(0, 12);
   $('#command-results').innerHTML = `${commands.length ? '<div class="command-section">Commands</div>' : ''}${commands.map(c => `<button data-action="${c.action}"${'page' in c ? ` data-id="${c.page}"` : ''} data-command="true">${icon(c.icon)}<span>${c.label}</span><kbd>${c.shortcut}</kbd></button>`).join('')}${tasks.length ? '<div class="command-section">Tasks</div>' : ''}${tasks.map(s => `<button data-action="select-task" data-id="${escape(s.id)}" data-command="true">${providerLogo(s.provider)}<span>${escape(s.title)}<small>${escape(state.projects.find(p => p.id === s.projectId)?.name)} · ${shortProvider(s.provider)}</small></span></button>`).join('')}${!commands.length && !tasks.length ? '<div class="inspector-empty">No matching tasks or commands.</div>' : ''}`;
   $('#command-results').querySelector('button')?.classList.add('command-selected');
@@ -7031,6 +7053,8 @@ async function action(name: string, element: HTMLElement): Promise<void> {
     case 'jev-tests': await openJevTests(); break;
     case 'jev-assist': await openJevAssist(); break;
     case 'agent-usage': await showAgentUsage(); break;
+    case 'connect-phone': await openConnectPhone(); break;
+    case 'legacy-connect': await toggleLegacyConnect(); break;
     case 'bots': await showBots(); break;
     case 'new-bot': hideCreateBotMenu(); await showBots({ startNew: true }); break;
     case 'new-bot-menu': await showCreateBotMenu(element); break;
