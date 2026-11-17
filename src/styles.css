@@ -1017,7 +1017,6 @@ html[data-theme="dark"] body .dialog-plate{box-shadow:0 40px 100px -30px rgb(0 0
 .message-attachments>.prompt-chip:active{scale:.97}
 .message-attachments>.prompt-chip-image>.icon{margin:0 2px}
 .message-attachment-dialog{max-width:min(92vw,960px)}
-.message-attachment-image{display:block;max-width:100%;max-height:70vh;margin:0 auto;border-radius:var(--radius-sm);background:#fff;object-fit:contain}
 .message-attachment-raw{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:var(--text-xs);line-height:1.55;color:var(--muted);max-height:60vh;overflow:auto;padding:10px 12px;border-radius:var(--radius-sm);background:var(--raised)}
 /* Motion is subtle, not absent: hover/press ease color, background, opacity and scale in
    about 100–200 ms; springs in motion.ts carry surfaces. Reduced Motion removes CSS

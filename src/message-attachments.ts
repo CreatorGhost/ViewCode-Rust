@@ -86,6 +86,6 @@ export function attachmentChips(items: MessageAttachment[], messageId: number, i
       ? `<img data-prompt-image="${escape(item.imageId)}" ${thumbnail ? `src="${escape(thumbnail)}"` : ''} alt="" width="36" height="36"${thumbnail ? '' : ' hidden'}>${thumbnail ? '' : icon('camera')}`
       : icon(item.kind === 'github' && item.detail.startsWith('Pull') ? 'pull' : ICONS[item.kind]);
     const title = 'path' in item ? ` title="${escape(item.path)}"` : item.kind === 'github' ? ` title="${escape(item.url)}"` : '';
-    return `<button type="button" class="prompt-chip prompt-chip-${item.kind === 'image' ? 'image' : item.kind}" data-action="open-message-attachment" data-message-id="${messageId}" data-index="${index}" aria-label="Open ${escape(item.name)}"${title}>${lead}<span class="prompt-chip-text"><span class="prompt-chip-name">${escape(item.name)}</span><small>${escape(item.detail)}</small></span></button>`;
+    return `<button type="button" class="prompt-chip prompt-chip-${item.kind === 'image' ? 'image' : item.kind}${thumbnail ? ' has-preview' : ''}" data-action="open-message-attachment" data-message-id="${messageId}" data-index="${index}" aria-label="Open ${escape(item.name)}"${title}>${lead}<span class="prompt-chip-text"><span class="prompt-chip-name">${escape(item.name)}</span><small>${escape(item.detail)}</small></span></button>`;
   }).join('')}</div>`;
 }
