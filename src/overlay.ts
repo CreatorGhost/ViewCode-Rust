@@ -7,17 +7,17 @@ import type { FileEntry, ProviderId, ProviderModel } from './types';
 import { fallbackModel } from './model-catalog';
 import type { OverlayThreadView } from './overlay-thread';
 import { mountFileMentions } from './file-mentions';
-import { CLASSIC, restorePalette } from './palette';
+import { baseAccent, restorePalette } from './palette';
 import { accentTokens } from './palette-core';
 import { parseHex } from './color';
 
 function refreshTheme(): void {
   try { document.documentElement.dataset.theme = localStorage.getItem('pandacode.theme') === 'light' ? 'light' : 'dark'; } catch { /* Default to dark. */ }
   restorePalette();
-  // palette.ts restores last session's accent on import; classic yellow leaves nothing saved, so derive it.
+  // palette.ts restores last session's accent on import; classic yellow writes no accent of its own, so derive the user's base accent.
   const root = document.documentElement;
   if (!root.style.getPropertyValue('--accent')) {
-    for (const [name, value] of Object.entries(accentTokens(parseHex(CLASSIC)!.rgb, root.dataset.theme as 'light' | 'dark'))) root.style.setProperty(name, value);
+    for (const [name, value] of Object.entries(accentTokens(parseHex(baseAccent(root.dataset.theme === 'light' ? 'light' : 'dark'))!.rgb, root.dataset.theme as 'light' | 'dark'))) root.style.setProperty(name, value);
   }
 }
 refreshTheme();

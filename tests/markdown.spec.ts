@@ -231,9 +231,9 @@ test.describe('streamed markdown', () => {
     });
     await page.reload();
     await page.evaluate(reply => { (window as any).__markdownReply = reply; }, REPLY);
-    await page.getByRole('button', { name: 'New task ⌘ N', exact: true }).click();
+    await page.getByRole('button', { name: 'New thread ⌘ N', exact: true }).click();
     // Type only once the New task page has drawn; before that the prompt still belongs to the thread that was open.
-    await expect(page.getByRole('heading', { name: /^What should we build in/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /^What should .+ build\?$/ })).toBeVisible();
     const prompt = page.getByRole('textbox', { name: 'Message your coding agent', exact: true });
     await prompt.fill('Stream the Markdown reply');
     await prompt.press('Enter');

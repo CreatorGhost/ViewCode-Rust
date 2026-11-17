@@ -24,20 +24,6 @@ html[data-theme=dark] .sidebar .new-task-button>.icon{color:var(--focus)}
 .sidebar .sidebar-projects>.icon-button .icon{--icon-size:var(--icon-sm);--icon-stroke:var(--icon-stroke-sm)}
 
 .sidebar .navigation{padding:0 8px 16px}
-/* Filter: one quiet field under the scope bar; / focuses it, Esc clears it. */
-.sidebar-search{position:relative;display:flex;align-items:center;gap:6px;height:28px;margin:2px 8px 6px;padding:0 4px 0 9px;border-radius:var(--radius-sm);background:color-mix(in srgb,var(--text) 5%,transparent);color:var(--faint)}
-.sidebar-search:has(:focus-visible){background:var(--bg);box-shadow:inset 0 0 0 1px var(--focus);color:var(--muted)}
-.sidebar-search>.icon{flex:none;--icon-size:var(--icon-sm);--icon-stroke:var(--icon-stroke-sm)}
-.sidebar-search input{flex:1;min-width:0;height:100%;padding:0;border:0;border-radius:0;background:none;box-shadow:none;color:var(--text);font-size:var(--text-xs);outline:none}
-.sidebar-search input::placeholder{color:var(--faint)}
-.sidebar-search input::-webkit-search-cancel-button{display:none}
-.sidebar-search-clear{display:none;flex:none;width:20px;height:20px;border-radius:var(--radius-sm);color:var(--muted)}
-.sidebar-search.has-query>.sidebar-search-clear{display:grid;place-items:center}
-.sidebar-search-clear:hover{color:var(--text);background:color-mix(in srgb,var(--text) 8%,transparent)}
-.sidebar-search-clear .icon{--icon-size:var(--icon-xs);--icon-stroke:var(--icon-stroke-xs)}
-.sidebar .sidebar-no-match{padding:6px 9px;font-size:var(--text-xs);color:var(--muted)}
-/* Narrow windows (the rail) hide it, as they hide the task list. */
-@media(max-width:650px){.sidebar-search{display:none}}
 .sidebar .task-group+.task-group{margin-top:2px}
 .sidebar .pinned-group{margin-bottom:6px}
 .sidebar .group-heading{display:flex;align-items:center;gap:6px;height:24px;padding:0 9px;font-size:var(--text-2xs);font-weight:var(--weight-strong);color:var(--muted)}
@@ -141,15 +127,7 @@ html[data-theme=dark] .sidebar .new-task-button>.icon{color:var(--focus)}
 .sidebar.bots-view .navigation-frame{display:none}
 @media(max-width:650px){.sidebar .navigation-frame{display:none}}
 .sidebar .navigation>*{flex:none}
-.sidebar .navigation:has(>.completed-group){padding-bottom:0;border-bottom:var(--settled-height,0px) solid transparent}
-.sidebar .sidebar-section.completed-group{position:absolute;left:0;right:0;bottom:0;z-index:1;margin:0;padding:6px 8px 8px}
-/* Capped so Active and Finished keep about half the list in short windows. */
-.sidebar .completed-group>.task-list{max-height:clamp(84px,100vh - 600px,30vh);overflow-y:auto;overscroll-behavior:contain}
 .sidebar .section-heading>.section-count{margin-left:auto}
-.sidebar .section-toggle{width:100%;border-radius:var(--radius-sm);justify-content:flex-start;--press:1}
-.sidebar .section-toggle:hover{color:var(--text);background:var(--raised)}
-.sidebar .section-toggle>.icon{--icon-size:var(--icon-xs);--icon-stroke:var(--icon-stroke-xs);color:var(--muted);rotate:90deg;transition:rotate var(--spring-fast-duration) var(--spring-fast)}
-.sidebar .section-toggle[aria-expanded=false]>.icon{rotate:0deg}
 /* Active and Finished fold from a plain heading: a line runs from the label to the count, which sits at the
    row's right edge like every other heading; on hover or focus the chevron takes the count's place. */
 .sidebar .section-fold{position:relative;width:100%;--press:1}
@@ -189,7 +167,7 @@ html[data-theme] .workspace[data-wallpaper]>.sidebar .task-row:has(>.task-item.s
 .sidebar .task-check .icon{--icon-size:var(--icon-xs);--icon-stroke:var(--icon-stroke-xs);padding:1px;border-radius:50%;box-shadow:inset 0 0 0 1.25px currentColor;box-sizing:content-box}
 .sidebar .task-check.checked .icon{background:var(--accent);color:var(--on-accent);box-shadow:none}
 .sidebar .task-check.checked:hover .icon{background:var(--accent-hover)}
-.sidebar .completed-group .task-title,.sidebar .task-row[data-stage=completed] .task-title{color:var(--muted)}
+.sidebar .task-row[data-stage=completed] .task-title{color:var(--muted)}
 
 /* Its text lines up with the titles of the rows above it, in a folder or not. */
 .folder-more{display:block;width:100%;height:26px;padding:0 8px 0 9px;border-radius:var(--radius-sm);text-align:left;font-size:var(--text-xs);color:var(--muted);--press:1}

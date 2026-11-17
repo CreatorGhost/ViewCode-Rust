@@ -9,6 +9,7 @@ import { escape, icon, isImeKey } from './dom';
 import { isWindows } from './platform';
 import { infoMark } from './tooltip';
 import type { ProviderId } from './types';
+import { recordUsage } from './usage-peek';
 
 export interface Connection { id: string; provider: ProviderId; name: string; executable?: string | null; args: string[]; env: Record<string, string>; secretEnv: string[]; configDir?: string | null; revision: number; }
 export interface ConnectionSnapshot { connections: Connection[]; tasks: Record<string, string>; pools?: string[]; poolExcluded?: string[]; }
@@ -237,6 +238,8 @@ export function mountConnections(host: HTMLElement, harnesses: { id: ProviderId;
         result = await call<AgentUsage>('agent_usage', m.id ? { provider, refresh, connection: m.id } : { provider, refresh });
         if (!result || !Array.isArray(result.windows)) result = null;
       } catch { result = null; }
+      // The default login's result also feeds the rail's usage ring.
+      if (!m.id && result) recordUsage(provider as ProviderId, result);
       if (disposed || (usageGeneration[provider] ?? 0) !== generation) return;
       usage = { ...usage, [`${provider}/${m.id}`]: result };
       redrawPools();

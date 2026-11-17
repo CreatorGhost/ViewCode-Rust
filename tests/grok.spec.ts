@@ -73,8 +73,8 @@ test('Grok approval modes describe its permission modes, including read-only pla
 
 test('a Grok task takes documents and folders but explains that images are not accepted yet', async ({ page }) => {
   await newGrokTask(page);
-  await page.getByRole('button', { name: 'Attach files for context' }).click();
-  const menu = page.getByRole('dialog', { name: 'Attach', exact: true });
+  await page.getByRole('button', { name: 'Add files and tools' }).click();
+  const menu = page.getByRole('dialog', { name: 'Add files and tools', exact: true });
   await expect(menu.getByRole('menuitem')).toHaveText([/Attach files…PDFs, documents/, /Attach a folder…/, /Project files/, /Workflow recipes…/, /Schedule a wake-up…/]);
   await menu.getByRole('menuitem', { name: /Attach a folder…/ }).click();
   await expect(page.locator('#attachments .prompt-chip')).toHaveCount(1);

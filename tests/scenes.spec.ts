@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { enableScenes } from './scene-helper';
 
 /** Each thread shows its own scene (src/scenes/: `sceneFor` hashes the thread id), crossfading on a switch. */
 const layer = (page: Page) => page.locator('.thread-sky');
@@ -6,6 +7,7 @@ const sky = <T>(page: Page, key: string) => page.evaluate(name => (window as any
 const rows = (page: Page) => page.locator('#navigation .task-item[data-id]');
 
 async function open(page: Page, query = ''): Promise<void> {
+  await enableScenes(page);
   await page.goto(`/?sky=12:00${query}`);
   await expect(page.locator('#prompt')).toBeEnabled();
   await expect(page.locator('#transcript .message').first()).toBeVisible();
@@ -57,7 +59,7 @@ test('a switch crossfades, first paint does not, and no thread shows the sky', a
   expect(await sky<number>(page, 'fades')).toBe(before + 1);
   await expect(layer(page)).toHaveAttribute('data-thread-scene', b[1]);
   // The new-task page has no thread: the sky.
-  await page.getByRole('button', { name: /^New task/ }).click();
+  await page.getByRole('button', { name: /^New thread/ }).click();
   await expect(page.locator('.new-task-welcome h1')).toBeVisible();
   await expect(layer(page)).toHaveAttribute('data-thread-scene', 'sky');
 });
@@ -68,7 +70,7 @@ test('?scene= pins one scene for every thread and the new-task page', async ({ p
   const scenes = await scenesByThread(page);
   expect(new Set(scenes.values())).toEqual(new Set(['aurora']));
   expect(await sky<number>(page, 'fades')).toBe(0);
-  await page.getByRole('button', { name: /^New task/ }).click();
+  await page.getByRole('button', { name: /^New thread/ }).click();
   await expect(page.locator('.new-task-welcome h1')).toBeVisible();
   await expect(layer(page)).toHaveAttribute('data-thread-scene', 'aurora');
 });

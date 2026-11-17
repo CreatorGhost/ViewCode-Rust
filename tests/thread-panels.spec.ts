@@ -175,7 +175,7 @@ test.describe('thread panels', () => {
     await page.evaluate(() => (window as any).__panelEmit('browser-state', {url:'http://localhost:3000/next',title:'Next page',loading:false,canGoBack:true,canGoForward:false,picking:false}));
     await expect(address(page)).toHaveValue('http://localhost:3000/next');
     await page.locator('.new-task-button').click();
-    await expect(page.getByRole('heading', { name: /^What should we build in/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /^What should .+ build\?$/ })).toBeVisible();
     await expect(page.locator('#prompt')).not.toHaveAttribute('data-session-id', 'session-1');
     const newId = await page.locator('#prompt').getAttribute('data-session-id');
     expect(newId).not.toBe('session-1');

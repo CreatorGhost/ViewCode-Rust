@@ -8,6 +8,7 @@ import { providerLogo } from './provider-logos';
 import { infoMark } from './tooltip';
 import type { Provider, ProviderId } from './types';
 import { usageHeatmap } from './usage-heatmap';
+import { recordUsage } from './usage-peek';
 import { averageLimit, calendarFor, summarize, type Ledger, type PromptActivity, type Range, type Summary } from './usage-ledger';
 import { agentCostStrip, renderAgents, renderCostDetails, renderCostHero, renderLimitHero, type AgentLimit, type CostState } from './usage-overview';
 
@@ -259,6 +260,7 @@ export function mountAgentUsage(host: HTMLElement, providers: Provider[]): () =>
         } catch {
           result = { provider: provider.id, status: 'error', windows: [], checkedAt: Date.now(), stale: false, message: 'Could not read limits. Try Refresh.' };
         }
+        recordUsage(provider.id, result);
         if (disposed) return;
         limits.set(provider.id, result);
         renderCard(cards.get(provider.id)!, provider, result, await memberOf(provider.id, ''));

@@ -25,7 +25,9 @@ function place(): void {
   const rect = anchor.getBoundingClientRect();
   const width = bubble.offsetWidth, height = bubble.offsetHeight;
   const gap = 8, margin = 10;
-  const above = rect.top - height - gap >= margin;
+  // A control row under a text field (the composer's) asks for its tips below, so they never cover what is being typed.
+  const below = Boolean(anchor.closest('[data-tip-side="below"]')) && rect.bottom + gap + height <= innerHeight - margin;
+  const above = !below && rect.top - height - gap >= margin;
   const top = above ? rect.top - height - gap : rect.bottom + gap;
   const left = Math.max(margin, Math.min(rect.left + rect.width / 2 - width / 2, innerWidth - width - margin));
   bubble.style.top = `${Math.round(top)}px`;
