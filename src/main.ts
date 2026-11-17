@@ -5806,11 +5806,11 @@ async function showProjectMenu(anchor: HTMLElement, id: string, point?: { x: num
   const used = userProjects().filter(other => other.id !== id && other.color).map(other => other.color!);
   await showChoices(anchor, { title: `${project.name}: project actions`, point, actions: true, width: 280, items: [
     { id: 'new', label: 'New task', icon: 'plus' },
-    { id: 'review', label: 'Review changes…', icon: 'search' },
-    { id: 'review-skill', label: 'Review skill…', icon: 'spark' },
     ...(folders ? [{ id: 'collapse', label: 'Collapse other projects', icon: 'folder' }] : []),
     ...projectColorChoices(project.color, used),
     { id: 'reveal', label: isMac ? 'Reveal in Finder' : isWindows ? 'Show in Explorer' : 'Open folder', icon: 'folder', separator: true },
+    { id: 'review', label: 'Review changes…', icon: 'search' },
+    { id: 'review-skill', label: 'Review skill…', icon: 'spark' },
     { id: 'remove', label: 'Remove project…', icon: 'trash', danger: true, separator: true },
   ], onSelect: async choice => {
     const color = pickedProjectColor(choice);
