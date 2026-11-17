@@ -6,8 +6,9 @@ import { escape } from './dom';
 const icons = new Map<string, string | null>();
 const pending = new Set<string>();
 
-/** The project's icon markup: its own image when it has one, else a quiet default tile. */
-export function projectIconHtml(projectId: string, name: string, load: (projectId: string) => Promise<string | null>, loaded: () => void): string {
+/** The project's icon markup: its own image when it has one, else a quiet default tile. `tone` is the project's
+ * colour as attributes (`projectToneAttributes(color, '--badge-tone')`): the badge then wears it (sidebar-tree.css). */
+export function projectIconHtml(projectId: string, name: string, load: (projectId: string) => Promise<string | null>, loaded: () => void, tone = ''): string {
   const known = icons.get(projectId);
   if (known === undefined && !pending.has(projectId)) {
     pending.add(projectId);
@@ -16,9 +17,9 @@ export function projectIconHtml(projectId: string, name: string, load: (projectI
       .catch(() => { icons.set(projectId, null); })
       .finally(() => { pending.delete(projectId); loaded(); });
   }
-  if (known) return `<img class="task-app-icon" src="${escape(known)}" alt="" aria-hidden="true" draggable="false" decoding="sync">`;
+  if (known) return `<img class="task-app-icon" src="${escape(known)}" alt="" aria-hidden="true" draggable="false" decoding="sync"${tone}>`;
   const initial = (name.trim()[0] ?? '·').toUpperCase();
-  return `<span class="task-app-icon task-app-default" data-initial="${escape(initial)}" aria-hidden="true"></span>`;
+  return `<span class="task-app-icon task-app-default" data-initial="${escape(initial)}" aria-hidden="true"${tone}></span>`;
 }
 
 /** Forget a project's icon so it is looked up again (after it changes on disk). */

@@ -29,6 +29,9 @@ type ChoiceItem = {
    * showing `short` (← and → move along it, like ↑ and ↓). Search results list them as plain rows. */
   segment?: string;
   short?: string;
+  /** In a segment, draws the item as a colour swatch (a CSS colour, normally a token; '' is the empty "none" swatch)
+   * instead of text: the group becomes a wrapping grid of swatches under its name. */
+  swatch?: string;
 };
 type ChoiceMenuOptions = {
   anchor: HTMLElement;
@@ -145,8 +148,11 @@ export function openChoiceMenu(options: ChoiceMenuOptions): () => void {
     list.innerHTML = items.map((item, index) => {
       if (grouped && item.segment) {
         const first = items[index - 1]?.segment !== item.segment, last = items[index + 1]?.segment !== item.segment;
-        const start = first ? `${open ? '</div>' : ''}${index ? '<div class="choice-menu-separator" role="separator"></div>' : ''}<div class="choice-menu-segments" role="group" aria-label="${escape(item.segment)}"><span class="choice-menu-label" aria-hidden="true">${escape(item.segment)}</span><span class="choice-menu-segment-list">` : '';
+        const swatch = item.swatch !== undefined;
+        const start = first ? `${open ? '</div>' : ''}${index ? '<div class="choice-menu-separator" role="separator"></div>' : ''}<div class="choice-menu-segments${swatch ? ' choice-menu-swatches' : ''}" role="group" aria-label="${escape(item.segment)}"><span class="choice-menu-label" aria-hidden="true">${escape(item.segment)}</span><span class="choice-menu-segment-list">` : '';
         if (first) open = false;
+        // A swatch is named by its label (and a tooltip); the tone rides in a custom property, never a literal fill.
+        if (swatch) return `${start}<button type="button" class="choice-menu-option choice-menu-segment choice-menu-swatch${item.selected ? ' selected' : ''}" role="menuitemradio" aria-checked="${Boolean(item.selected)}" aria-label="${escape(item.label)}" title="${escape(item.label)}" data-choice-index="${index}" data-swatch="${escape(item.id)}" tabindex="-1" ${item.disabled ? 'disabled aria-disabled="true"' : ''}><span class="choice-menu-swatch-dot" aria-hidden="true"${item.swatch ? ` style="--swatch:${escape(item.swatch)}"` : ' data-empty'}></span></button>${last ? '</span></div>' : ''}`;
         return `${start}<button type="button" class="choice-menu-option choice-menu-segment${item.selected ? ' selected' : ''}" role="menuitemradio" aria-checked="${Boolean(item.selected)}" aria-label="${escape(item.label)}" data-choice-index="${index}" tabindex="-1" ${item.disabled ? 'disabled aria-disabled="true"' : ''}>${escape(item.short ?? item.label)}</button>${last ? '</span></div>' : ''}`;
       }
       const heading = grouped && item.heading ? `${open ? '</div>' : ''}${index ? '<div class="choice-menu-separator" role="separator"></div>' : ''}<div class="choice-menu-group" role="group" aria-label="${escape(item.heading)}"><div class="choice-menu-heading" aria-hidden="true">${escape(item.heading)}</div>` : '';
@@ -162,7 +168,7 @@ export function openChoiceMenu(options: ChoiceMenuOptions): () => void {
       return `${heading}${separator}<button type="button" class="choice-menu-option${item.danger ? ' is-danger' : ''}" role="${actions ? 'menuitem' : 'menuitemradio'}" ${actions ? item.selected ? 'aria-current="true"' : '' : `aria-checked="${Boolean(item.selected)}"`} aria-label="${escape(item.label)}" ${item.description ? `aria-describedby="${descriptionId}"` : ''} data-choice-index="${index}" tabindex="-1" ${item.disabled ? 'disabled aria-disabled="true"' : ''}>${item.provider ? providerLogo(item.provider) : item.leading ? item.leading : item.icon ? icon(item.icon) : ''}<span class="choice-menu-copy"><span class="choice-menu-label">${escape(item.label)}</span>${detail}</span>${item.description && !brief ? infoMark(item.description, undefined, true) : ''}${item.selected ? icon('check') : ''}</button>`;
     }).join('') + (open ? '</div>' : '');
     buttons = [...list.querySelectorAll<HTMLButtonElement>('.choice-menu-option')];
-    for (const group of list.querySelectorAll<HTMLElement>('.choice-menu-segment-list')) trackSegment(group, group.querySelector<HTMLElement>(':scope>.selected'));
+    for (const group of list.querySelectorAll<HTMLElement>('.choice-menu-segments:not(.choice-menu-swatches)>.choice-menu-segment-list')) trackSegment(group, group.querySelector<HTMLElement>(':scope>.selected'));
     const current = actions ? -1 : items.findIndex(item => item.selected && !item.disabled);
     markActive(current >= 0 ? current : items.findIndex(item => !item.disabled && !(actions && item.selected)));
     renderPending();
