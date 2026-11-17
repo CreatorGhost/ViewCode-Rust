@@ -219,7 +219,7 @@ pub(crate) fn dispatch(store: &Store, session_id: &str, name: &str, args: &Value
 fn tasks(store: &Store, project_id: &str, running: &HashSet<String>) -> Result<Vec<Value>> {
     let mut statement = store
         .db
-        .prepare("SELECT id,title FROM sessions WHERE project_id=?1 AND archived=0 AND draft=0 AND id NOT IN (SELECT session_id FROM architect_workers) ORDER BY updated_at DESC LIMIT 50")
+        .prepare("SELECT id,title FROM sessions WHERE project_id=?1 AND archived=0 AND draft=0 AND kind<>'side' AND id NOT IN (SELECT session_id FROM architect_workers) ORDER BY updated_at DESC LIMIT 50")
         .map_err(|e| e.to_string())?;
     let rows = statement.query_map([project_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).map_err(|e| e.to_string())?;
     rows.map(|row| row.map(|(id, title)| json!({"id": id, "title": title, "running": running.contains(&id)})).map_err(|e| e.to_string())).collect()

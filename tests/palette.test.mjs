@@ -285,3 +285,27 @@ test('every project colour has a tone that reads on the page, a card and every r
     }
   }
 });
+
+test('a project colour on a rail tile or row badge keeps its letter readable on its fill, on the default look and every recorded theme', async () => {
+  const { PROJECT_MARK, projectMark, projectTones } = await import('../src/palette-core.ts');
+  // What the marks sit on (the frame under the rail and sidebar) and the text ink mixed into the letter.
+  const bases = { light: [{ name: 'default', surface: toHex(mix(rgb('#eeefec'), rgb('#1f2322'), 0.04)), text: '#1f2322' }], dark: [{ name: 'default', surface: '#080808', text: '#ededed' }] };
+  for (const theme of themes) { const t = vsixTokens(theme).tokens; bases[theme.kind].push({ name: theme.name, surface: t['--sidebar'], text: t['--text'] }); }
+  for (const mode of ['light', 'dark']) for (const base of bases[mode]) for (const [token, tone] of Object.entries(projectTones(mode))) {
+    const at = `${mode} ${base.name} ${token}`;
+    const rest = projectMark(tone, base.surface, base.text);
+    assert.ok(ratio(rest.ink, rest.fill) >= 4.5, `${at}: letter ${rest.ink} on fill ${rest.fill}: ${ratio(rest.ink, rest.fill).toFixed(2)}`);
+    // Hovered and chosen, the letter is the text ink on a stronger fill.
+    for (const state of ['hover', 'pressed']) {
+      const fill = projectMark(tone, base.surface, base.text, PROJECT_MARK[state]).fill;
+      assert.ok(ratio(base.text, fill) >= 4.5, `${at} ${state}: text ${base.text} on fill ${fill}: ${ratio(base.text, fill).toFixed(2)}`);
+    }
+    // The fill alone must not be what tells a coloured tile from a neutral one: its hairline is the tone, 3:1 on the surface (the tone test above).
+  }
+  // The stylesheets draw with the numbers checked here.
+  const shell = readFileSync(new URL('../src/viewcode-shell.css', import.meta.url), 'utf8'), tree = readFileSync(new URL('../src/sidebar-tree.css', import.meta.url), 'utf8');
+  assert.ok(shell.includes(`.rail-tile[data-color]{--tile-fill:${PROJECT_MARK.fill}%;--tile-ink:${PROJECT_MARK.ink}%;`));
+  assert.ok(shell.includes(`.rail-tile[data-color]:hover{--tile-fill:${PROJECT_MARK.hover}%;color:var(--text)}`));
+  assert.ok(shell.includes(`.rail-tile[data-color][aria-pressed=true]{--tile-fill:${PROJECT_MARK.pressed}%;`));
+  assert.ok(tree.includes(`.task-app-icon[data-color]{--badge-fill:${PROJECT_MARK.fill}%;--badge-ink:${PROJECT_MARK.ink}%;`));
+});

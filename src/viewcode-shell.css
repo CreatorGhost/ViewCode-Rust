@@ -19,21 +19,22 @@ html[data-native-platform=macos] .project-rail{padding-top:calc(var(--titlebar-h
 html[data-native-platform=macos] .workspace:not(.sidebar-collapsed,.board-view,.github-view)>.sidebar>.brand{padding-left:max(14px,calc(var(--traffic-light-gutter) - var(--rail-width)))}
 
 .rail-projects{display:flex;flex-direction:column;align-items:center;gap:8px;flex:none}
-.rail-tile{--tile-tone:var(--ds-tone-remote);--press:.94;position:relative;flex:none;display:grid;place-items:center;width:36px;height:36px;padding:0;border-radius:10px;
-  background:color-mix(in srgb,var(--tile-tone) 18%,var(--ds-raised));color:color-mix(in srgb,var(--tile-tone) 60%,var(--text));box-shadow:inset 0 0 0 1px var(--ds-border);
+.rail-tile{--press:.94;position:relative;flex:none;display:grid;place-items:center;width:36px;height:36px;padding:0;border-radius:10px;
+  background:var(--ds-raised);color:var(--muted);box-shadow:inset 0 0 0 1px var(--ds-border);
   font-size:var(--ds-text-ui);font-weight:var(--weight-medium);line-height:1;
   transition:background-color var(--ds-ease-out) ease-out,color var(--ds-ease-out) ease-out,scale var(--spring-fast-duration,200ms) var(--spring-fast,ease-out)}
-.rail-tile[data-tint="0"]{--tile-tone:var(--ds-tone-remote)}
-.rail-tile[data-tint="1"]{--tile-tone:var(--ds-tone-plan)}
-.rail-tile[data-tint="2"]{--tile-tone:var(--ds-tone-edit)}
-.rail-tile[data-tint="3"]{--tile-tone:var(--ds-tone-full)}
-.rail-tile[data-tint="4"]{--tile-tone:var(--ds-tone-team)}
-.rail-tile[data-tint="5"]{--tile-tone:var(--ds-tone-saver)}
-.rail-tile[data-tint="6"]{--tile-tone:var(--ds-tone-worktree)}
-.rail-tile:hover{background:color-mix(in srgb,var(--tile-tone) 30%,var(--ds-raised));color:var(--text);transition-duration:var(--ds-ease-in),var(--ds-ease-in),var(--spring-fast-duration,200ms)}
+.rail-tile:hover{background:var(--ds-fill-hover);color:var(--text);transition-duration:var(--ds-ease-in),var(--ds-ease-in),var(--spring-fast-duration,200ms)}
+/* A project with a colour (project-colors.ts sets --tile-tone to its --project-<name> tone): a light fill of it, the
+ * letter in a deeper mix, a hairline of it. --tile-fill and --tile-ink are the mixes tests/palette.test.mjs holds to
+ * 4.5:1 on every default surface and recorded theme. A project without a colour stays neutral, as in ViewCode. */
+.rail-tile[data-color]{--tile-fill:12%;--tile-ink:40%;background:color-mix(in srgb,var(--tile-tone) var(--tile-fill),var(--frame,var(--sidebar)));color:color-mix(in srgb,var(--tile-tone) var(--tile-ink),var(--text));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--tile-tone) 45%,transparent)}
+.rail-tile[data-color]:hover{--tile-fill:15%;color:var(--text)}
 .rail-tile:not(:disabled):active{scale:var(--press)}
 /* The chosen project: a light fill and a bar at the rail's edge. The open thread's project keeps a short one. */
 .rail-tile[aria-pressed=true]{background:var(--ds-primary-bg);color:var(--ds-primary-fg);box-shadow:none}
+/* A chosen coloured project keeps its colour: a stronger fill, and the edge bar in the tone. */
+.rail-tile[data-color][aria-pressed=true]{--tile-fill:18%;background:color-mix(in srgb,var(--tile-tone) var(--tile-fill),var(--frame,var(--sidebar)));color:var(--text);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--tile-tone) 45%,transparent)}
+.rail-tile[data-color]::before{background:var(--tile-tone)}
 .rail-tile::before{content:"";position:absolute;left:-10px;top:50%;width:3px;height:18px;border-radius:0 2px 2px 0;background:var(--text);translate:0 -50%;opacity:0;transition:opacity var(--ds-ease-out) ease-out}
 .rail-tile[data-open]::before{height:8px}
 .rail-tile:is([aria-pressed=true],[data-open])::before{opacity:1;transition-duration:var(--ds-ease-in)}
@@ -106,6 +107,12 @@ html[data-theme] .workspace>.sidebar .sidebar-actions>.new-task-button{height:32
 html[data-theme] .workspace[data-wallpaper]>.sidebar .task-item.selected{background:var(--ds-fill-hover);box-shadow:none}
 .workspace>.sidebar .task-row:has(>.task-item.selected),
 html[data-theme] .workspace[data-wallpaper]>.sidebar .task-row:has(>.task-item.selected){--row-bg:color-mix(in srgb,var(--text) 9%,var(--frame,var(--sidebar)))}
+/* Colour the app by the active project (project-colors.ts puts data-project-tint and --project-accent on the workspace
+ * while the open thread's project has a colour and the setting is on): the open row takes a light fill of it. */
+.workspace[data-project-tint]>.sidebar .task-item.selected,
+html[data-theme] .workspace[data-project-tint][data-wallpaper]>.sidebar .task-item.selected{background:color-mix(in srgb,var(--project-accent) 14%,var(--ds-fill-hover))}
+.workspace[data-project-tint]>.sidebar .task-row:has(>.task-item.selected),
+html[data-theme] .workspace[data-project-tint][data-wallpaper]>.sidebar .task-row:has(>.task-item.selected){--row-bg:color-mix(in srgb,var(--project-accent) 14%,color-mix(in srgb,var(--text) 9%,var(--frame,var(--sidebar))))}
 /* The linked PR or issue is a chip: muted while open, red when it needs attention. */
 .workspace>.sidebar .task-link,.workspace>.sidebar .task-link.issue{padding:1px 5px;border-radius:5px;background:var(--ds-fill);color:var(--faint);font-size:var(--ds-text-chip)}
 .workspace>.sidebar .task-link[data-attention]{background:color-mix(in srgb,var(--ds-danger) 14%,transparent);color:var(--ds-danger)}
@@ -239,7 +246,9 @@ html[data-theme] .workspace .conversation-pane .composer-area form.composer.comp
 
 @media(prefers-contrast:more){
   .rail-tile{box-shadow:inset 0 0 0 1px var(--border)}
-  .rail-tile[aria-pressed=true]{background:var(--text);color:var(--bg)}
+  .rail-tile[data-color]{color:var(--text);box-shadow:inset 0 0 0 1px var(--tile-tone)}
+  .rail-tile[aria-pressed=true],.rail-tile[data-color][aria-pressed=true]{background:var(--text);color:var(--bg)}
+  .rail-tile[data-color]::before{background:var(--text)}
   .rail-ring-track{stroke:var(--border)}
   .rail-ring-dial{color:var(--text)}
   .workspace>.sidebar .task-item.selected,html[data-theme] .workspace[data-wallpaper]>.sidebar .task-item.selected{box-shadow:inset 0 0 0 1px var(--text)}
@@ -250,7 +259,10 @@ html[data-theme] .workspace .conversation-pane .composer-area form.composer.comp
   .rail-tile:focus-visible{outline:2px solid Highlight;outline-offset:2px}
   @media(min-width:651px){html .workspace:not(.board-view,.github-view) .action-dock{border:0;background:none}}
   .rail-tile[aria-pressed=true]{background:Highlight;color:HighlightText;forced-color-adjust:none}
-  .rail-tile::before{background:CanvasText}
+  .rail-tile::before,.rail-tile[data-color]::before{background:CanvasText}
+  .rail-tile[data-color]{background:ButtonFace;color:ButtonText;box-shadow:none}
+  .rail-tile[data-color][aria-pressed=true]{background:Highlight;color:HighlightText}
+  .workspace[data-project-tint]>.sidebar .task-item.selected{background:Canvas}
   .rail-ring-track{stroke:GrayText}
   .rail-ring-arc{stroke:CanvasText}
   .workspace>.sidebar .task-item.selected{outline:1px solid Highlight;outline-offset:-1px}

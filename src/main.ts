@@ -7,6 +7,7 @@ import { isParkedChoice, menuAnchor, mountComposerMore, parkedItems, pressParked
 import { railProjectsHtml, railUsageHtml } from './project-rail';
 import { USAGE_PEEK_EVENT, usageRingAgent } from './usage-peek';
 import { composerGlow, composerGlowEnabled, GLOW_EVENT, setComposerGlowEnabled } from './composer-glow';
+import { activeProjectTint, pickedProjectColor, projectColorChoices, projectTintEnabled, projectToneAttributes, setProjectTintEnabled, TINT_EVENT } from './project-colors';
 import { COLLAPSED_SECTIONS_KEY, COMPLETED_OPEN_KEY, UNREVIEWED_KEY, readOpen, sectionOf, sidebarSections, type HeldSection } from './sidebar-sections';
 import { PER_PROJECT, PROJECT_ORDER_KEY, SORT_KEY, compareManual, readProjectOrder, readSort, taskComparator, type SidebarSort } from './sidebar-sort';
 import './styles.css';
@@ -129,7 +130,7 @@ import type { ArchitectView } from './architect';
 import { syncOverlayContext } from './overlay-client';
 import { initializeAgentUpdates } from './agent-updates';
 import { isChatProject, NO_PROJECT } from './chats';
-import { CONTEXT_LIMIT, mainContext, parseBtw, readLinks, sideTitle, writeLink, type BtwLink } from './btw';
+import { FRESH, activeSideChat, isSideChat, parseBtw, sideChatsOf, sidePreferences } from './btw';
 import { BtwPanel } from './btw-panel';
 import './btw.css';
 import './chat-images.css';
@@ -580,6 +581,22 @@ bindThreadReordering($('#navigation'), {
   menu: (row, point) => run(showSidebarTaskMenu(row, point)),
   folderMenu: (heading, point) => run(showFolderMenu(heading, point)),
 });
+// A project tile's menu: a right-click opens it at the pointer, the menu key or ⇧F10 under the tile.
+{
+  const rail = $('#rail-projects');
+  const tileOf = (target: EventTarget | null) => (target as Element | null)?.closest<HTMLElement>('.rail-tile[data-action="rail-project"]') ?? null;
+  rail.addEventListener('contextmenu', event => {
+    const tile = tileOf(event.target); if (!tile) return;
+    event.preventDefault();
+    run(showProjectMenu(tile, tile.dataset.id!, event.clientX || event.clientY ? { x: event.clientX, y: event.clientY } : undefined));
+  });
+  rail.addEventListener('keydown', event => {
+    if (isImeKey(event) || !(event.key === 'ContextMenu' || event.shiftKey && event.key === 'F10')) return;
+    const tile = tileOf(event.target); if (!tile) return;
+    event.preventDefault();
+    run(showProjectMenu(tile, tile.dataset.id!));
+  });
+}
 /* Branch and worktree control, plus optional GitHub through the user's gh CLI. */
 const github = createGithub({
   call, modal, closeModal, notify,
@@ -1095,6 +1112,7 @@ const syncPaletteWallpaper = () => palette.setWallpaper(wallpapers.enabled ? wal
 wallpapers.subscribe(syncPaletteWallpaper); syncPaletteWallpaper();
 window.addEventListener(SCENES_EVENT, () => { sky.refresh(); tiles.refreshScenes(); syncPaletteWallpaper(); });
 window.addEventListener(GLOW_EVENT, () => renderComposer());
+window.addEventListener(TINT_EVENT, () => { renderRail(); renderComposer(); });
 window.addEventListener('pandacode-theme-change', () => palette.refresh());
 const disposeSidebarResizing = initializeSidebarResizing($('.workspace'), $('.sidebar'));
 const disposeInspectorResizing = initializeSidebarResizing($('.workspace'), $('#inspector'), true);
@@ -1181,7 +1199,8 @@ function activateProject(id: string, render = true): void {
 function setProjectFilter(id: string): void { state.projectFilter = id; localStorage.setItem('pandacode.projectFilter', id); }
 function saveCollapsedFolders(): void { try { localStorage.setItem('pandacode.collapsedFolders', JSON.stringify([...state.collapsedFolders])); } catch { /* per-launch preference only */ } }
 /** Tasks shown in lists: a New task draft appears only after its first prompt. */
-function listedSessions(): Session[] { return state.sessions.filter(task => !task.draft); }
+/** Tasks every list, board and search shows: no unsent drafts and no side chats (their thread's panel owns those). */
+function listedSessions(): Session[] { return state.sessions.filter(task => !task.draft && !isSideChat(task)); }
 /** Leaving an untouched draft discards it; one with typed text, attachments or a worktree stays hidden and New task reopens it. */
 function leaveDraft(nextId: string): void {
   if (nextId !== state.sessionId) voiceDictation.detach();
@@ -1529,7 +1548,14 @@ function renderRail(): void {
     host.innerHTML = html;
     if (key) host.querySelector<HTMLElement>(key)?.focus({ preventScroll: true });
   };
-  paint($('#rail-projects'), railProjectsHtml(userProjects(), state.projectFilter, session()?.projectId ?? state.projectId));
+  const openProject = session()?.projectId ?? state.projectId;
+  paint($('#rail-projects'), railProjectsHtml(userProjects(), state.projectFilter, openProject));
+  // "Colour the app by the active project": the open thread's project hands its tone to the open row (viewcode-shell.css).
+  const tint = activeProjectTint(state.projects.find(item => item.id === openProject)?.color), workspace = $('.workspace');
+  if ((workspace.dataset.projectTint ?? '') !== tint) {
+    if (tint) { workspace.dataset.projectTint = tint; workspace.style.setProperty('--project-accent', `var(--project-${tint})`); }
+    else { delete workspace.dataset.projectTint; workspace.style.removeProperty('--project-accent'); }
+  }
   // One ring: the open thread's agent, or with no thread open the agent closest to its limit.
   paint($('#rail-usage'), railUsageHtml(usageRingAgent(state.providers, session()?.provider), shortProvider));
 }
@@ -2153,9 +2179,9 @@ onReplyCollapse((shrink, timing) => {
   setTailRoom(from + room);
   if (timing) growTailRoom(from, tailRoom, timing);
 });
-/** A side thread's saved turns: the By the way panel keeps the plain chat rows, since its live turn has no card to hand off to. */
+/** A side chat's saved turns, drawn as the main transcript draws its own: one card per turn. */
 function turnRowsHtml(sessionId: string, visible: Message[], thread = shownThread()): string {
-  return groupTurns(visible).map(turn => turnHtml(turn, sessionId, true, thread)).join('');
+  return groupTurns(visible).map(turn => turnHtml(turn, sessionId, false, thread)).join('');
 }
 /** Formats saved answers, reusing nodes whose source is unchanged so nothing reparses. */
 function paintSavedMarkdown(root: HTMLElement, messages: Message[], previousMarkdown: Map<string, HTMLElement>, context: FileLinkContext, follow: () => void): void {
@@ -2444,12 +2470,12 @@ function paintStream(region: HTMLElement, sessionId: string, transcript: HTMLEle
   let parts = streamParts.get(region);
   if (region.dataset.sessionId !== sessionId || !parts || !region.contains(parts.output)) {
     const thinkingHtml = `<details class="thinking-block" hidden><summary class="tool-group-summary"><span class="tool-group-label">Thinking</span>${icon('chevron')}</summary><div class="tool-group-body thinking-text"></div></details>`;
-    const liveMessageHtml = `<article class="message agent-message live-message" hidden><div class="message-meta"><span class="message-avatar">${providerLogo(harness)}</span><strong>${escape(provider()?.name || 'Agent')}</strong><span class="streaming-label">Generating</span></div><div class="message-content streaming-content live-text"></div>${messageActionsHtml(state.sessionId, 'live', false)}</article>`;
+    const liveMessageHtml = `<article class="message agent-message live-message" hidden><div class="message-meta"><span class="message-avatar">${providerLogo(harness)}</span><strong>${escape(provider(harness)?.name || 'Agent')}</strong><span class="streaming-label">Generating</span></div><div class="message-content streaming-content live-text"></div>${messageActionsHtml(sessionId, 'live', false)}</article>`;
     const trace = (meta = '', before = '') => activityHtml(current.turnKey, '', `${before}<div class="live-tools"></div><div class="live-status"></div>`, { live: true, meta });
     const earlier = main ? current.earlier?.turn : undefined;
-    // Bot threads and the side panel keep their chat rows; every other turn streams into its card (turn-card.ts).
+    // Bot threads keep their chat rows; every other turn, the side chat's too, streams into its card (turn-card.ts).
     const switches = captureAccountSwitches(region);
-    region.innerHTML = (!main || botForThread() ? thinkingHtml + trace() + liveMessageHtml + '<div class="live-errors"></div>'
+    region.innerHTML = (main && botForThread() ? thinkingHtml + trace() + liveMessageHtml + '<div class="live-errors"></div>'
       : `<section class="turn-card is-live">${trace(timeHtml(Date.now() - workStart(current), true), earlier?.activity.length ? liveEarlierFold(earlier, current.earlier!.tools) : '')}${thinkingHtml}${replyHtml(SKELETON_HTML + liveMessageHtml, current.turnKey, '', true)}${earlier ? workerSlot(earlier, sessionId) + cardErrorsHtml(earlier, shownThread()) : ''}<div class="live-errors turn-card-errors"></div>${earlier ? cardFootHtml(sessionId, earlierChangeSets(earlier)) : ''}</section>${earlier ? notesHtml(earlier, shownThread()) : ''}`) + '<div class="live-account-switches"></div><div class="live-approvals"></div><div class="live-inputs"></div>';
     paintAccountSwitches(region.querySelector<HTMLElement>('.live-account-switches')!, current.accountSwitches);
     restoreAccountSwitches(region, switches);
@@ -2887,7 +2913,7 @@ function renderComposer(): void {
   // The composer redraws on every session change; the orchestration slot's nodes outlive it.
   const orchestrationSlot = document.querySelector('#machine-orchestration');
   // The glow is for an agent at work: a team held at its limit is active but idle.
-  const glow = composerGlow(running && !teamHeld(s.id), state.projects.find(item => item.id === s.projectId)?.color);
+  const glow = composerGlow(running && !teamHeld(s.id), activeProjectTint(state.projects.find(item => item.id === s.projectId)?.color));
   $('#composer-area').innerHTML = `<form id="composer" class="composer ${running ? 'composer-running' : ''} ${glow.className}"${glow.attributes} data-tip-side="below">${glow.ring}${wakeStrip(s.id)}${queuePanel({ entries: state.queues.get(s.id) ?? [], hold: state.queueHolds.get(s.id) ?? null, running, steerable: !team && !offline, sendable: !botProjects.has(s.projectId) && !offline, editingId: state.queueEditing || null, busy: state.queueBusy.has(s.id), steering: steeringQueued, notSteered, agentName: botForThread()?.name ?? provider(s.provider)?.name })}${s.remoteDevice ? '' : council.strip(s.id)}<div id="attachments" class="attachments">${attachmentBar(s)}</div>${running && !team ? `<div class="composer-steer-bar"><button type="button" class="icon-button composer-steer-edit" data-action="steer-edit" title="Edit draft" aria-label="Edit draft">${icon('edit')}</button><button type="button" class="steer-button" data-action="steer" title="Steer: send into the running turn (${shortcut('Enter')})" aria-label="Steer the running turn">${STEER_ICON}<span class="sr-only">Steer</span></button><button type="button" class="icon-button composer-steer-clear" data-action="steer-clear" title="Clear draft" aria-label="Clear draft">${icon('close')}</button></div>` : !team && finishingStreams.has(s.id) && !finishingStreams.get(s.id)!.error ? '<div class="composer-steer-bar" data-holding aria-hidden="true"></div>' : ''}<div class="composer-input"><textarea id="prompt" dir="auto" data-session-id="${escape(s.id)}" aria-label="Message your coding agent" placeholder="${running ? (team ? 'Queue a follow-up…' : 'Queue a follow-up · ⌘↩ steers now') : composerPlaceholder()}" aria-description="${escape(promptDescription())}" rows="2"></textarea><div class="composer-actions">${button('attach', 'Add files and tools', 'plus', '', 'type="button" id="composer-more" aria-haspopup="menu" aria-expanded="false"')}${voiceButtonHtml}<span class="composer-pill">${sendControl}</span></div></div><div class="composer-toolbar composer-tray"><div class="composer-tools">${modelTriggerHtml(s, modelLocked, true)}${modeTriggerHtml(s, running || togglingTeam, true)}</div><div class="composer-parked">${teamButton(s)}${tokenSaver.button(s.id)}${s.remoteDevice ? '' : council.button(s.id)}${contextBarHtml(s, newTaskView())}</div></div></form>`;
   // A refresh replaces the textarea and its native undo history with it (#277); the same thread's node goes back in carrying the refresh's attributes.
   if (oldPrompt && oldPrompt.dataset.sessionId === s.id) {
@@ -3515,7 +3541,7 @@ async function loadSessions(): Promise<void> {
   const details = detailResult.status === 'fulfilled' ? detailResult.value : null;
   // The open draft is not listed natively until its first prompt; keep it while it is still a draft.
   const listedIds = new Set(sessions.map(task => task.id));
-  const drafts = state.sessions.filter(task => task.draft && !listedIds.has(task.id)).map(task => task.id === selectedId && details ? details : task);
+  const drafts = state.sessions.filter(task => (task.draft || isSideChat(task)) && !listedIds.has(task.id)).map(task => task.id === selectedId && details ? details : task);
   state.sessions = [...sessions, ...drafts].filter(task => !deletedSessions.has(task.id));
   scheduleLimitResumes();
   if (details && state.sessionId === selectedId && state.generation === generation && fullTaskDescription === previousDetails) fullTaskDescription = { id: selectedId, value: details.taskDescription ?? '' };
@@ -3540,7 +3566,7 @@ function removeDeletedSessions(ids: string[]): void {
   terminalPanel.forget(ids);
   const removed = new Set(ids);
   for (const id of removed) {
-    deletedSessions.add(id); writeLink(localStorage, id, null);
+    deletedSessions.add(id); sidePicks.set(id, undefined); sideChatsLoaded.delete(id);
     const live = state.streams.get(id); if (live) clearAgentInputs(live);
     state.streams.delete(id); finishingStreams.delete(id); teams.delete(id);
     state.drafts.delete(id); state.browserAttachments.delete(id); state.moodboardAttachments.delete(id);
@@ -3955,7 +3981,7 @@ async function sendQueuedNow(s: Session, id: string): Promise<void> {
   sendFirst.set(s.id, { id, stopping: true, hold: state.queueHolds.get(s.id) });
   runEndings.set(s.id, 'stopped');
   const team = teams.get(s.id) && !s.remoteDevice;
-  await call(team ? 'architect_control' : 'stop_session', { sessionId: s.id, ...(team ? { action: 'stop' } : {}) });
+  await call(team ? 'architect_control' : isSideChat(s) ? 'side_chat_stop' : 'stop_session', { sessionId: s.id, ...(team ? { action: 'stop' } : {}) });
   notify('Stopping the run to send this message…');
 }
 /** Runs the optional turn-end project check (Settings → Agents) for a clean finish, queueing one repair on failure. */
@@ -4001,9 +4027,7 @@ async function deliverQueued(task: Session, entry: QueuedMessage): Promise<void>
   let sent: Message | undefined;
   try {
     const files = await Promise.all(paths.map(async path => { const content = await projectFileText(task, path); return `\n\nFile context: ${path}\n\`\`\`\n${content.slice(0, 32768)}\n\`\`\``; }));
-    // A side thread's queued follow-up carries the main thread's news like any /btw message.
-    const btw = btwMainOf(task.id), context = btw ? await btwContext(btw.main, btw.link) : undefined;
-    const content = entry.text + files.join('') + attachments.contextFor(promptItems) + (context?.text ?? '');
+    const content = entry.text + files.join('') + attachments.contextFor(promptItems);
     const sentAt = Date.now();
     task.lastPromptAt = sentAt; task.draft = false; pendingPromptActivity.set(task.id, sentAt);
     stream(task.id).lastPromptAt = sentAt; stream(task.id).startedAt = Math.min(stream(task.id).startedAt, sentAt); stream(task.id).status = 'Starting agent'; task.status = 'running'; task.taskStage = 'in_progress'; task.completedAt = null;
@@ -4011,8 +4035,6 @@ async function deliverQueued(task: Session, entry: QueuedMessage): Promise<void>
     if (task.id === state.sessionId) { state.messages = [...state.messages, sent]; render(); } else renderNavigation();
     btwPanel.sent(task.id, sent);
     await call(teams.get(task.id) && !task.remoteDevice ? 'architect_start' : 'send_message', { sessionId: task.id, text: content, imageIds: attachments.imageIds(promptItems), moodboardIds: [] });
-    // Recorded once sent, unless a New side thread replaced the link meanwhile.
-    if (btw && context && readLinks(localStorage)[btw.main.id]?.sideId === task.id) writeLink(localStorage, btw.main.id, { ...readLinks(localStorage)[btw.main.id], seenId: context.link.seenId });
   } catch (error) {
     // Put it back at the front and hold, so nothing is lost or sent out of order.
     pendingPromptActivity.delete(task.id); state.streams.delete(task.id); task.status = 'idle'; if (sent) dropMirrorPrompt(task.id, sent);
@@ -4296,10 +4318,11 @@ async function sendDraft(): Promise<void> {
     throw error;
   } finally { pendingPromptActivity.delete(s.id); configuringSessions.delete(s.id); finishSubmit(); }
 }
-// /btw side threads (docs/btw.md): a second task beside this one, fed what the main thread said.
+// Side chats (docs/side-chat.md): a real session beside this thread, opened by the backend with a snapshot of it.
 const btwPanel = new BtwPanel({
   call, report,
-  side: () => { const link = btwLink(state.sessionId), side = link && state.sessions.find(task => task.id === link.sideId); return side && { session: side, hiddenThrough: link.hiddenThrough ?? 0 }; },
+  side: () => sideChat(state.sessionId),
+  draftKey: () => btwDraftTask()?.id ?? '',
   running: sideId => isRunning(sideId),
   streaming: sideId => state.streams.has(sideId) || finishingStreams.has(sideId),
   waiting: sideId => {
@@ -4367,8 +4390,8 @@ const btwPanel = new BtwPanel({
   // A team takes messages between runs, as in the main composer.
   steer: (side, text) => teams.get(side.id) ? btwPanelQueue(side, text) : steerOrQueue(side, text),
   command: (side, text) => btwSlash(side, text, document.querySelector('.btw-panel .btw-toolbar')),
-  openFull: sideId => run(selectSession(sideId, true)),
-  newThread: () => { writeLink(localStorage, state.sessionId, null); renderInspector(); btwPanel.focus(); },
+  openFull: sideId => run(promoteSideChat(sideId)),
+  newThread: () => { sidePicks.set(state.sessionId, FRESH); renderInspector(); btwPanel.focus(); },
   close: () => { state.inspector = false; renderInspector(); },
   insertMain: text => {
     const prompt = document.querySelector<HTMLTextAreaElement>('#prompt'); if (!prompt) return;
@@ -4412,20 +4435,45 @@ async function applyBtwDraft(mainId: string, side: Session): Promise<Session> {
   if (draft.mode !== current.mode) { await step('permissions', () => call('update_session', { sessionId: current.id, mode: draft.mode })); current = { ...current, mode: draft.mode }; }
   return current;
 }
-/** The side thread the By the way panel shows for the open thread. */
-function btwSideTask(): Session | undefined { const link = btwLink(state.sessionId); return link && state.sessions.find(task => task.id === link.sideId); }
-/** The task a composer control acts on: the By the way panel's side thread inside that panel, else the open thread. */
+/** Which side chat each thread's panel last showed (a convenience; the backend owns the chats). */
+const sidePicks = sidePreferences(localStorage);
+/** Threads whose side chats were read from the backend this run. */
+const sideChatsLoaded = new Set<string>();
+let sideChatsRequest = 0;
+/** The side chat a thread's panel shows: the one last open there while it lives, else its newest. */
+function sideChat(mainId: string): Session | undefined { return activeSideChat(sideChatsOf(state.sessions, mainId), sidePicks.get(mainId)); }
+/** The side chat the panel shows for the open thread. */
+function btwSideTask(): Session | undefined { return sideChat(state.sessionId); }
+/** The task a composer control acts on: the panel's side chat inside that panel, else the open thread. */
 function actionTask(element: Element): Session | undefined { return element.closest('.btw-panel') ? btwSideTask() ?? btwDraftTask() : session(); }
-/** The side thread linked to a main thread. An archived or unlisted one is not reused (the next /btw
- *  starts fresh); the link is never erased here, since a session list can briefly lag a new side thread. */
-function btwLink(mainId: string): BtwLink | undefined {
-  const link = readLinks(localStorage)[mainId];
-  const side = link && state.sessions.find(task => task.id === link.sideId);
-  return side && !side.archived ? link : undefined;
+/** Reads a thread's side chats (the backend expires idle ones first) into `state.sessions`, which no list shows them from. */
+async function loadSideChats(mainId: string): Promise<void> {
+  if (!mainId || state.sessions.find(task => task.id === mainId)?.draft) return;
+  sideChatsLoaded.add(mainId);
+  const request = ++sideChatsRequest;
+  let rows: Session[];
+  try { rows = await call<Session[]>('side_chat_list', { parentId: mainId }); } catch (error) { sideChatsLoaded.delete(mainId); throw error; }
+  // A side chat opened meanwhile is newer than this answer.
+  if (request !== sideChatsRequest) return;
+  const known = new Map(state.sessions.map(task => [task.id, task]));
+  // A send in flight has marked its chat running before the backend has.
+  const fresh = rows.map(row => { const local = known.get(row.id); return local && state.streams.has(row.id) ? { ...row, status: local.status } : row; });
+  const gone = state.sessions.filter(task => isSideChat(task) && task.parentSessionId === mainId && !fresh.some(row => row.id === task.id));
+  for (const task of gone) { state.streams.delete(task.id); finishingStreams.delete(task.id); state.drafts.delete(task.id); state.queues.delete(task.id); }
+  state.sessions = [...state.sessions.filter(task => !(isSideChat(task) && task.parentSessionId === mainId)), ...fresh];
+  if (state.sessionId === mainId) btwPanel.refresh();
+}
+/** "Open as full thread": the side chat becomes an ordinary thread in the sidebar and opens. */
+async function promoteSideChat(sideId: string): Promise<void> {
+  const full = await call<Session>('side_chat_promote', { sessionId: sideId });
+  state.sessions = state.sessions.map(task => task.id === sideId ? { ...task, ...full } : task);
+  renderNavigation();
+  await selectSession(sideId, true);
 }
 function openBtw(): void { inspectorSuppressed = false; state.inspector = true; state.inspectorTab = 'btw'; state.selectedKind = ''; renderInspector(); }
 /** Why this task cannot open a side thread, if it cannot. */
 function btwRefusal(main: Session): string {
+  if (isSideChat(main)) return 'A side chat cannot open another side chat.';
   if (main.remoteDevice || main.cloud) return 'Side threads run on this computer, and this task runs elsewhere.';
   if (botProjects.has(main.projectId)) return 'Bot conversations cannot open side threads. Ask in a project task instead.';
   return '';
@@ -4450,39 +4498,25 @@ function btwFromComposer(): boolean {
   })));
   return true;
 }
-/** A new side thread in the main thread's project, harness, model and checkout. */
-async function createBtw(main: Session, prompt: string): Promise<BtwLink> {
-  let side: Session, link: BtwLink;
-  if (main.worktreePath) {
-    // Only a fork keeps a worktree checkout; its copied transcript stays hidden in the panel.
-    const page = await call<MessagePage>('get_messages', { sessionId: main.id });
-    const last = [...page.messages].reverse().find(m => m.id > 0 && (m.role === 'user' || m.role === 'assistant'));
-    if (!last) throw new Error('Send a first message in this task before asking on the side.');
-    side = await call<Session>('fork_session_at_message', { sessionId: main.id, messageId: last.id });
-    link = { sideId: side.id, seenId: last.id, hiddenThrough: 0 };
-  } else {
-    side = await call<Session>('create_session', { projectId: main.projectId, provider: main.provider, model: main.model, mode: main.mode });
-    link = { sideId: side.id, seenId: 0 };
-  }
-  const title = sideTitle(prompt);
+/** Opens a side chat in the backend: the thread's project, harness, model and checkout, with a snapshot of
+ *  what the thread has said so far as hidden history. The thread itself is only read. */
+async function createBtw(main: Session, prompt: string): Promise<Session> {
+  ++sideChatsRequest;
+  let side = await call<Session>('side_chat_open', { parentId: main.id, question: prompt });
   try {
-    if (main.worktreePath) {
-      const copied = await call<MessagePage>('get_messages', { sessionId: side.id });
-      link = { ...link, hiddenThrough: Math.max(0, ...copied.messages.map(m => m.id)) };
-    }
     side = await applyBtwDraft(main.id, side);
-    await call('update_session', { sessionId: side.id, title });
   } catch (error) {
-    // Never leave a half-set-up task behind; the panel keeps its picks and the /btw text comes back.
+    // Never leave a half-set-up chat behind; the panel keeps its picks and the /btw text comes back.
     const created = side;
     await call('delete_session', { sessionId: created.id }).catch(() => undefined);
-    state.sessions = state.sessions.filter(task => task.id !== created.id);
     throw error;
   }
   btwDrafts.delete(main.id);
-  state.sessions = [{ ...side, title }, ...state.sessions.filter(task => task.id !== side.id)];
-  writeLink(localStorage, main.id, link); renderNavigation();
-  return link;
+  // The question typed before the chat existed was kept under the stand-in's id.
+  state.drafts.delete(BTW_DRAFT + main.id);
+  state.sessions = [...state.sessions.filter(task => task.id !== side.id), side];
+  sidePicks.set(main.id, side.id);
+  return side;
 }
 /** One create-or-send at a time per main thread, so two quick /btw prompts share one side thread. */
 const btwSending = new Map<string, Promise<void>>();
@@ -4495,49 +4529,21 @@ function sendBtw(text: string): Promise<void> {
   void next.catch(() => undefined).finally(() => { if (btwSending.get(main.id) === next) btwSending.delete(main.id); btwPanel.refresh(); });
   return next;
 }
-/** Sends to the side thread with the main thread's news since its last message. */
+/** Sends to the thread's side chat, opening one first if it has none. Nothing is written to the thread. */
 async function deliverBtw(main: Session, text: string): Promise<void> {
-  const link = btwLink(main.id) ?? await createBtw(main, text);
-  const side = state.sessions.find(task => task.id === link.sideId)!;
+  const side = sideChat(main.id) ?? await createBtw(main, text);
   if (isRunning(side.id)) throw new Error('The side thread is still answering. Send this when it finishes.');
   // Running from here on: no second send can pass the check above, and a failure below tears down only this run.
   stream(side.id).status = 'Starting agent'; side.status = 'running';
   const showing = () => state.sessionId === main.id && state.inspectorTab === 'btw';
-  if (showing()) renderInspector();
-  let sentLink: BtwLink | undefined;
+  if (showing()) { renderInspector(); btwPanel.sent(side.id, sentPrompt(side, text, Date.now())); }
   try {
-    const context = await btwContext(main, link);
-    const content = text + context.text;
-    sentLink = context.link;
-    writeLink(localStorage, main.id, sentLink);
-    if (showing()) btwPanel.sent(side.id, sentPrompt(side, content, Date.now()));
-    await call('send_message', { sessionId: side.id, text: content, imageIds: [], moodboardIds: [] });
+    await call('side_chat_send', { sessionId: side.id, text });
   } catch (error) {
     state.streams.delete(side.id); side.status = 'idle';
-    // Roll back only our own write; a New side thread chosen meanwhile stays.
-    const current = readLinks(localStorage)[main.id];
-    if (sentLink && current?.sideId === sentLink.sideId && current.seenId === sentLink.seenId) writeLink(localStorage, main.id, link);
     if (showing()) { renderInspector(); void btwPanel.reload(); }
     throw error;
   }
-}
-/** The `Main thread context:` block for the side thread's next message, and the link that records it as seen. */
-async function btwContext(main: Session, link: BtwLink): Promise<{ text: string; link: BtwLink }> {
-  const page = await call<MessagePage>('get_messages', { sessionId: main.id });
-  const strip = (content: string) => { const index = content.search(CONTEXT_BOUNDARY); return index < 0 ? content : content.slice(0, index); };
-  // Only the newest page came back: older unseen history is reported as left out.
-  const gap = page.hasOlder && (page.messages[0]?.id ?? 0) > link.seenId;
-  const context = mainContext({ title: main.title, status: isRunning(main.id) ? 'running' : main.status },
-    page.messages.map(m => ({ ...m, content: m.role === 'user' ? strip(m.content) : m.content })), link.seenId, state.streams.get(main.id)?.text ?? '', CONTEXT_LIMIT, gap);
-  return { text: context.text, link: { ...link, seenId: context.seenId } };
-}
-/** The main thread a side thread was opened beside, with its link. */
-function btwMainOf(sideId: string): { main: Session; link: BtwLink } | undefined {
-  for (const [mainId, link] of Object.entries(readLinks(localStorage))) {
-    const main = link.sideId === sideId ? state.sessions.find(task => task.id === mainId) : undefined;
-    if (main) return { main, link };
-  }
-  return undefined;
 }
 async function finishResponse(sessionId: string, finishing: FinishingStream): Promise<void> {
   const current = () => finishingStreams.get(sessionId) === finishing && !state.streams.has(sessionId);
@@ -4702,7 +4708,7 @@ function onAgent(event: AgentEvent): void {
     finishingStreams.set(event.sessionId, finishing);
     state.streams.delete(event.sessionId); if (s) s.status = 'idle';
     // A turn that finished out of view (another thread, the board, another app) shows unread until opened.
-    if (s && (s.id !== state.sessionId || !transcriptVisible() || !document.hasFocus())) { (unreviewed ??= readCollapsed(localStorage, UNREVIEWED_KEY)).add(s.id); saveUnreviewed(); }
+    if (s && !isSideChat(s) && (s.id !== state.sessionId || !transcriptVisible() || !document.hasFocus())) { (unreviewed ??= readCollapsed(localStorage, UNREVIEWED_KEY)).add(s.id); saveUnreviewed(); }
     updateWorkTimer();
     // A failed or stopped run holds the queue; a clean finish sends the next queued message.
     const ending = runEndings.get(event.sessionId); runEndings.delete(event.sessionId);
@@ -5158,7 +5164,11 @@ function renderInspector(): void {
   const target = $('#inspector-content');
   if (state.inspectorTab === 'pull' && pullTask && visible) { pullView.show(target, pullTask); return; }
   pullView.dispose();
-  if (state.inspectorTab === 'btw' && visible) { btwPanel.show(target); return; }
+  if (state.inspectorTab === 'btw' && visible) {
+    // The thread's side chats are re-read whenever the panel opens, so one that expired meanwhile is gone.
+    if (btwPanel.show(target) || !sideChatsLoaded.has(state.sessionId)) loadSideChats(state.sessionId).catch(report);
+    return;
+  }
   btwPanel.dispose();
   if (!project()) { target.innerHTML = '<div class="inspector-empty">Open a project to browse files and review changes.</div>'; return; }
   const remote = session()?.remoteDevice;
@@ -5770,22 +5780,46 @@ async function showSidebarTaskMenu(anchor: HTMLElement, point?: { x: number; y: 
 }
 /** A folder's menu (… or right-click): new task, collapse the others, reveal, remove. */
 async function showFolderMenu(heading: HTMLElement, point?: { x: number; y: number }): Promise<void> {
-  const id = heading.dataset.project!, project = state.projects.find(p => p.id === id);
+  await showProjectMenu(heading.parentElement?.querySelector<HTMLElement>('.folder-actions') ?? heading, heading.dataset.project!, point, true);
+}
+/** A project's actions, from its rail tile (right-click, the menu key or ⇧F10) or its folder heading: a new task, its
+ * colour as a grid of swatches, its folder, and removal. `folders` adds what only a folder list can do. */
+async function showProjectMenu(anchor: HTMLElement, id: string, point?: { x: number; y: number }, folders = false): Promise<void> {
+  const project = state.projects.find(p => p.id === id);
   if (!project) return;
-  const anchor = heading.parentElement?.querySelector<HTMLElement>('.folder-actions') ?? heading;
-  await showChoices(anchor, { title: 'Project actions', point, actions: true, width: 280, items: [
+  const used = userProjects().filter(other => other.id !== id && other.color).map(other => other.color!);
+  await showChoices(anchor, { title: `${project.name}: project actions`, point, actions: true, width: 280, items: [
     { id: 'new', label: 'New task', icon: 'plus' },
-    { id: 'collapse', label: 'Collapse other projects', icon: 'folder' },
+    ...(folders ? [{ id: 'collapse', label: 'Collapse other projects', icon: 'folder' }] : []),
+    ...projectColorChoices(project.color, used),
     { id: 'reveal', label: isMac ? 'Reveal in Finder' : isWindows ? 'Show in Explorer' : 'Open folder', icon: 'folder', separator: true },
     { id: 'remove', label: 'Remove project…', icon: 'trash', danger: true, separator: true },
   ], onSelect: async choice => {
+    const color = pickedProjectColor(choice);
+    // The rail keeps a tile whose menu is open, so the menu closes before the colour is applied and the rail redrawn.
     closeChoiceMenu();
+    if (color !== undefined) { await setProjectColor(id, color); return; }
     if (choice === 'new') { await createTask(id); return; }
     if (choice === 'reveal') { await call('reveal_path', { path: project.path }); return; }
     if (choice === 'remove') { showRemoveProject(project); return; }
     for (const other of userProjects()) if (other.id !== id) state.collapsedFolders.add(other.id);
     state.collapsedFolders.delete(id); saveCollapsedFolders(); renderNavigation();
   } });
+}
+/** Saves a project's colour (null clears it). Native answers with the project and a `project-changed` event; both land in `projectChanged`. */
+async function setProjectColor(id: string, color: Project['color']): Promise<void> {
+  projectChanged(await call<Project>('set_project_color', { projectId: id, color: color ?? null }));
+}
+/** A project's stored fields changed (its colour, here or in another window): the rail, the rows' badges and the glow follow without a reload. */
+function projectChanged(project: Project | null | undefined): void {
+  if (!project?.id) return;
+  const index = state.projects.findIndex(item => item.id === project.id);
+  if (index < 0) return;
+  const known = state.projects[index];
+  if ((known.color ?? null) === (project.color ?? null) && known.name === project.name && known.path === project.path) return;
+  state.projects[index] = { ...known, ...project, addedOrder: project.addedOrder ?? known.addedOrder };
+  renderNavigation();
+  if (session()) renderComposer();
 }
 function showRemoveProject(project: Project): void {
   modal(`Remove ${project.name}?`, `<form id="remove-project-form" data-project-id="${escape(project.id)}"><p class="dialog-description">Its tasks are removed from PandaCode. The folder stays on disk.</p><div class="dialog-footer"><button type="button" class="secondary-button" data-action="close-dialog">Cancel</button><button class="primary-button danger">Remove project</button></div></form>`, 'compact-dialog');
@@ -5842,7 +5876,7 @@ function sidebarShortcut(event: KeyboardEvent): boolean {
 }
 /** A project's favicon or app icon; the sidebar redraws once a new one has loaded. */
 function projectAppIcon(projectId: string, name: string): string {
-  return projectIconHtml(projectId, name, id => call<string | null>('project_icon', { projectId: id }), () => renderNavigation());
+  return projectIconHtml(projectId, name, id => call<string | null>('project_icon', { projectId: id }), () => renderNavigation(), projectToneAttributes(state.projects.find(item => item.id === projectId)?.color, '--badge-tone'));
 }
 async function showProjectFilter(anchor: HTMLElement): Promise<void> {
   await showChoices(anchor, { title: 'Filter projects', searchPlaceholder: 'Search projects…', width: 300, items: [
@@ -5948,7 +5982,7 @@ async function showSettings(section?: import('./settings').SettingsSection, inte
     if (host.hidden) return;
     settingsView = mountSettings(host, {
       providers: state.providers, defaultProvider: state.defaultProvider, defaultModel: defaultModelLabel(), activityExpanded: activityExpanded(),
-      compact: document.body.classList.contains('compact'), wallpapers: wallpapers.preferences.enabled, scenes: scenesEnabled(), composerGlow: composerGlowEnabled(),
+      compact: document.body.classList.contains('compact'), wallpapers: wallpapers.preferences.enabled, scenes: scenesEnabled(), composerGlow: composerGlowEnabled(), projectTint: projectTintEnabled(),
       theme: currentTheme(), preview, section, discover: discoverSettingsProviders,
       projects: { list: userProjects, remove: removeProject },
       turnChecks: turnChecksEnabled(),
@@ -6401,7 +6435,7 @@ async function stopTask(s: Session): Promise<void> {
   const current = state.streams.get(s.id);
   if (current) { current.status = 'Stopping agent'; current.revision++; clearAgentInputs(current); renderStream(); btwPanel.event(s.id, 'status'); }
   const team = teams.get(s.id) && !s.remoteDevice;
-  await call(team ? 'architect_control' : 'stop_session', { sessionId: s.id, ...(team ? { action: 'stop' } : {}) });
+  await call(team ? 'architect_control' : isSideChat(s) ? 'side_chat_stop' : 'stop_session', { sessionId: s.id, ...(team ? { action: 'stop' } : {}) });
 }
 /* Cloud agents (docs/cloud-agents.md): connected cloud providers are "Run on" targets too,
  * whether or not Connect is signed in. A cloud task is an ordinary session with `cloud`. */
@@ -7240,6 +7274,7 @@ document.addEventListener('change', event => {
   const input = event.target as HTMLInputElement;
   if (input.id === 'live-scenes') setScenesEnabled(input.checked);
   if (input.id === 'composer-glow') setComposerGlowEnabled(input.checked);
+  if (input.id === 'project-tint') setProjectTintEnabled(input.checked);
   if (input.id === 'daily-wallpapers') { wallpapers.setEnabled(input.checked); document.querySelector('.settings-wallpapers')?.toggleAttribute('hidden', !input.checked); }
   if (input.id === 'turn-checks') turnChecksSetEnabled(input.checked);
   // A switch toggles natively (the data-action click path cancels the default), then saves.
@@ -7331,6 +7366,9 @@ async function boot(): Promise<void> {
   window.addEventListener(TEAM_MODE_EVENT, () => { if (session()) renderComposer(); });
   await subscribe('sessions-deleted', event => removeDeletedSessions(event.sessionIds));
   await subscribe('sessions-changed', () => run(reloadSessions()));
+  await subscribe('project-changed', projectChanged);
+  // A side chat expired, was closed or became a full thread: its thread's panel re-reads its list.
+  await subscribe('side-chats-changed', event => { if (event.parentId && sideChatsLoaded.has(event.parentId)) run(loadSideChats(event.parentId)); });
   await subscribe('mirror-messages' as 'queue-changed', (event: { sessionId: string; older?: boolean }) => run(mirrorMessages(event)));
   // An agent booted or asked to show a simulator: bring the panel forward.
   // An agent started or asked to show a VM: bring the panel forward.

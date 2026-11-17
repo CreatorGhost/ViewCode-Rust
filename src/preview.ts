@@ -22,6 +22,7 @@ import { createPreviewSkills } from './preview-skills';
 import { createPreviewSkillManager } from './preview-skill-manager';
 import { previewCapabilities } from './preview-capabilities';
 import { recipesCommand } from './preview-recipes';
+import { PROJECT_COLORS } from './palette-core';
 import { openCodePreviewKey, openCodePreviewModels, previewOpenCodeChoices, previewOpenCodeSelection } from './preview-opencode';
 const turnChanges = createPreviewTurnChanges();
 let quickConnect: ReturnType<typeof import('./preview-quick-connect').createPreviewQuickConnect> | undefined;
@@ -32,8 +33,17 @@ const previewWorkspaceFiles = ['index.html', '.gitignore', 'README.md', 'package
 const sampleTestOutput = 'PASS src/components/search.test.ts\n  ✓ filters results as the query changes\n  ✓ preserves keyboard selection\n\nTests: 12 passed, 12 total\nTime: 0.8s\nSample output — no command was executed.';
 function encodeTool(tool: ToolActivity): string { return JSON.stringify({ type: 'tool_activity', version: 1, ...tool }); }
 let projects: Project[] = [{ id: 'project-1', name: 'orbit', path: '/Users/you/Projects/orbit' }, { id: 'project-2', name: 'pandacode', path: '/Users/you/Projects/pandacode' }];
-// ?projectcolor=violet gives the first project a colour (one of `ProjectColor`), as `set_project_color` would.
-{ const color = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('projectcolor') : null; if (color) projects[0] = { ...projects[0], color: color as Project['color'] }; }
+// Colours set through `set_project_color` stay with the browser tab, as native keeps them in the database: a reload shows
+// them again. ?projectcolor=violet gives the first project a colour without the menu (screenshots).
+const PROJECT_COLORS_KEY = 'pandacode.preview.projectColors';
+function saveProjectColors(): void { try { sessionStorage.setItem(PROJECT_COLORS_KEY, JSON.stringify(Object.fromEntries(projects.filter(p => p.color).map(p => [p.id, p.color])))); } catch { /* per page only */ } }
+if (typeof location !== 'undefined') {
+  let saved: Record<string, string> = {};
+  try { saved = JSON.parse(sessionStorage.getItem(PROJECT_COLORS_KEY) ?? '{}') ?? {}; } catch { /* none saved */ }
+  const first = new URLSearchParams(location.search).get('projectcolor');
+  if (first) saved = { ...saved, [projects[0].id]: first };
+  projects = projects.map(p => PROJECT_COLORS.includes(saved[p.id]) ? { ...p, color: saved[p.id] as Project['color'] } : p);
+}
 let sessions: Session[] = [
   { id: 'session-1', projectId: 'project-1', title: 'Make search feel instant', provider: 'claude', model: 'sonnet', mode: 'ask', status: 'idle', createdAt: now - 420000, updatedAt: now, archived: false, worktreePath: null, resumeId: 'preview-session', lastResponseAt: now - 300000 },
   { id: 'session-2', projectId: 'project-1', title: 'Refine the navigation', provider: 'codex', model: '', mode: 'ask', status: 'idle', createdAt: now - 8200000, updatedAt: now - 8000000, archived: false, worktreePath: null, resumeId: null, lastResponseAt: null },
@@ -615,6 +625,8 @@ function emit(name: string, event: unknown) { listeners.get(name)?.forEach(fn =>
 previewProgress.onChange = sessionId => emit('progress-changed', { sessionId });
 // Tests: deliver a native event, e.g. a background refresh of the open channel.
 (window as any).__previewEmit = emit;
+// Tests: a project's colour changes as it would from another window: stored, then `project-changed`.
+(window as any).__previewProjectColor = (projectId: string, color: string | null) => invoke('set_project_color', { projectId, color });
 // Tests: how many listeners an event has now, e.g. to check a view stops listening when it should.
 (window as any).__previewListenerCount = (name: string) => listeners.get(name)?.size ?? 0;
 export function listen(name: string, callback: (event: any) => void): () => void { if (!listeners.has(name)) listeners.set(name, new Set()); listeners.get(name)!.add(callback); return () => listeners.get(name)?.delete(callback); }
@@ -628,6 +640,23 @@ const MESSAGE_LIMIT = 16 * 1024 * 1024;
 /** tests: a live `subagent` event for any task (`__previewSubagent('session-1', { id, name, status, … })`). */
 (window as any).__previewSubagent = (sessionId: string, data: Record<string, unknown>) => agent({ sessionId, kind: 'subagent', text: '', data: { parentId: null, prompt: '', response: '', tools: [], startedAt: now, updatedAt: Date.now(), ...data } } as unknown as AgentEvent);
 function session(value: unknown): Session { const result = sessions.find(s => s.id === value); if (!result) throw new Error('Task not found'); return result; }
+const SIDE_CHAT_IDLE_MS = 24 * 60 * 60 * 1000;
+/** What each side chat's first turn would be told of its thread; `__sideChatSnapshot(sideId)` reads it in tests. */
+const sideChatSnapshots: Record<string, string> = {};
+function sideChatSession(value: unknown): Session { const side = session(value); if (side.kind !== 'side') throw new Error('This is not a side chat.'); return side; }
+/** The thread's newest saved user and assistant messages (60 rows, 24,000 characters, 8,000 a message), as the backend copies them. */
+function sideChatSnapshot(parentId: string): string {
+  const kept: string[] = []; let remaining = 24_000;
+  for (const message of (messages[parentId] ?? []).filter(m => (m.role === 'user' || m.role === 'assistant') && m.content).slice(-60).reverse()) {
+    if (remaining <= 0) break;
+    const text = message.content.slice(-Math.min(remaining, 8_000)); remaining -= text.length;
+    kept.unshift(`${message.role === 'user' ? 'User' : 'Agent'}: ${text}`);
+  }
+  return kept.join('\n\n');
+}
+(window as any).__sideChatSnapshot = (sideId: string) => sideChatSnapshots[sideId];
+/** tests: ends a held side chat run (`__sideChatHold`) with its saved reply. */
+(window as any).__sideChatFinish = (sessionId: string, text: string) => finish(sessionId, text);
 function assertIdle(s: Session): void {
   if (s.status === 'running' || s.status === 'waiting' || timers.has(s.id)) throw new Error('Stop the agent before changing this task.');
 }
@@ -1832,6 +1861,51 @@ export async function invoke<T>(command: string, args: Record<string, any>): Pro
       if (!message) throw new Error('This saved message does not belong to the source task.');
       result = message.content; break;
     }
+    // Side chats (docs/side-chat.md), as `side_chat.rs` keeps them: a session of kind `side` under its thread,
+    // absent from `list_sessions`, opened with a snapshot of the thread and archived after 24 hours idle.
+    case 'side_chat_open': {
+      const parent = session(args.parentId);
+      if (parent.kind === 'side') throw new Error('A side chat cannot open another side chat.');
+      if (parent.remoteDevice || parent.cloud) throw new Error('Side chats run on this computer, and this task runs elsewhere.');
+      const created = session((await invoke<Session>('create_session', { projectId: parent.projectId, provider: parent.provider, model: parent.model, mode: parent.mode })).id);
+      const line = String(args.question ?? '').split(/\s+/).filter(Boolean).join(' ').replace(/^[*_`]+|[*_`]+$/g, '');
+      Object.assign(created, { kind: 'side', parentSessionId: parent.id, title: !line ? 'Side chat' : [...line].length > 48 ? [...line].slice(0, 47).join('') + '…' : line, worktreePath: parent.worktreePath, worktreeBranch: parent.worktreeBranch ?? null, reasoningEffort: parent.reasoningEffort ?? null, taskStage: 'in_progress' });
+      sideChatSnapshots[created.id] = sideChatSnapshot(parent.id);
+      result = structuredClone(created); break;
+    }
+    case 'side_chat_list': {
+      const now = Date.now() + ((window as any).__sideChatClock ?? 0);
+      for (const side of sessions) {
+        const idleSince = Math.max(side.updatedAt, side.lastPromptAt ?? 0, side.lastResponseAt ?? 0);
+        if (side.kind !== 'side' || side.archived || side.status !== 'idle' || timers.has(side.id) || now - idleSince < SIDE_CHAT_IDLE_MS) continue;
+        side.archived = true; emit('side-chats-changed', { parentId: side.parentSessionId ?? null, sessionId: side.id, reason: 'expired' });
+      }
+      result = structuredClone(sessions.filter(side => side.kind === 'side' && side.parentSessionId === args.parentId && !side.archived).sort((a, b) => b.updatedAt - a.updatedAt)); break;
+    }
+    case 'side_chat_send': {
+      const side = sideChatSession(args.sessionId), w = window as any;
+      if (side.archived) throw new Error('This side chat has expired. Start a new one.');
+      // `__sideChatHold`: the question is saved and the run stays open, so a test streams the reply itself
+      // (`__previewEmit('agent-event', …)`) and ends it with `__sideChatFinish(sessionId, text)`.
+      if (w.__sideChatHold) { assertIdle(side); side.status = 'running'; side.updatedAt = side.lastPromptAt = Date.now(); messages[side.id].push({ id: ++id, sessionId: side.id, role: 'user', content: String(args.text), createdAt: Date.now() }); break; }
+      await invoke('send_message', { sessionId: side.id, text: args.text }); break;
+    }
+    case 'side_chat_stop': {
+      const side = sideChatSession(args.sessionId);
+      if (timers.has(side.id) || !(window as any).__sideChatHold) { await invoke('stop_session', { sessionId: side.id }); break; }
+      side.status = 'idle'; agent({ sessionId: side.id, kind: 'done', text: 'Stopped' }); break;
+    }
+    case 'side_chat_close': {
+      const side = sideChatSession(args.sessionId);
+      if (side.status !== 'idle') throw new Error('Stop the side chat before closing it.');
+      side.archived = true; emit('side-chats-changed', { parentId: side.parentSessionId ?? null, sessionId: side.id, reason: 'closed' }); break;
+    }
+    case 'side_chat_promote': {
+      const side = sideChatSession(args.sessionId);
+      side.kind = 'thread'; side.archived = false; side.updatedAt = Date.now();
+      emit('side-chats-changed', { parentId: side.parentSessionId ?? null, sessionId: side.id, reason: 'promoted' }); emit('sessions-changed', undefined);
+      result = structuredClone(side); break;
+    }
     case 'fork_session_at_message': {
       const source = session(args.sessionId), history = messages[source.id] ?? [];
       const boundary = history.findIndex(message => message.id === args.messageId);
@@ -1891,7 +1965,7 @@ export async function invoke<T>(command: string, args: Record<string, any>): Pro
     case 'browser_capture': result = { id: crypto.randomUUID(), name: 'Sample screenshot', path: '/sample/browser-capture.png', mimeType: 'image/png', url: browserState.url, title: browserState.title, width: 1280, height: 800, dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==' }; break;
     // Like the native rowid: projects are pushed in the order they were added.
     case 'list_projects': result = projects.map((project, index) => ({ ...project, addedOrder: index + 1 })); break;
-    case 'list_sessions': sessions.forEach(settleDraft); result = [...sessions].filter(task => !task.draft).sort(compareThreadOrder).map(taskSummary); break;
+    case 'list_sessions': sessions.forEach(settleDraft); result = [...sessions].filter(task => !task.draft && task.kind !== 'side').sort(compareThreadOrder).map(taskSummary); break;
     case 'set_resume_at_reset': {
       const s = session(args.sessionId);
       if (args.enabled && !(s.limitedAt && s.limitedUntil)) throw new Error('This task has no usage limit with a known reset time.');
@@ -2034,6 +2108,17 @@ export async function invoke<T>(command: string, args: Record<string, any>): Pro
       break;
     }
     case 'add_project': { const p = { id: crypto.randomUUID(), name: args.path.split('/').pop() || 'Project', path: args.path }; projects.push(p); result = p; break; }
+    // As native: one of the 18 names or null, the project back, and `project-changed` for every window.
+    case 'set_project_color': {
+      const index = projects.findIndex(p => p.id === args.projectId);
+      if (args.color != null && !PROJECT_COLORS.includes(args.color)) throw new Error('Unknown project colour.');
+      if (index < 0) throw new Error('Project not found.');
+      projects[index] = { ...projects[index], color: args.color ?? null };
+      saveProjectColors();
+      result = { ...projects[index], addedOrder: index + 1 };
+      emit('project-changed', result);
+      break;
+    }
     case 'remove_project': architect.remove(sessions.filter(s => s.projectId === args.projectId).map(s => s.id)); projects = projects.filter(p => p.id !== args.projectId); break;
     case 'relink_project': {
       const project = projects.find(p => p.id === args.projectId);
@@ -2047,7 +2132,7 @@ export async function invoke<T>(command: string, args: Record<string, any>): Pro
       const task = session(args.sessionId); assertIdle(task);
       if (architect.isActive(task.id)) throw new Error('Stop the team before deleting this task.');
       if (task.goalState?.status === 'active') throw new Error('Pause the goal before deleting this task.');
-      const deletedSessionIds = [...new Set([task.id, ...(architect.get(task.id)?.workers.map(worker => worker.sessionId) ?? [])])];
+      const deletedSessionIds = [...new Set([task.id, ...(architect.get(task.id)?.workers.map(worker => worker.sessionId) ?? []), ...sessions.filter(side => side.kind === 'side' && side.parentSessionId === task.id).map(side => side.id)])];
       for (const id of deletedSessionIds) { const worker = sessions.find(task => task.id === id); if (worker) assertIdle(worker); }
       architect.remove(deletedSessionIds);
       turnChanges.remove(deletedSessionIds);
