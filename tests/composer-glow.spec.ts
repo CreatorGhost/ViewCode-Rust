@@ -94,7 +94,9 @@ test('the glow is the accent for a project without a colour', async ({ page }) =
 
 test('the glow takes the project colour when the thread\'s project has one, and stays the accent in another project', async ({ page }) => {
   await holdRuns(page);
-  await open(page, '?projectcolor=violet');
+  await open(page);
+  // As `set_project_color` would: stored, then `project-changed`.
+  await page.evaluate(() => (window as any).__previewProjectColor('project-1', 'violet'));
   await startRun(page);
   await expect(composer(page)).toHaveAttribute('data-glow', 'violet');
   const violet = channels(await resolved(page, '--project-violet')), accent = channels(await resolved(page, '--accent'));

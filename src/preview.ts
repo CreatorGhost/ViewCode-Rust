@@ -22,6 +22,7 @@ import { createPreviewSkills } from './preview-skills';
 import { createPreviewSkillManager } from './preview-skill-manager';
 import { previewCapabilities } from './preview-capabilities';
 import { recipesCommand } from './preview-recipes';
+import { PROJECT_COLORS } from './palette-core';
 import { openCodePreviewKey, openCodePreviewModels, previewOpenCodeChoices, previewOpenCodeSelection } from './preview-opencode';
 const turnChanges = createPreviewTurnChanges();
 let quickConnect: ReturnType<typeof import('./preview-quick-connect').createPreviewQuickConnect> | undefined;
@@ -32,8 +33,17 @@ const previewWorkspaceFiles = ['index.html', '.gitignore', 'README.md', 'package
 const sampleTestOutput = 'PASS src/components/search.test.ts\n  ✓ filters results as the query changes\n  ✓ preserves keyboard selection\n\nTests: 12 passed, 12 total\nTime: 0.8s\nSample output — no command was executed.';
 function encodeTool(tool: ToolActivity): string { return JSON.stringify({ type: 'tool_activity', version: 1, ...tool }); }
 let projects: Project[] = [{ id: 'project-1', name: 'orbit', path: '/Users/you/Projects/orbit' }, { id: 'project-2', name: 'pandacode', path: '/Users/you/Projects/pandacode' }];
-// ?projectcolor=violet gives the first project a colour (one of `ProjectColor`), as `set_project_color` would.
-{ const color = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('projectcolor') : null; if (color) projects[0] = { ...projects[0], color: color as Project['color'] }; }
+// Colours set through `set_project_color` stay with the browser tab, as native keeps them in the database: a reload shows
+// them again. ?projectcolor=violet gives the first project a colour without the menu (screenshots).
+const PROJECT_COLORS_KEY = 'pandacode.preview.projectColors';
+function saveProjectColors(): void { try { sessionStorage.setItem(PROJECT_COLORS_KEY, JSON.stringify(Object.fromEntries(projects.filter(p => p.color).map(p => [p.id, p.color])))); } catch { /* per page only */ } }
+if (typeof location !== 'undefined') {
+  let saved: Record<string, string> = {};
+  try { saved = JSON.parse(sessionStorage.getItem(PROJECT_COLORS_KEY) ?? '{}') ?? {}; } catch { /* none saved */ }
+  const first = new URLSearchParams(location.search).get('projectcolor');
+  if (first) saved = { ...saved, [projects[0].id]: first };
+  projects = projects.map(p => PROJECT_COLORS.includes(saved[p.id]) ? { ...p, color: saved[p.id] as Project['color'] } : p);
+}
 let sessions: Session[] = [
   { id: 'session-1', projectId: 'project-1', title: 'Make search feel instant', provider: 'claude', model: 'sonnet', mode: 'ask', status: 'idle', createdAt: now - 420000, updatedAt: now, archived: false, worktreePath: null, resumeId: 'preview-session', lastResponseAt: now - 300000 },
   { id: 'session-2', projectId: 'project-1', title: 'Refine the navigation', provider: 'codex', model: '', mode: 'ask', status: 'idle', createdAt: now - 8200000, updatedAt: now - 8000000, archived: false, worktreePath: null, resumeId: null, lastResponseAt: null },
@@ -615,6 +625,8 @@ function emit(name: string, event: unknown) { listeners.get(name)?.forEach(fn =>
 previewProgress.onChange = sessionId => emit('progress-changed', { sessionId });
 // Tests: deliver a native event, e.g. a background refresh of the open channel.
 (window as any).__previewEmit = emit;
+// Tests: a project's colour changes as it would from another window: stored, then `project-changed`.
+(window as any).__previewProjectColor = (projectId: string, color: string | null) => invoke('set_project_color', { projectId, color });
 // Tests: how many listeners an event has now, e.g. to check a view stops listening when it should.
 (window as any).__previewListenerCount = (name: string) => listeners.get(name)?.size ?? 0;
 export function listen(name: string, callback: (event: any) => void): () => void { if (!listeners.has(name)) listeners.set(name, new Set()); listeners.get(name)!.add(callback); return () => listeners.get(name)?.delete(callback); }
@@ -2034,6 +2046,17 @@ export async function invoke<T>(command: string, args: Record<string, any>): Pro
       break;
     }
     case 'add_project': { const p = { id: crypto.randomUUID(), name: args.path.split('/').pop() || 'Project', path: args.path }; projects.push(p); result = p; break; }
+    // As native: one of the 18 names or null, the project back, and `project-changed` for every window.
+    case 'set_project_color': {
+      const index = projects.findIndex(p => p.id === args.projectId);
+      if (args.color != null && !PROJECT_COLORS.includes(args.color)) throw new Error('Unknown project colour.');
+      if (index < 0) throw new Error('Project not found.');
+      projects[index] = { ...projects[index], color: args.color ?? null };
+      saveProjectColors();
+      result = { ...projects[index], addedOrder: index + 1 };
+      emit('project-changed', result);
+      break;
+    }
     case 'remove_project': architect.remove(sessions.filter(s => s.projectId === args.projectId).map(s => s.id)); projects = projects.filter(p => p.id !== args.projectId); break;
     case 'relink_project': {
       const project = projects.find(p => p.id === args.projectId);

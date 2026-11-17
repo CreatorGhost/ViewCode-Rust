@@ -7,6 +7,7 @@ import { isParkedChoice, menuAnchor, mountComposerMore, parkedItems, pressParked
 import { railProjectsHtml, railUsageHtml } from './project-rail';
 import { USAGE_PEEK_EVENT, usageRingAgent } from './usage-peek';
 import { composerGlow, composerGlowEnabled, GLOW_EVENT, setComposerGlowEnabled } from './composer-glow';
+import { activeProjectTint, pickedProjectColor, projectColorChoices, projectTintEnabled, projectToneAttributes, setProjectTintEnabled, TINT_EVENT } from './project-colors';
 import { COLLAPSED_SECTIONS_KEY, COMPLETED_OPEN_KEY, UNREVIEWED_KEY, readOpen, sectionOf, sidebarSections, type HeldSection } from './sidebar-sections';
 import { PER_PROJECT, PROJECT_ORDER_KEY, SORT_KEY, compareManual, readProjectOrder, readSort, taskComparator, type SidebarSort } from './sidebar-sort';
 import './styles.css';
@@ -578,6 +579,22 @@ bindThreadReordering($('#navigation'), {
   menu: (row, point) => run(showSidebarTaskMenu(row, point)),
   folderMenu: (heading, point) => run(showFolderMenu(heading, point)),
 });
+// A project tile's menu: a right-click opens it at the pointer, the menu key or ⇧F10 under the tile.
+{
+  const rail = $('#rail-projects');
+  const tileOf = (target: EventTarget | null) => (target as Element | null)?.closest<HTMLElement>('.rail-tile[data-action="rail-project"]') ?? null;
+  rail.addEventListener('contextmenu', event => {
+    const tile = tileOf(event.target); if (!tile) return;
+    event.preventDefault();
+    run(showProjectMenu(tile, tile.dataset.id!, event.clientX || event.clientY ? { x: event.clientX, y: event.clientY } : undefined));
+  });
+  rail.addEventListener('keydown', event => {
+    if (isImeKey(event) || !(event.key === 'ContextMenu' || event.shiftKey && event.key === 'F10')) return;
+    const tile = tileOf(event.target); if (!tile) return;
+    event.preventDefault();
+    run(showProjectMenu(tile, tile.dataset.id!));
+  });
+}
 /* Branch and worktree control, plus optional GitHub through the user's gh CLI. */
 const github = createGithub({
   call, modal, closeModal, notify,
@@ -1093,6 +1110,7 @@ const syncPaletteWallpaper = () => palette.setWallpaper(wallpapers.enabled ? wal
 wallpapers.subscribe(syncPaletteWallpaper); syncPaletteWallpaper();
 window.addEventListener(SCENES_EVENT, () => { sky.refresh(); tiles.refreshScenes(); syncPaletteWallpaper(); });
 window.addEventListener(GLOW_EVENT, () => renderComposer());
+window.addEventListener(TINT_EVENT, () => { renderRail(); renderComposer(); });
 window.addEventListener('pandacode-theme-change', () => palette.refresh());
 const disposeSidebarResizing = initializeSidebarResizing($('.workspace'), $('.sidebar'));
 const disposeInspectorResizing = initializeSidebarResizing($('.workspace'), $('#inspector'), true);
@@ -1513,7 +1531,14 @@ function renderRail(): void {
     host.innerHTML = html;
     if (key) host.querySelector<HTMLElement>(key)?.focus({ preventScroll: true });
   };
-  paint($('#rail-projects'), railProjectsHtml(userProjects(), state.projectFilter, session()?.projectId ?? state.projectId));
+  const openProject = session()?.projectId ?? state.projectId;
+  paint($('#rail-projects'), railProjectsHtml(userProjects(), state.projectFilter, openProject));
+  // "Colour the app by the active project": the open thread's project hands its tone to the open row (viewcode-shell.css).
+  const tint = activeProjectTint(state.projects.find(item => item.id === openProject)?.color), workspace = $('.workspace');
+  if ((workspace.dataset.projectTint ?? '') !== tint) {
+    if (tint) { workspace.dataset.projectTint = tint; workspace.style.setProperty('--project-accent', `var(--project-${tint})`); }
+    else { delete workspace.dataset.projectTint; workspace.style.removeProperty('--project-accent'); }
+  }
   // One ring: the open thread's agent, or with no thread open the agent closest to its limit.
   paint($('#rail-usage'), railUsageHtml(usageRingAgent(state.providers, session()?.provider), shortProvider));
 }
@@ -2861,7 +2886,7 @@ function renderComposer(): void {
   // The composer redraws on every session change; the orchestration slot's nodes outlive it.
   const orchestrationSlot = document.querySelector('#machine-orchestration');
   // The glow is for an agent at work: a team held at its limit is active but idle.
-  const glow = composerGlow(running && !teamHeld(s.id), state.projects.find(item => item.id === s.projectId)?.color);
+  const glow = composerGlow(running && !teamHeld(s.id), activeProjectTint(state.projects.find(item => item.id === s.projectId)?.color));
   $('#composer-area').innerHTML = `<form id="composer" class="composer ${running ? 'composer-running' : ''} ${glow.className}"${glow.attributes} data-tip-side="below">${glow.ring}${wakeStrip(s.id)}${queuePanel({ entries: state.queues.get(s.id) ?? [], hold: state.queueHolds.get(s.id) ?? null, running, steerable: !team && !offline, sendable: !botProjects.has(s.projectId) && !offline, editingId: state.queueEditing || null, busy: state.queueBusy.has(s.id), steering: steeringQueued, notSteered, agentName: botForThread()?.name ?? provider(s.provider)?.name })}${s.remoteDevice ? '' : council.strip(s.id)}<div id="attachments" class="attachments">${attachmentBar(s)}</div>${running && !team ? `<div class="composer-steer-bar"><button type="button" class="icon-button composer-steer-edit" data-action="steer-edit" title="Edit draft" aria-label="Edit draft">${icon('edit')}</button><button type="button" class="steer-button" data-action="steer" title="Steer: send into the running turn (${shortcut('Enter')})" aria-label="Steer the running turn">${STEER_ICON}<span class="sr-only">Steer</span></button><button type="button" class="icon-button composer-steer-clear" data-action="steer-clear" title="Clear draft" aria-label="Clear draft">${icon('close')}</button></div>` : !team && finishingStreams.has(s.id) && !finishingStreams.get(s.id)!.error ? '<div class="composer-steer-bar" data-holding aria-hidden="true"></div>' : ''}<div class="composer-input"><textarea id="prompt" dir="auto" data-session-id="${escape(s.id)}" aria-label="Message your coding agent" placeholder="${running ? (team ? 'Queue a follow-up…' : 'Queue a follow-up · ⌘↩ steers now') : composerPlaceholder()}" aria-description="${escape(promptDescription())}" rows="2"></textarea><div class="composer-actions">${button('attach', 'Add files and tools', 'plus', '', 'type="button" id="composer-more" aria-haspopup="menu" aria-expanded="false"')}${voiceButtonHtml}<span class="composer-pill">${sendControl}</span></div></div><div class="composer-toolbar composer-tray"><div class="composer-tools">${modelTriggerHtml(s, modelLocked, true)}${modeTriggerHtml(s, running || togglingTeam, true)}</div><div class="composer-parked">${teamButton(s)}${tokenSaver.button(s.id)}${s.remoteDevice ? '' : council.button(s.id)}${contextBarHtml(s, newTaskView())}</div></div></form>`;
   // A refresh replaces the textarea and its native undo history with it (#277); the same thread's node goes back in carrying the refresh's attributes.
   if (oldPrompt && oldPrompt.dataset.sessionId === s.id) {
@@ -5744,22 +5769,46 @@ async function showSidebarTaskMenu(anchor: HTMLElement, point?: { x: number; y: 
 }
 /** A folder's menu (… or right-click): new task, collapse the others, reveal, remove. */
 async function showFolderMenu(heading: HTMLElement, point?: { x: number; y: number }): Promise<void> {
-  const id = heading.dataset.project!, project = state.projects.find(p => p.id === id);
+  await showProjectMenu(heading.parentElement?.querySelector<HTMLElement>('.folder-actions') ?? heading, heading.dataset.project!, point, true);
+}
+/** A project's actions, from its rail tile (right-click, the menu key or ⇧F10) or its folder heading: a new task, its
+ * colour as a grid of swatches, its folder, and removal. `folders` adds what only a folder list can do. */
+async function showProjectMenu(anchor: HTMLElement, id: string, point?: { x: number; y: number }, folders = false): Promise<void> {
+  const project = state.projects.find(p => p.id === id);
   if (!project) return;
-  const anchor = heading.parentElement?.querySelector<HTMLElement>('.folder-actions') ?? heading;
-  await showChoices(anchor, { title: 'Project actions', point, actions: true, width: 280, items: [
+  const used = userProjects().filter(other => other.id !== id && other.color).map(other => other.color!);
+  await showChoices(anchor, { title: `${project.name}: project actions`, point, actions: true, width: 280, items: [
     { id: 'new', label: 'New task', icon: 'plus' },
-    { id: 'collapse', label: 'Collapse other projects', icon: 'folder' },
+    ...(folders ? [{ id: 'collapse', label: 'Collapse other projects', icon: 'folder' }] : []),
+    ...projectColorChoices(project.color, used),
     { id: 'reveal', label: isMac ? 'Reveal in Finder' : isWindows ? 'Show in Explorer' : 'Open folder', icon: 'folder', separator: true },
     { id: 'remove', label: 'Remove project…', icon: 'trash', danger: true, separator: true },
   ], onSelect: async choice => {
+    const color = pickedProjectColor(choice);
+    // The rail keeps a tile whose menu is open, so the menu closes before the colour is applied and the rail redrawn.
     closeChoiceMenu();
+    if (color !== undefined) { await setProjectColor(id, color); return; }
     if (choice === 'new') { await createTask(id); return; }
     if (choice === 'reveal') { await call('reveal_path', { path: project.path }); return; }
     if (choice === 'remove') { showRemoveProject(project); return; }
     for (const other of userProjects()) if (other.id !== id) state.collapsedFolders.add(other.id);
     state.collapsedFolders.delete(id); saveCollapsedFolders(); renderNavigation();
   } });
+}
+/** Saves a project's colour (null clears it). Native answers with the project and a `project-changed` event; both land in `projectChanged`. */
+async function setProjectColor(id: string, color: Project['color']): Promise<void> {
+  projectChanged(await call<Project>('set_project_color', { projectId: id, color: color ?? null }));
+}
+/** A project's stored fields changed (its colour, here or in another window): the rail, the rows' badges and the glow follow without a reload. */
+function projectChanged(project: Project | null | undefined): void {
+  if (!project?.id) return;
+  const index = state.projects.findIndex(item => item.id === project.id);
+  if (index < 0) return;
+  const known = state.projects[index];
+  if ((known.color ?? null) === (project.color ?? null) && known.name === project.name && known.path === project.path) return;
+  state.projects[index] = { ...known, ...project, addedOrder: project.addedOrder ?? known.addedOrder };
+  renderNavigation();
+  if (session()) renderComposer();
 }
 function showRemoveProject(project: Project): void {
   modal(`Remove ${project.name}?`, `<form id="remove-project-form" data-project-id="${escape(project.id)}"><p class="dialog-description">Its tasks are removed from PandaCode. The folder stays on disk.</p><div class="dialog-footer"><button type="button" class="secondary-button" data-action="close-dialog">Cancel</button><button class="primary-button danger">Remove project</button></div></form>`, 'compact-dialog');
@@ -5816,7 +5865,7 @@ function sidebarShortcut(event: KeyboardEvent): boolean {
 }
 /** A project's favicon or app icon; the sidebar redraws once a new one has loaded. */
 function projectAppIcon(projectId: string, name: string): string {
-  return projectIconHtml(projectId, name, id => call<string | null>('project_icon', { projectId: id }), () => renderNavigation());
+  return projectIconHtml(projectId, name, id => call<string | null>('project_icon', { projectId: id }), () => renderNavigation(), projectToneAttributes(state.projects.find(item => item.id === projectId)?.color, '--badge-tone'));
 }
 async function showProjectFilter(anchor: HTMLElement): Promise<void> {
   await showChoices(anchor, { title: 'Filter projects', searchPlaceholder: 'Search projects…', width: 300, items: [
@@ -5922,7 +5971,7 @@ async function showSettings(section?: import('./settings').SettingsSection, inte
     if (host.hidden) return;
     settingsView = mountSettings(host, {
       providers: state.providers, defaultProvider: state.defaultProvider, defaultModel: defaultModelLabel(), activityExpanded: activityExpanded(),
-      compact: document.body.classList.contains('compact'), wallpapers: wallpapers.preferences.enabled, scenes: scenesEnabled(), composerGlow: composerGlowEnabled(),
+      compact: document.body.classList.contains('compact'), wallpapers: wallpapers.preferences.enabled, scenes: scenesEnabled(), composerGlow: composerGlowEnabled(), projectTint: projectTintEnabled(),
       theme: currentTheme(), preview, section, discover: discoverSettingsProviders,
       projects: { list: userProjects, remove: removeProject },
       turnChecks: turnChecksEnabled(),
@@ -7214,6 +7263,7 @@ document.addEventListener('change', event => {
   const input = event.target as HTMLInputElement;
   if (input.id === 'live-scenes') setScenesEnabled(input.checked);
   if (input.id === 'composer-glow') setComposerGlowEnabled(input.checked);
+  if (input.id === 'project-tint') setProjectTintEnabled(input.checked);
   if (input.id === 'daily-wallpapers') { wallpapers.setEnabled(input.checked); document.querySelector('.settings-wallpapers')?.toggleAttribute('hidden', !input.checked); }
   if (input.id === 'turn-checks') turnChecksSetEnabled(input.checked);
   // A switch toggles natively (the data-action click path cancels the default), then saves.
@@ -7305,6 +7355,7 @@ async function boot(): Promise<void> {
   window.addEventListener(TEAM_MODE_EVENT, () => { if (session()) renderComposer(); });
   await subscribe('sessions-deleted', event => removeDeletedSessions(event.sessionIds));
   await subscribe('sessions-changed', () => run(reloadSessions()));
+  await subscribe('project-changed', projectChanged);
   await subscribe('mirror-messages' as 'queue-changed', (event: { sessionId: string; older?: boolean }) => run(mirrorMessages(event)));
   // An agent booted or asked to show a simulator: bring the panel forward.
   // An agent started or asked to show a VM: bring the panel forward.
