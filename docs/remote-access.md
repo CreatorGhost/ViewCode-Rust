@@ -590,9 +590,9 @@ state is unchanged.
 
 Reach this computer from the phone through a relay on the user's **own** Cloudflare account.
 The setup flow is ViewCode's, step for step; the relay, frames and encryption are this app's.
-Backend only so far: `src-tauri/src/quick_connect/`, the Worker's self-hosted mode
-(`relay/src/self.ts`), the IPC below. The Connect phone UI and the phone's side of pairing are
-not built yet ([what remains](#what-remains)).
+The pieces: `src-tauri/src/quick_connect/`, the Worker's self-hosted mode
+(`relay/src/self.ts`), the IPC below, and the desktop screens ([below](#the-screens)). The
+phone's side of pairing is not built yet ([what remains](#what-remains)).
 
 ### The flow, and the command behind each step
 
@@ -730,11 +730,53 @@ The GitHub-based shared relay (everything above this section) is hidden, not rem
 computer is signed in to it, so nobody is stranded by an update. Its commands and tests are
 unchanged.
 
+### The screens
+
+As ViewCode's, step for step and in its words; the look is this app's (`--ds-*` cards, rows,
+segments and buttons). Pure logic is `src/quick-connect-logic.ts` (`tests/quick-connect-logic.test.mjs`).
+
+- **Connect phone** (`src/connect-phone.ts`, lazy, opened by the rail's phone button, the
+  palette's `Connect phone` and Settings): segments **Same Wi-Fi | Anywhere**, and under
+  Anywhere **Quick connect | Tailscale** when `modes.tailscale.installed`. A choice is stored
+  with `quick_connect_set_mode` and nothing else; an unavailable one shows its `reason` and
+  "Use Quick connect instead". Nothing runs `tailscale`.
+- **Setup**: "Connect with Cloudflare" (and "Create one free"), then ViewCode's checklist —
+  Signing in to Cloudflare (with "Getting ready…" under it while the tools are checked),
+  Setting up your relay, Securing it, Checking it works — with minutes elapsed and the slow-step
+  note. While signing in the dialog shows the code and link from `setup.signIn`, opens
+  `openUrl` once by itself through `open_external_url` (as ViewCode's desktop app), and offers
+  Open link again / Copy link. `needs-account` asks which account holds the relay;
+  `needs-subdomain` has Open Cloudflare (coming back to the window continues once), Continue and
+  Back; `failed` and `remove-failed` show the message, Details, Try again (Install Node.js for
+  `install-node`, Remove from this computer only after a failed removal) and Back;
+  `unreachable` says so with Try again (`quick_connect_set_enabled { enabled: true }`) and, for
+  a rejected secret, Redeploy with a new secret. Cancel is there throughout.
+- **Pairing**: once the relay is on and this computer attached, the dialog makes a code
+  (`quick_connect_pairing_create { scope: "full" }`), draws it as a QR code on this computer
+  (`src/quick-connect-qr.ts`, the vendored `src/vendor/uqr`, loaded with the dialog) on a light
+  plate in both themes and in forced colours, counts down to `expiresAt`, and offers Copy link.
+  Expired and paired (`quick-connect://paired`) states replace the code, each with New code.
+  The link lives only in the module's memory: never in markup, an attribute, a title or a log;
+  it is dropped on expiry, pairing or close, and closing ends an unused code
+  (`quick_connect_pairing_cancel`).
+- **⋯ menu**: Turn off / Turn on Quick connect, Redeploy relay, Redeploy with a new secret
+  ("Phones stay paired."), Remove Quick connect and Remove from this computer only, each
+  removal after an inline confirm.
+- **Settings → Connections → Remote access** (`src/quick-connect-settings.ts`): a Phone section
+  (Connect phone; Quick connect's one-line state with Set up / Show or an on/off switch, and the
+  account question inline) and **Paired phones** (name, online or last seen, "Pairs again after
+  …", Revoke with a confirm). The older shared relay's settings (`src/remote-settings.ts`) mount
+  below only while `legacyConnect.visible`; the palette command `Show or hide PandaCode Connect
+  (GitHub)` sets it.
+
+Differences from ViewCode: the pairing link is not shown as text (only the QR code and Copy
+link), the traffic note says the relay sees only ciphertext (this relay is end-to-end
+encrypted; ViewCode's is not), paired phones and the removals live behind inline confirms
+rather than native dialogs, and the ⋯ menu also offers Turn on and Remove from this computer
+only. Spec: `tests/quick-connect.spec.ts`.
+
 ### What remains
 
-- The Connect phone UI (dialog, Settings → Connections rows, QR rendering, opening
-  `setup.signIn.openUrl`), on `src/quick-connect-types.ts` and the preview mock
-  `src/preview-quick-connect.ts`.
 - The mobile app: scan or open the link, use the link's relay address instead of the build's,
   call `/v1/self/pair`, pin the host key from the link, send `pair.redeem` with the host code,
   and keep several environments. It needs no GitHub sign-in for a paired relay.

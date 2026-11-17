@@ -79,3 +79,34 @@ test('connection choices and the hidden legacy relay are plain settings', () => 
   assert.equal(invoke('quick_connect_set_legacy_connect_visible', { visible: true }).legacyConnect.visible, true);
   assert.equal(hooks.calls.length, 3);
 });
+
+test('a stepped setup reports each step until advanced, and a denied sign-in fails', () => {
+  const { invoke, advance } = fixture({ steps: true });
+  const seen = [invoke('quick_connect_start_setup').setup];
+  for (let i = 0; i < 4; i++) seen.push(advance().setup);
+  assert.deepEqual(seen.map(setup => setup.step), ['checking-tools', 'signing-in', 'deploying', 'storing-secret', 'verifying']);
+  assert.deepEqual([seen[0].message, seen[1].signIn.code, seen[3].message, seen[4].message], ['Getting ready…', 'WDJB-MJHT', 'Securing it…', 'Checking it works…']);
+  assert.throws(() => invoke('quick_connect_start_setup'), /already running/);
+  assert.equal(advance().setup.status, 'succeeded');
+  assert.throws(() => advance(), /No Quick connect step/);
+
+  const denied = fixture({ steps: true, signInDenied: true });
+  denied.invoke('quick_connect_start_setup'); denied.advance();
+  assert.equal(denied.advance().setup.message, 'Cloudflare sign-in did not finish. Try again.');
+
+  const cancelled = fixture({ steps: true });
+  cancelled.invoke('quick_connect_start_setup');
+  assert.equal(cancelled.invoke('quick_connect_cancel').setup.status, 'idle');
+  assert.throws(() => cancelled.advance(), /No Quick connect step/);
+});
+
+test('presets start with a relay, and pairing codes honour their lifetime', () => {
+  const ready = fixture({ preset: 'ready', pairingTtlMs: -1 });
+  const status = ready.invoke('quick_connect_status');
+  assert.deepEqual([status.stage, status.connected, status.devices.length], ['paired', true, 2]);
+  ready.invoke('quick_connect_pairing_create');
+  assert.throws(() => ready.pair(), /expired/);
+  assert.equal(fixture({ preset: 'off' }).invoke('quick_connect_status').enabled, false);
+  assert.equal(fixture({ removeFails: true, preset: 'ready' }).invoke('quick_connect_remove', {}).setup.status, 'remove-failed');
+  assert.equal(fixture({ tailscaleInstalled: true }).invoke('quick_connect_status').modes.tailscale.installed, true);
+});
