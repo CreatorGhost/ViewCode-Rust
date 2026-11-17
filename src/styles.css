@@ -1,7 +1,7 @@
 @import './tokens.css';
 /* Interaction timing shared by every sheet (see the Design system bullet in AGENTS.md). */
 :root{--ds-ease-in:120ms;--ds-ease-out:180ms}
-:root{--titlebar-height:calc(55px / var(--page-zoom,1));--traffic-light-gutter:calc(104px / var(--page-zoom,1));font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;color:var(--text);background:var(--bg);font-synthesis:none;font-size:var(--text-lg);--thread-font:1.1429rem;line-height:1.5;font-weight:var(--weight-regular);--bg:#ffffff;--sidebar:#f5f5f3;--panel:#fbfbfa;--raised:#f1f1ef;--border:#e3e3df;--muted:#656560;--faint:#71716c;--text:#242423;--accent:#ffd43b;--accent-dim:#fff1b6;--accent-rgb:255 212 59;--accent-deep-rgb:153 115 0;--on-accent:#242423;--accent-hover:#f5ca2f;--accent-tint:#fffcf1;--accent-tint-strong:#fffcf1;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;color-scheme:light;font-optical-sizing:auto;--accent-ink:#554400;--focus:#8b6c00;--success:#237345;--danger:#b03535;--bamboo:#577342;--bamboo-art-opacity:.1}
+:root{--titlebar-height:calc(55px / var(--page-zoom,1));--traffic-light-gutter:calc(104px / var(--page-zoom,1));font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;color:var(--text);background:var(--bg);font-synthesis:none;font-size:var(--text-lg);--thread-font:1.1429rem;line-height:1.5;font-weight:var(--weight-regular);--bg:#fbfbf9;--sidebar:#eeefec;--panel:#ffffff;--raised:#f1f1ef;--border:#e3e3df;--muted:#656560;--faint:#71716c;--text:#1f2322;--accent:#ffd43b;--accent-dim:#fff1b6;--accent-rgb:255 212 59;--accent-deep-rgb:153 115 0;--on-accent:#242423;--accent-hover:#f5ca2f;--accent-tint:#fffcf1;--accent-tint-strong:#fffcf1;--mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;color-scheme:light;font-optical-sizing:auto;--accent-ink:#554400;--focus:#8b6c00;--success:#237345;--danger:#b03535;--bamboo:#577342;--bamboo-art-opacity:.1}
 *{box-sizing:border-box}
 html,body,#app{margin:0;width:100%;height:100%;overflow:hidden}
 button,input,select,textarea{font:inherit;color:inherit}
@@ -751,12 +751,12 @@ html:is([data-native-material="liquidGlass"],[data-native-material="vibrancy"]) 
   html:is([data-native-material="liquidGlass"],[data-native-material="vibrancy"]) .sidebar .task-item.selected{background:var(--accent-dim);box-shadow:none}
 }
 
-/* The same hierarchy in charcoal; yellow actions always retain dark ink. */
+/* The same hierarchy in neutral near-black: one black family with no cast: the frame (#080808) under the panels (#0e0e0e), raised surfaces a step above. Yellow actions always retain dark ink. */
 #theme-toggle{margin-left:auto}
 html[data-theme="dark"]{
   color-scheme:dark;
-  --bg:#151515;--sidebar:#0e0e0e;--panel:#191919;--raised:#262626;--border:#2e2e2e;
-  --text:#e2e2e2;--muted:#959595;--faint:#8a8a8a;
+  --bg:#0e0e0e;--sidebar:#080808;--panel:#161616;--raised:#262626;--border:#2e2e2e;
+  --text:#ededed;--muted:#959595;--faint:#8a8a8a;
   --accent:#ffd43b;--accent-dim:#48401e;--accent-ink:#f3d778;--focus:#e4be37;--on-accent:#29230e;--accent-tint:#29271f;--accent-tint-strong:#27261e;
   --success:#3fba50;--danger:#fa524a;--bamboo:#adbf86;--bamboo-art-opacity:.075;
 }

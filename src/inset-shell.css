@@ -20,7 +20,7 @@
   background:var(--frame);
 }
 .workspace:is(.sidebar-collapsed,.board-view,.github-view){--pane-top:0px}
-/* Dark: the frame sits a step below the #151515 panels, as the reference's page sits below its cards. */
+/* Dark: the frame sits a step below the panels, as the reference's page sits below its cards. */
 html[data-theme="dark"] .workspace{--frame:var(--sidebar)}
 html[data-vsix] .workspace{--frame:color-mix(in srgb,var(--sidebar) 82%,black)}
 html[data-vsix][data-theme="light"] .workspace{--frame:color-mix(in srgb,var(--sidebar) 92%,black)}

@@ -78,7 +78,9 @@ export function initializeSidebarResizing(workspace: HTMLElement, sidebar: HTMLE
       if (inspectorStyle.display !== 'none' && inspectorStyle.position !== 'absolute') inspectorWidth = trackWidth(inspector);
     }
     const overlay = right && getComputedStyle(sidebar).position === 'absolute';
-    const remaining = Math.floor(workspace.clientWidth - inspectorWidth - (overlay ? 0 : conversationMinimum));
+    // The grid's own width: the workspace pads its left edge for the project rail, which sits outside the grid.
+    const gridWidth = workspace.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
+    const remaining = Math.floor(gridWidth - inspectorWidth - (overlay ? 0 : conversationMinimum));
     availableMinimum = right ? Math.min(minimumWidth, Math.max(1, remaining)) : minimumWidth;
     availableMaximum = Math.max(availableMinimum, Math.min(maximumWidth, remaining));
     // A temporary viewport/inspector clamp must never replace the saved choice.

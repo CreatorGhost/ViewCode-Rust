@@ -72,12 +72,16 @@ export function createThreadFind(host: Host) {
     const header = document.querySelector<HTMLElement>('.main-pane>.workspace-header');
     if (!header || !shown(header)) return undefined;
     const dock = header.querySelector<HTMLElement>('#action-dock');
-    if ((dock && getComputedStyle(dock).position !== 'absolute') || shown(header.querySelector('#breadcrumb'))) return undefined;
+    // The dock is a row in the header: the bar takes the room between the thread's title and the row, if there is any
+    // (never in the narrow layout, where there is none to spare).
+    const row = dock && getComputedStyle(dock).position !== 'absolute' ? dock : null;
+    if ((row && matchMedia('(max-width: 650px)').matches) || shown(header.querySelector('#breadcrumb :is(.bot-crumb,.channel-back)'))) return undefined;
     const box = header.getBoundingClientRect(), half = width / 2, gap = 8;
     // The leading box stretches across the row; only its visible items count.
     const leading = [...header.querySelectorAll<HTMLElement>('.header-leading>*')].filter(shown).map(item => item.getBoundingClientRect().right);
     const min = (leading.length ? Math.max(...leading) : box.left) + gap + half;
-    const widgets = [...header.querySelectorAll<HTMLElement>('.header-actions>*')].filter(shown).map(widget => widget.getBoundingClientRect().left);
+    // The browser preview's note is plain text with nothing to press, so the bar may cover it while it is open.
+    const widgets = [...header.querySelectorAll<HTMLElement>('.header-actions>:not(.preview-status)'), ...(row ? [row] : [])].filter(shown).map(widget => widget.getBoundingClientRect().left);
     const max = (widgets.length ? Math.min(...widgets) : box.right) - gap - half;
     if (min > max) return undefined;
     const pane_ = pane.getBoundingClientRect();
@@ -93,6 +97,10 @@ export function createThreadFind(host: Host) {
     const slot = headerSlot(pane, bar.offsetWidth || FIND_BAR_WIDTH);
     bar.style.setProperty('--find-left', `${slot ? Math.floor(slot.center) : Math.round(rect.left + rect.width / 2)}px`); // floor: the 8px clearance never rounds away
     bar.style.setProperty('--find-top', `${Math.round(slot?.top ?? rect.top + 10)}px`);
+    // With no room in the header the bar sits over the pane's top; the thread's first row then rests below it
+    // (`.find-docked` in viewcode-shell.css), so a match at the very top is never under the bar.
+    document.querySelectorAll('.conversation-pane.find-docked').forEach(docked => { if (docked !== pane || slot || bar!.hidden) docked.classList.remove('find-docked'); });
+    if (!slot && !bar.hidden && pane.matches('.conversation-pane')) pane.classList.add('find-docked');
   };
   const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(place) : undefined;
 
@@ -189,6 +197,7 @@ export function createThreadFind(host: Host) {
     window.removeEventListener('resize', place);
     cancelAnimationFrame(frame); frame = 0;
     highlights?.delete(ALL); highlights?.delete(CURRENT);
+    document.querySelectorAll('.conversation-pane.find-docked').forEach(docked => docked.classList.remove('find-docked'));
     bar?.remove(); bar = undefined; input = undefined; count = undefined; ranges = []; current = -1;
     host.restoreFocus();
   }

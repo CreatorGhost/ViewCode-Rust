@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { pickFromPlus } from './composer-more-helper';
 
 // GitHub runs through the preview's sample `gh`: one connected repository with three
 // open issues and one pull request. Nothing here reaches the network.
@@ -70,7 +71,7 @@ test('the GitHub switch hides mentions, imports, and pull requests without runni
   await expect(menu(page)).toContainText('Project files');
   await expect(menu(page).locator('[data-file-path="#131"]')).toHaveCount(0);
   await page.keyboard.press('Escape');
-  await page.locator('#branch-chip').click();
+  await pickFromPlus(page, page.locator('#branch-chip'));
   const branchMenu = page.getByRole('dialog', { name: 'Branch and worktree', exact: true });
   await expect(branchMenu.getByRole('menuitem', { name: /Copy project path/ })).toBeVisible();
   await expect(branchMenu.getByRole('menuitem', { name: /pull request/ })).toHaveCount(0);
@@ -140,7 +141,7 @@ test('importing issues creates linked Pending tasks, skips ones already on the b
 
 test('push & open pull request refuses a dirty tree, then links the PR to the task', async ({ page }) => {
   await probe(page);
-  await page.locator('#branch-chip').click();
+  await pickFromPlus(page, page.locator('#branch-chip'));
   const branchMenu = page.getByRole('dialog', { name: 'Branch and worktree', exact: true });
   await branchMenu.getByRole('menuitem', { name: /Push & open pull request/ }).click();
   const dialog = page.getByRole('dialog', { name: 'Push & open pull request', exact: true });
@@ -157,7 +158,7 @@ test('push & open pull request refuses a dirty tree, then links the PR to the ta
     await invoke('git_stage', { projectId: 'project-1', sessionId: 'session-1', paths: ['src/components/search.ts', 'src/lib/search-index.ts', 'src/components/search.test.ts'], staged: true });
     await invoke('git_commit', { projectId: 'project-1', sessionId: 'session-1', message: 'Instant search' });
   });
-  await page.locator('#branch-chip').click();
+  await pickFromPlus(page, page.locator('#branch-chip'));
   await branchMenu.getByRole('menuitem', { name: /Push & open pull request/ }).click();
   await dialog.getByRole('textbox', { name: 'Description', exact: true }).fill('Reuses one search index per dataset.');
   await dialog.getByRole('button', { name: 'Push & open pull request', exact: true }).click();
@@ -166,7 +167,7 @@ test('push & open pull request refuses a dirty tree, then links the PR to the ta
   await expect(page.locator('.composer-context .link-chip')).toContainText('PR #201');
   await expect(page.locator('.composer-context .link-chip')).toContainText('open');
   expect((await calls(page, 'github_create_pull_request')).at(-1).args).toMatchObject({ sessionId: 'session-1', title: 'Make search feel instant', body: 'Reuses one search index per dataset.', base: 'main' });
-  await page.locator('#branch-chip').click();
+  await pickFromPlus(page, page.locator('#branch-chip'));
   await expect(branchMenu.getByRole('menuitem', { name: 'Open pull request #201', exact: true })).toBeVisible();
   await expect(branchMenu.getByRole('menuitem', { name: /Push & open pull request/ })).toHaveCount(0);
   await page.keyboard.press('Escape');
@@ -179,8 +180,8 @@ test('linked issue chips open GitHub and refresh their state on focus', async ({
   await page.locator('.task-item[data-id="session-3"]').click();
   const chip = page.locator('.composer-context .link-chip');
   await expect(chip).toContainText('#131');
-  await expect(chip).toHaveAccessibleName(/Issue 131: Keyboard shortcut cheat sheet \(open\)/);
-  await chip.click();
+  await expect(chip).toHaveAttribute('aria-label', /Issue 131: Keyboard shortcut cheat sheet \(open\)/);
+  await pickFromPlus(page, chip);
   await expect.poll(async () => (await calls(page, 'open_external_url')).at(-1)?.args).toEqual({ url: 'https://github.com/orbit-labs/orbit/issues/131' });
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(chip).toContainText('closed');
@@ -206,7 +207,7 @@ test('a pull request the agent opens is linked after the turn and opens as a vie
   await expect(page.locator('#toast')).toContainText('Linked pull request #130');
   const chip = page.locator('.composer-context .link-chip');
   await expect(chip).toContainText('PR #130');
-  await chip.click();
+  await pickFromPlus(page, chip);
   // The chip opens the PR inside the app, not in the browser.
   expect(await calls(page, 'open_external_url')).toHaveLength(0);
   const tab = page.locator('.inspector-tabs [data-action="tab-pull"]');
@@ -249,7 +250,7 @@ test('a pull request the agent opens is linked after the turn and opens as a vie
 
 test('link pull request picks an open PR or takes a URL, and refuses other repositories', async ({ page }) => {
   await probe(page);
-  await page.locator('#branch-chip').click();
+  await pickFromPlus(page, page.locator('#branch-chip'));
   const branchMenu = page.getByRole('dialog', { name: 'Branch and worktree', exact: true });
   await branchMenu.getByRole('menuitem', { name: /Link pull request/ }).click();
   const dialog = page.getByRole('dialog', { name: 'Link pull request', exact: true });
@@ -265,7 +266,7 @@ test('link pull request picks an open PR or takes a URL, and refuses other repos
   expect((await calls(page, 'github_link_pull_request')).at(-1).args).toEqual({ sessionId: 'session-1', reference: '#130' });
   await expect(page.locator('#toast')).toContainText('Linked pull request #130');
   await expect(page.locator('#inspector .pull-view .pull-title')).toHaveText('Debounce library search');
-  await page.locator('#branch-chip').click();
+  await pickFromPlus(page, page.locator('#branch-chip'));
   await expect(branchMenu.getByRole('menuitem', { name: 'View pull request #130', exact: true })).toBeVisible();
   await expect(branchMenu.getByRole('menuitem', { name: /Link pull request/ })).toHaveCount(0);
   await page.keyboard.press('Escape');
@@ -273,7 +274,7 @@ test('link pull request picks an open PR or takes a URL, and refuses other repos
 
 test('a linked open pull request merges from its inspector tab after choosing a method', async ({ page }) => {
   await probe(page);
-  await page.locator('#branch-chip').click();
+  await pickFromPlus(page, page.locator('#branch-chip'));
   await page.getByRole('dialog', { name: 'Branch and worktree', exact: true }).getByRole('menuitem', { name: /Link pull request/ }).click();
   const dialog = page.getByRole('dialog', { name: 'Link pull request', exact: true });
   await dialog.locator('[data-pull-number="130"]').click();

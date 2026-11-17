@@ -16,8 +16,8 @@ policy. An accepted run enters In progress; success enters Review. Errors and
 stops remain In progress, with a retry action. Follow-up messages from Review
 start another run. The user settles reviewed work or reopens it.
 
-There is no archive: settled tasks stay on the board and in the sidebar's
-Settled section. A task still marked archived by older data counts as settled,
+There is no archive: settled tasks stay on the board and, in the sidebar,
+behind the "N more" fold that ends the list. A task still marked archived by older data counts as settled,
 and reopening it clears that flag. Reopening clears completion time. No Git
 commit or merge is implied by settling.
 

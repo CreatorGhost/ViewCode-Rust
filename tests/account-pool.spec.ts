@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { openAgentUsage } from './rail-helper';
 
 // Times and weekdays are read in one locale and zone, so the expected strings hold on any machine.
 test.use({ locale: 'en-US', timezoneId: 'UTC' });
@@ -210,7 +211,7 @@ test('a 93 % window is amber like its Near limit chip, and an account shows the 
   expect(settingsPlans.slice(0, 3)).toEqual(['you@example.com', 'claude.work@example.com', 'claude.personal@example.com']);
   // The Usage panel names the same plans.
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'Agent usage', exact: true }).click();
+  await openAgentUsage(page);
   const usage = page.getByRole('dialog', { name: 'Agent usage', exact: true });
   await usage.getByRole('tab', { name: 'Claude', exact: true }).click();
   const who = (id: string) => usage.locator(`#usage-panel-claude .usage-account-heading[data-account="${id}"] .usage-account-who`);
@@ -519,7 +520,7 @@ test('editing a Codex config folder clears the old fallback identity and windows
   await expect(row.locator('.ds-row-sub')).toHaveText('Codex Work · Team');
   await expect(row.locator('.account-meter')).toContainText('63%');
   // Usage opens with the same revised connection and the same account/read fallback.
-  await page.keyboard.press('Escape'); await page.getByRole('button', { name: 'Agent usage', exact: true }).click();
+  await page.keyboard.press('Escape'); await openAgentUsage(page);
   const usage = page.getByRole('dialog', { name: 'Agent usage', exact: true });
   await usage.getByRole('tab', { name: 'Codex', exact: true }).click();
   const account = usage.locator('.usage-connection[data-connection="work"]');
@@ -770,14 +771,14 @@ const switchNote = (page: Page) => page.locator('#transcript details.account-swi
 async function startPoolTurn(page: Page): Promise<string> {
   await page.evaluate(() => { (window as any).__holdPoolTurn = true; });
   await page.locator('.new-task-button').click();
-  await expect(page.getByRole('heading', { name: /^What should we build in/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^What should .+ build\?$/ })).toBeVisible();
   const prompt = page.getByRole('textbox', { name: 'Message your coding agent', exact: true });
   await expect(prompt).toBeEnabled(); await prompt.fill('Controlled account switch'); await prompt.press('Enter');
   await expect.poll(() => page.evaluate(() => (window as any).__latestPoolRun ?? '')).not.toBe('');
   await expect(page.getByRole('button', { name: 'Stop task', exact: true })).toBeVisible();
   const id = await page.evaluate(() => (window as any).__latestPoolRun);
   await expect(page.locator('#prompt')).toHaveAttribute('data-session-id', id);
-  await expect(page.getByRole('heading', { name: /^What should we build in/ })).toBeHidden();
+  await expect(page.getByRole('heading', { name: /^What should .+ build\?$/ })).toBeHidden();
   return id;
 }
 

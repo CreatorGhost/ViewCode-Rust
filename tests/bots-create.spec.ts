@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { showBotsView } from './rail-helper';
 
 /* New bot form (live icon, color, face, purpose, suggestions) and the Profile settings,
  * which save as you go. */
@@ -10,8 +11,7 @@ const purpose = (page: Page) => form(page).getByRole('textbox', { name: 'What sh
 
 async function openNewBot(page: Page): Promise<void> {
   await page.goto('/');
-  const bar = page.locator('.sidebar-bots-bar');
-  if (await bar.getAttribute('aria-pressed') !== 'true') await bar.click();
+  await showBotsView(page);
   const sidebar = page.getByRole('region', { name: 'Bots', exact: true });
   await sidebar.getByRole('button', { name: 'Add bot or channel' }).click();
   await sidebar.getByRole('menu', { name: 'Create' }).getByRole('menuitem', { name: 'New bot' }).click();

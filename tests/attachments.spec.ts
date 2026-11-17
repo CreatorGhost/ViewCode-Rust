@@ -4,8 +4,8 @@ import { expect, test, type Page } from '@playwright/test';
 // chips, paste and drop, the shared image cap, send-time context, and folder mentions.
 const previewBody = (source: string) => source + '\nwindow.__pandacodePreviewUrl = import.meta.url;\n';
 const prompt = (page: Page) => page.getByRole('textbox', { name: 'Message your coding agent' });
-const attachButton = (page: Page) => page.getByRole('button', { name: 'Attach files for context' });
-const attachMenu = (page: Page) => page.getByRole('dialog', { name: 'Attach', exact: true });
+const attachButton = (page: Page) => page.getByRole('button', { name: 'Add files and tools' });
+const attachMenu = (page: Page) => page.getByRole('dialog', { name: 'Add files and tools', exact: true });
 const chips = (page: Page) => page.locator('#attachments .prompt-chip');
 const calls = (page: Page, command: string): Promise<any[]> => page.evaluate(command => ((window as any).__attachCalls ?? []).filter((entry: any) => entry.command === command), command);
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==';
@@ -82,7 +82,9 @@ test('pasting text never reads the clipboard, and an empty clipboard read leaves
 test('the attach menu offers files, a folder, project files and a sketch, and attaches picker results as chips', async ({ page }) => {
   await probe(page);
   await attachButton(page).click();
-  await expect(attachMenu(page).getByRole('menuitem')).toHaveText([/Attach files…/, /Attach a folder…/, /Project files/, /Sketch a mockup…/, /Workflow recipes…/, /Schedule a wake-up…/]);
+  // What can be attached or queued comes first; the composer's parked controls follow after a separator.
+  for (const [index, text] of [/Attach files…/, /Attach a folder…/, /Project files/, /Sketch a mockup…/, /Workflow recipes…/, /Schedule a wake-up…/].entries()) await expect(attachMenu(page).getByRole('menuitem').nth(index)).toHaveText(text);
+  await expect(attachMenu(page).getByRole('menuitem').nth(6)).toHaveAccessibleName(/^Team: /);
   await attachMenu(page).getByRole('menuitem', { name: /Attach files…/ }).click();
   await expect(chips(page)).toHaveCount(2);
   await expect(chips(page).nth(0)).toHaveClass(/prompt-chip-image/);

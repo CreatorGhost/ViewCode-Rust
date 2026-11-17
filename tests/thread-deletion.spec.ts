@@ -108,7 +108,7 @@ test.describe('task deletion', () => {
 
   test('allows a task still archived from older data to be deleted; it shows as settled', async ({ page }) => {
     await openMain(page, "sessions[0].archived = true;");
-    await page.getByRole('button', { name: /^Settled/ }).click();
+    await page.locator('#navigation > .more-fold').click();
     await taskRow(page, 'session-1').click();
     await expect(page.locator('#composer-area')).toContainText('This task is settled.');
     await openDelete(page);

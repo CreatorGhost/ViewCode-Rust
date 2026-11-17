@@ -1,10 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 
-// Chats list in Finished like any other task: the sidebar has only Active, Finished and Settled.
+// Chats list in Finished like any other task. The sidebar has no New chat button: Go to anything starts one.
 const chats = (page: Page) => page.getByRole('region', { name: 'Finished tasks', exact: true });
 
 async function newChat(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'New chat', exact: true }).click();
+  // New chat has no sidebar button: it starts from Go to anything.
+  await page.keyboard.press('ControlOrMeta+k');
+  await page.getByRole('button', { name: 'New chat (no project)' }).click();
   await expect(page.locator('#prompt')).toHaveAttribute('placeholder', 'Ask anything…');
   await expect(chats(page).locator('.task-item.selected')).toHaveAttribute('title', /New conversation/);
 }
@@ -12,6 +14,17 @@ async function newChat(page: Page): Promise<void> {
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('.task-item.selected')).toHaveCount(1);
+});
+
+test('the sidebar offers New thread and Search only; New chat is a command', async ({ page }) => {
+  await expect(page.locator('#workspace-sidebar .sidebar-actions > button')).toHaveText([/^New thread/, /^Search/]);
+  await expect(page.locator('#workspace-sidebar').getByRole('button', { name: /New chat/ })).toHaveCount(0);
+  await page.locator('#workspace-sidebar').getByRole('button', { name: /^Search/ }).click();
+  await page.getByRole('textbox', { name: 'Search tasks and commands', exact: true }).fill('new chat');
+  await expect(page.locator('#command-results').getByRole('button')).toHaveText([/New chat \(no project\)/]);
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#prompt')).toHaveAttribute('placeholder', 'Ask anything…');
+  await expect(chats(page).locator('.task-item.selected')).toHaveAttribute('title', /New conversation/);
 });
 
 test('a new chat lists under Finished, not a project folder, without project affordances', async ({ page }) => {

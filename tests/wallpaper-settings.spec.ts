@@ -1,9 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
+import { enableScenes } from './scene-helper';
 
 test.use({ timezoneId: 'America/New_York' });
 
 /** Wallpapers are off by default (the thread shows the sky); these specs start with them on unless a test saves its own choice. */
 test.beforeEach(async ({ page }) => {
+  // With Wallpapers off these tests look at the sky behind the thread, which is opt-in.
+  await enableScenes(page);
   await page.addInitScript(() => {
     if (localStorage.getItem('pandacode.wallpaperPreferences') === null && localStorage.getItem('pandacode.wallpapers') === null) {
       localStorage.setItem('pandacode.wallpaperPreferences', JSON.stringify({ version: 3, enabled: true, visibility: 20, blur: 0, set: 'automatic', pinned: null }));
