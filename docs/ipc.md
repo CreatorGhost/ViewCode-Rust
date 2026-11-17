@@ -144,7 +144,10 @@ unarchived, completed (Settled) one.
 | send_message | {sessionId, text, imageIds?: string[]} | void (returns after task spawned) |
 | stop_session | {sessionId} | void |
 | respond_approval | {sessionId, requestId, approved} | void |
-| list_providers | {} | Provider[] |
+| list_providers | {} | Provider[] (`installed`: usable now; `present`: found on disk; `enabled`: allowed by the launch gate. A harness that is not enabled is never run to answer this) |
+| launch_gate_state | {} | LaunchGateState: enabled ids, `firstRunPending`, `managed`, `strict`, policy source, `pinned`, `blocked`, every harness ([managed-mode.md](managed-mode.md#ipc)) |
+| launch_gate_set_enabled | {harness, enabled} | LaunchGateState; emits `launch-gate-changed` |
+| launch_gate_complete_first_run | {enabled: string[]} | LaunchGateState; refused once a choice exists |
 | list_slash_commands | {sessionId, force?: boolean} | {commands: SlashCommand[], warnings: string[]} |
 | resolve_slash_command | {sessionId, text} | {action: string or null, arguments: string, acceptsAttachments: boolean} |
 | list_provider_models | {provider} | ProviderModel[] (identity, supported effort choices, optional default effort/context window) |
