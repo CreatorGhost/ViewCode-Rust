@@ -455,7 +455,7 @@ pub(crate) fn complete_first_run(enabled: &[String]) -> Result<GateState> {
 
 /// Replaces the gate for this process. Only `providers/launch_gate_tests.rs` uses it, in a child
 /// process, so no other test sees a strict gate.
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) fn install_for_test(gate: Gate, dir: Option<&Path>) {
     *RUNTIME.write().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Runtime { path: dir.map(|dir| dir.join(FILE)), gate, watch: None });
 }

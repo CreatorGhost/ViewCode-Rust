@@ -21,7 +21,7 @@ pub(crate) mod self_relay;
 mod socket;
 mod start;
 /// The check a turn started from another computer passes first (`providers/launch_gate_tests.rs`).
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) use start::require_installed;
 
 pub(crate) use mirror::route;

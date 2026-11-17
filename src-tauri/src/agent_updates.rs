@@ -234,7 +234,7 @@ fn installed() -> Vec<Installation> {
 
 /// What an update check would probe: each installation's harnesses and whether its
 /// version could be read (`providers/launch_gate_tests.rs`).
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) fn checked_for_test() -> Vec<(Vec<String>, bool)> {
     installed().into_iter().map(|local| {
         let version = install::version(&local.provider, &local.path, family(&local.provider));
@@ -242,7 +242,7 @@ pub(crate) fn checked_for_test() -> Vec<(Vec<String>, bool)> {
     }).collect()
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) fn version_for_test(harness: &str, path: &std::path::Path) -> Result<String> {
     install::version(harness, path, family(harness)).map(|version| version.text)
 }
