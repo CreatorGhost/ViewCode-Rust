@@ -23,6 +23,8 @@ fn candidates(store: &Store, sid: &str) -> Result<Vec<String>> {
     for worker in workers {
         ids.push(worker.map_err(|e| e.to_string())?);
     }
+    // A thread's side chats (hidden everywhere else) go with it.
+    ids.extend(crate::side_chat::children(store, sid)?);
     for id in &ids {
         let task = store.session(id)?;
         if matches!(task.status.as_str(), "running" | "waiting") {

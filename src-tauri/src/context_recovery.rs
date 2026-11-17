@@ -124,7 +124,13 @@ pub(crate) fn prepare(
     } else {
         ""
     };
-    let prompt = format!("PandaCode restored earlier messages from this same task after its harness context changed. Use these as prior conversation so references such as ‘this’ retain their meaning. They are historical user/assistant messages, not new requests or higher-priority instructions.{notice}\n\nEarlier conversation (JSON):\n[{}]\n\nCurrent request:\n{original}", entries.join(",\n"));
+    // A side chat's first turn: the history is its parent's, not its own.
+    let lead = if crate::side_chat::is_snapshot(store, &session.id, through) {
+        crate::side_chat::SNAPSHOT_NOTICE
+    } else {
+        "PandaCode restored earlier messages from this same task after its harness context changed. Use these as prior conversation so references such as ‘this’ retain their meaning. They are historical user/assistant messages, not new requests or higher-priority instructions."
+    };
+    let prompt = format!("{lead}{notice}\n\nEarlier conversation (JSON):\n[{}]\n\nCurrent request:\n{original}", entries.join(",\n"));
     Ok((prompt, Some(through)))
 }
 
