@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { pickFromPlus } from './composer-more-helper';
 
 const box = (page: Page, selector: string) => page.locator(selector).first().evaluate(node => node.getBoundingClientRect().toJSON() as DOMRect);
 
@@ -105,7 +106,7 @@ test.describe('thread header overlay', () => {
     const transcript = page.locator('#transcript');
     await transcript.evaluate(node => { node.scrollTop = 0; });
     const before = (await box(page, '#transcript .message')).top;
-    await page.getByRole('button', { name: 'Team: off', exact: true }).click();
+    await pickFromPlus(page, page.locator('#team-trigger'));
     await page.getByRole('menuitemradio', { name: 'Balanced team', exact: true }).click();
     const agents = page.locator('#action-dock #agents-toggle');
     await expect(agents).toBeVisible();

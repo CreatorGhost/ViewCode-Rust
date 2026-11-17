@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { pickFromPlus } from './composer-more-helper';
 
 const menu = (page: Page) => page.locator('.file-mention-menu:not([aria-hidden="true"])');
 const draft = (page: Page) => page.locator('#mention-fixture');
@@ -299,7 +300,7 @@ test('worktree conversation and board editing search by task instead of reusing 
   await page.locator('#prompt').fill('Read @src/');
   await expect(row(page, 'src/main.ts')).toBeVisible();
   await page.locator('#prompt').press('Escape');
-  await page.locator('#branch-chip').click();
+  await pickFromPlus(page, page.locator('#branch-chip'));
   await page.getByRole('dialog', { name: 'Branch and worktree', exact: true }).getByRole('menuitem', { name: /New task in a worktree/ }).click();
   const dialog = page.locator('#dialog');
   await dialog.locator('input[name="branch"]').fill('codex/mention-scope');

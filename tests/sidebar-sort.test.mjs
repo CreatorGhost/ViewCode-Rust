@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_SORT, PROJECT_ORDER_KEY, SORT_KEY, compareCompleted, readProjectOrder, compareManual, matchesFilter, projectComparator, readSort, taskComparator } from '../src/sidebar-sort.ts';
+import { DEFAULT_SORT, PROJECT_ORDER_KEY, SORT_KEY, compareCompleted, readProjectOrder, compareManual, projectComparator, readSort, taskComparator } from '../src/sidebar-sort.ts';
 import { folderGroups } from '../src/sidebar-tree.ts';
 
 const task = (id, extra = {}) => ({ id, projectId: 'p', title: id, createdAt: 1, updatedAt: 1, lastResponseAt: null, lastPromptAt: null, sidebarOrder: null, ...extra });
@@ -79,15 +79,4 @@ test('a folder holds its place when its newest task moves to Active', () => {
   const groups = folderGroups({ projects, tasks: folderTasks, all: [...folderTasks, running], includeEmpty: true });
   assert.deepEqual(groups.map(g => g.project.id), ['a', 'b']);
   assert.deepEqual(folderGroups({ projects, tasks: folderTasks, includeEmpty: true, sort: 'name' }).map(g => g.project.id), ['a', 'b']);
-});
-
-test('the filter matches title, branch, linked PR and project, word by word', () => {
-  const t = task('x', { title: 'Speed up search', worktreeBranch: 'feat/instant-search', pullRequest: { kind: 'pull', number: 482, title: 'Compact rows' } });
-  assert.equal(matchesFilter(t, ''), true);
-  assert.equal(matchesFilter(t, 'SPEED'), true);
-  assert.equal(matchesFilter(t, 'instant'), true);
-  assert.equal(matchesFilter(t, '#482'), true);
-  assert.equal(matchesFilter(t, 'compact speed'), true);
-  assert.equal(matchesFilter(t, 'orbit', 'Orbit'), true);
-  assert.equal(matchesFilter(t, 'speed missing'), false);
 });

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { pickFromPlus } from './composer-more-helper';
 import { prompt, pill, calls, open, start, release, mockVoiceSend, chooseSendTarget } from './voice-test-helpers';
 
 test.describe('voice input', () => {
@@ -54,8 +55,8 @@ test.describe('voice input', () => {
       `) });
     });
     await open(page, 'delayed');
-    await page.getByRole('button', { name: 'Attach files for context', exact: true }).click();
-    await page.getByRole('dialog', { name: 'Attach', exact: true }).getByRole('menuitem', { name: 'Project files', exact: true }).click();
+    await page.getByRole('button', { name: 'Add files and tools', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Add files and tools', exact: true }).getByRole('menuitem', { name: 'Project files', exact: true }).click();
     await page.getByRole('button', { name: 'Attach package.json', exact: true }).click();
     await prompt(page).fill('Sent text'); await start(page); await page.keyboard.press('Enter');
     await prompt(page).press('Enter'); await page.waitForFunction(() => (window as any).__voicePrepareWaiting);
@@ -95,8 +96,8 @@ test.describe('voice input', () => {
       });
       await open(page, 'delayed'); await chooseSendTarget(page, target);
       if (target !== 'cloud') {
-        await page.getByRole('button', { name: 'Attach files for context', exact: true }).click();
-        await page.getByRole('dialog', { name: 'Attach', exact: true }).getByRole('menuitem', { name: 'Project files', exact: true }).click();
+        await page.getByRole('button', { name: 'Add files and tools', exact: true }).click();
+        await page.getByRole('dialog', { name: 'Add files and tools', exact: true }).getByRole('menuitem', { name: 'Project files', exact: true }).click();
         await page.getByRole('button', { name: 'Attach package.json', exact: true }).click();
       }
       await prompt(page).fill('Call Bob');
@@ -152,8 +153,8 @@ test.describe('voice input', () => {
       `) });
     });
     await open(page, 'delayed');
-    await page.getByRole('button', { name: 'Attach files for context', exact: true }).click();
-    await page.getByRole('dialog', { name: 'Attach', exact: true }).getByRole('menuitem', { name: 'Project files', exact: true }).click();
+    await page.getByRole('button', { name: 'Add files and tools', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Add files and tools', exact: true }).getByRole('menuitem', { name: 'Project files', exact: true }).click();
     await page.getByRole('button', { name: 'Attach package.json', exact: true }).click();
     await prompt(page).fill('Original message'); await prompt(page).press('Enter');
     await page.waitForFunction(() => (window as any).__voiceReadWaiting);
@@ -214,7 +215,7 @@ test.describe('voice input', () => {
       await settings.getByLabel('E2B API key').fill('preview');
       await settings.getByRole('form', { name: 'Connect E2B' }).locator('[type="submit"]').click();
       await settings.getByRole('button', { name: 'Back to the workspace', exact: true }).click();
-      await page.locator('#composer-computer').click(); await page.getByRole('menuitemradio', { name: 'Cloud · E2B' }).click();
+      await pickFromPlus(page, page.locator('#composer-computer')); await page.getByRole('menuitemradio', { name: 'Cloud · E2B' }).click();
     }
     await prompt(page).fill('Sent text'); await start(page);
     await pill(page).getByRole('button', { name: 'Stop and transcribe', exact: true }).click();

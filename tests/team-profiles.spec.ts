@@ -1,9 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
+import { pickFromPlus } from './composer-more-helper';
 
 /** The Team button opens No team · Cheap · Balanced · Best; a team on carries `data-on`. */
 const trigger = (page: Page) => page.locator('#team-trigger');
 async function pickTeam(page: Page, kind: string): Promise<void> {
-  await trigger(page).click();
+  await pickFromPlus(page, trigger(page));
   await page.getByRole('menuitemradio', { name: kind, exact: true }).click();
   await expect(page.getByRole('menuitemradio', { name: kind, exact: true })).toBeHidden();
 }
@@ -77,7 +78,7 @@ test.describe('team inheritance', () => {
     const id = await newConversation(page);
     expect(id).not.toBe('session-2');
     await expect(trigger(page)).toHaveAttribute('data-on', '');
-    await expect(trigger(page)).toHaveAccessibleName('Balanced team: on');
+    await expect(trigger(page)).toHaveAttribute('aria-label', 'Balanced team: on');
     const fresh = await read(page, 'get_task', { sessionId: id });
     await assertAutoDefault(page, id, fresh);
     expect(await calls(page, 'architect_start')).toHaveLength(0);
@@ -101,7 +102,7 @@ test.describe('team inheritance', () => {
     // A started conversation spawns a sibling worktree task; an unstarted one would convert in place.
     await page.locator('.task-item[data-id="session-1"]').click();
     await expect(page.locator('.task-item.selected')).toHaveAttribute('data-id', 'session-1');
-    await page.locator('#branch-chip').click();
+    await pickFromPlus(page, page.locator('#branch-chip'));
     await page.getByRole('dialog', { name: 'Branch and worktree', exact: true }).getByRole('menuitem', { name: /New task in a worktree/ }).click();
     await page.locator('#dialog').getByRole('textbox', { name: 'Branch name', exact: true }).fill('codex/team-default-test');
     await page.locator('#dialog').getByRole('button', { name: 'Create worktree task', exact: true }).click();

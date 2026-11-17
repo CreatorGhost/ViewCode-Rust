@@ -1,12 +1,12 @@
-/** The last plan usage each agent account reported, kept for the rail's usage rings.
+/** The last plan usage each agent account reported, kept for the rail's usage ring.
  *
  * This module never asks a provider anything: it only remembers what a check the user started
- * (the Usage dialog, Settings → Providers) returned, so the rings add no automatic request.
- * A ring with nothing remembered shows "–". */
+ * (the Usage dialog, Settings → Providers) returned, so the ring adds no automatic request.
+ * With nothing remembered the ring is an empty track ("not checked yet"). */
 import type { ProviderId } from './types';
 
 export interface UsagePeek { percent: number | null; checkedAt: number; }
-/** The fields of an `agent_usage` result the rings read. */
+/** The fields of an `agent_usage` result the ring reads. */
 export interface PeekSource { status: string; windows: { usedPercent: number }[]; checkedAt?: number; }
 
 const KEY = 'pandacode.usage.peek';
@@ -25,7 +25,7 @@ function read(): Record<string, UsagePeek> {
       const percent = value?.percent, checkedAt = Number(value?.checkedAt);
       if ((percent === null || Number.isFinite(percent)) && Number.isFinite(checkedAt)) cache[id] = { percent: percent ?? null, checkedAt };
     }
-  } catch { /* Rings start unknown. */ }
+  } catch { /* The ring starts unknown. */ }
   return cache;
 }
 
@@ -48,4 +48,24 @@ export function recordUsage(provider: ProviderId, result: PeekSource | null | un
 export function usagePeek(provider: ProviderId, now = Date.now()): UsagePeek | undefined {
   const value = read()[provider];
   return value && now - value.checkedAt <= MAX_AGE ? value : undefined;
+}
+
+/** From here a plan is near its limit (amber); at 100 it is out (red). */
+export const USAGE_NEAR = 80;
+/** The state tone (`data-state-tone`) for a figure: none below `USAGE_NEAR` or while unknown. */
+export function usageTone(percent: number | null): '' | 'near' | 'limited' {
+  return percent === null ? '' : percent >= 100 ? 'limited' : percent >= USAGE_NEAR ? 'near' : '';
+}
+
+/** The agent the rail's one usage ring shows: the open thread's; with no thread open, the installed agent
+ * closest to its limit as last checked, or the first installed one while nothing has been checked. */
+export function usageRingAgent(providers: readonly { id: ProviderId; installed: boolean }[], openProvider: ProviderId | undefined, now = Date.now()): ProviderId | undefined {
+  if (openProvider) return openProvider;
+  const installed = providers.filter(provider => provider.installed);
+  let closest: ProviderId | undefined, most = -1;
+  for (const provider of installed) {
+    const percent = usagePeek(provider.id, now)?.percent ?? null;
+    if (percent !== null && percent > most) { closest = provider.id; most = percent; }
+  }
+  return closest ?? installed[0]?.id;
 }

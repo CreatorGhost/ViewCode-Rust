@@ -1,12 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
+import { showBotsView } from './rail-helper';
 
 const sidebar = (page: Page) => page.getByRole('region', { name: 'Bots', exact: true });
 
 async function showBots(page: Page): Promise<void> {
   await page.goto('/?bots=sample');
-  const bar = page.locator('.sidebar-bots-bar');
-  if (await bar.getAttribute('aria-pressed') !== 'true') await bar.click();
-  await expect(sidebar(page)).toBeVisible();
+  await showBotsView(page);
 }
 
 test.describe('shared bot channels', () => {

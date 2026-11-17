@@ -76,7 +76,7 @@ html[data-theme] .model-menu-tab.is-dim:not(:hover,[aria-selected="true"]){color
 /* Harnesses without a logo asset (provider-logos.ts): a neutral letter at the logo's size. */
 .provider-logo-tile{display:inline-grid;place-items:center;width:20px;height:20px;flex-shrink:0;border-radius:var(--radius-sm);background:var(--ds-fill);box-shadow:inset 0 0 0 1px var(--ds-chip-border);color:var(--muted);font-size:var(--text-2xs);font-weight:var(--weight-medium);line-height:1;overflow:hidden}
 
-/* Footer on the glass: "Effort" over the rail's column, the segmented track under the panel, one hint line below. */
+/* Footer on the glass: "Effort" over the rail's column, the track under the panel (labelled stops, a thumb that slides and can be dragged), one hint line below. */
 .model-menu-settings{flex-shrink:0;padding:0 var(--model-gap) var(--space-2)}
 .model-menu-effort-row{display:grid;grid-template-columns:var(--model-rail) minmax(0,1fr);gap:var(--model-gap);align-items:center;min-height:30px}
 .model-menu-effort-label{padding-left:var(--space-2);color:var(--muted);font-size:var(--ds-text-meta);letter-spacing:var(--ds-row-tracking)}
@@ -88,6 +88,11 @@ html[data-theme] .model-menu-tab.is-dim:not(:hover,[aria-selected="true"]){color
 .model-menu-effort>button[aria-checked="true"]{color:var(--text)}
 .model-menu-effort>button[data-model-default]::after{content:"";position:absolute;left:50%;bottom:1px;width:3px;height:3px;margin-left:-1.5px;border-radius:50%;background:var(--faint)}
 .model-menu-effort>button:disabled{cursor:wait}
+/* The thumb can be dragged (effort-track.ts): it follows the pointer, the stop it is nearest lights up, and on release it settles there. */
+.model-menu-effort{touch-action:none;user-select:none;-webkit-user-select:none}
+.model-menu-effort[data-drag="move"],.model-menu-effort[data-drag="move"]>button{cursor:grabbing}
+.model-menu-effort[data-drag="move"]>button[aria-checked="true"]:not([data-near]){color:var(--muted)}
+.model-menu-effort>button[data-near]{color:var(--text)}
 .model-menu-effort-hint{margin:var(--space-1) 0 0;padding-left:var(--space-2);min-height:1lh;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--faint);font-size:var(--text-xs);line-height:var(--leading-ui)}
 
 .model-menu :is(.model-menu-tab,.model-menu-option,.model-menu-effort>button):focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
@@ -125,7 +130,9 @@ html[data-theme] .model-menu-tab.is-dim:not(:hover,[aria-selected="true"]){color
 html[data-theme] .model-menu,html[data-theme] .model-menu *,html[data-theme] .model-menu [data-segmented]>.segment-thumb{transition:none}
 html[data-theme] .model-menu:hover :is(.model-menu-option,.model-menu-tab){transition:background-color var(--ds-ease-out) ease-out,color var(--ds-ease-out) ease-out}
 html[data-theme] .model-menu:hover :is(.model-menu-option,.model-menu-tab):hover{transition-duration:var(--ds-ease-in)}
-html[data-theme] .model-menu .model-menu-effort[data-segment-ready]:is(:hover,:focus-within)>.segment-thumb{transition:translate var(--spring-fast-duration) var(--spring-fast)}
+html[data-theme] .model-menu .model-menu-effort[data-segment-ready]:is(:hover,:focus-within,[data-drag])>.segment-thumb{transition:translate var(--spring-fast-duration) var(--spring-fast)}
+/* Under the pointer the thumb moves 1:1, with no easing between it and the hand. */
+html[data-theme] .model-menu .model-menu-effort[data-segment-ready][data-drag="move"][data-drag]>.segment-thumb{transition:none}
 @media(prefers-reduced-motion:reduce){html[data-theme] .model-menu :is(.model-menu-option,.model-menu-tab,.segment-thumb){transition:none!important}}
 /* The picker arrives with popover-motion's fade only: its geometry is final from the first frame (an
    !important declaration outranks the arrival's `scale` keyframes), so the search, rail and rows

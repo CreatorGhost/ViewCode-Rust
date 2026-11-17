@@ -294,7 +294,7 @@ test.describe('concurrency isolation', () => {
 
   test('clears a successfully submitted background draft after a delayed file read without consuming another task draft', async ({ page }) => {
     await installConcurrency(page);
-    await page.getByRole('button', { name: 'Attach files for context', exact: true }).click();
+    await page.getByRole('button', { name: 'Add files and tools', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Project files', exact: true }).click();
     await page.getByRole('button', { name: 'Attach package.json', exact: true }).click();
     await expect(page.locator('#attachments')).toContainText('package.json');
@@ -347,7 +347,7 @@ test('concurrency approval expiration removes only its owning task and a late ex
 for (const edited of [false, true]) {
   test(`concurrency updates the current composer after returning during attachment preparation${edited ? ' and preserves a newer draft' : ''}`, async ({ page }) => {
     await installConcurrency(page);
-    await page.getByRole('button', { name: 'Attach files for context', exact: true }).click();
+    await page.getByRole('button', { name: 'Add files and tools', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Project files', exact: true }).click();
     await page.getByRole('button', { name: 'Attach package.json', exact: true }).click();
     await page.evaluate(() => { (window as any).__concurrent.holdReads['session-1'] = true; });

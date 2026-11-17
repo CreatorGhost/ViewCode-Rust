@@ -1,7 +1,7 @@
 import './motion.css';
 import './tray-popover.css';
 import { accentTokens } from './palette-core';
-import { CLASSIC } from './palette';
+import { baseAccent } from './palette';
 import { parseHex } from './color';
 import { call, preview } from './bridge';
 import { escape, icon } from './dom';
@@ -18,9 +18,9 @@ const root = document.documentElement;
 
 function refreshTheme(): void {
   try { root.dataset.theme = localStorage.getItem('pandacode.theme') === 'light' ? 'light' : 'dark'; } catch { /* Default to dark. */ }
-  // The classic accent lives in the workspace stylesheet; derive it here instead.
+  // The classic accent lives in the workspace stylesheet; derive the user's base accent here instead.
   if (!root.style.getPropertyValue('--accent')) {
-    for (const [name, value] of Object.entries(accentTokens(parseHex(CLASSIC)!.rgb, root.dataset.theme as 'light' | 'dark'))) root.style.setProperty(name, value);
+    for (const [name, value] of Object.entries(accentTokens(parseHex(baseAccent(root.dataset.theme === 'light' ? 'light' : 'dark'))!.rgb, root.dataset.theme as 'light' | 'dark'))) root.style.setProperty(name, value);
   }
 }
 refreshTheme();

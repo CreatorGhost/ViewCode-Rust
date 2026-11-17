@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { enableScenes } from './scene-helper';
 import { openInspectorTab } from './inspector-tab-helper';
 
 const prompt = (page: Page) => page.getByRole('textbox', { name: 'Message your coding agent' });
@@ -533,15 +534,9 @@ test('layout preferences keep the left sidebar button clear of Mac controls and 
     const sidebar = (await page.locator('.sidebar').boundingBox())!;
     // The traffic lights sit over the project rail and the sidebar's first 48px; the button clears them from the window's edge.
     expect(button.x).toBeGreaterThanOrEqual(104);
-    // The project rail takes the traffic lights' first 56px, so even the narrowest sidebar has room for the whole wordmark.
-    const name = page.locator('.brand-name .desktop-brand-word');
-    {
-      await expect(name).toBeVisible();
-      const brand = (await name.boundingBox())!;
-      expect(button.x + button.width).toBeLessThanOrEqual(brand.x);
-      expect(brand.x + brand.width).toBeLessThanOrEqual(sidebar.x + sidebar.width);
-    }
-    if (await name.isVisible()) expect(await name.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+    // The header holds only its controls: no wordmark, and the button stays inside the sidebar.
+    await expect(page.locator('.sidebar>.brand .brand-name')).toHaveCount(0);
+    expect(button.x + button.width).toBeLessThanOrEqual(sidebar.x + sidebar.width);
   }
   await toggle.focus();
   await page.keyboard.press('Enter');
@@ -795,6 +790,7 @@ test('the title bar row keeps its on-screen height under interface zoom so it st
 
 for (const wallpaper of [false, true]) {
   test(`layout preferences draw the conversation and inspector as inset panels on one frame${wallpaper ? ' over a wallpaper' : ''}`, async ({ page }) => {
+    await enableScenes(page);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.addInitScript(on => localStorage.setItem('pandacode.wallpaperPreferences', JSON.stringify({ version: 3, enabled: on, visibility: 20, blur: 0, set: 'automatic', pinned: null })), wallpaper);
     await open(page);

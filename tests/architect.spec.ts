@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { openPlus, pickFromPlus } from './composer-more-helper';
 import type { TeamConfig, TeamSnapshot, TeamWorker } from '../src/architect-types';
 import type { Message } from '../src/types';
 
@@ -8,7 +9,7 @@ const setup = (page: Page) => page.getByRole('dialog').filter({ has: page.getByR
 /** The Team button opens No team · Cheap · Balanced · Best; a team on carries `data-on`. */
 const trigger = (page: Page) => page.locator('#team-trigger');
 async function pickTeam(page: Page, kind: string): Promise<void> {
-  await trigger(page).click();
+  await pickFromPlus(page, trigger(page));
   await page.getByRole('menuitemradio', { name: kind, exact: true }).click();
   await expect(page.getByRole('menuitemradio', { name: kind, exact: true })).toBeHidden();
 }
@@ -434,11 +435,11 @@ test.describe('architect teams', () => {
     await installArchitect(page);
     const picker = page.getByRole('button', { name: /^Model: / });
     const lead = (await picker.textContent())!;
-    await trigger(page).hover();
-    const tip = page.getByRole('tooltip');
-    await expect(tip).toContainText('Team: off.');
-    await expect(tip).toContainText('Your model leads');
-    await expect(tip).toContainText('Name workers in your prompt');
+    // Team sits in the + menu; its row carries what the tooltip said.
+    const teamRow = (await openPlus(page)).getByRole('menuitem', { name: 'Team: off', exact: true });
+    await expect(teamRow).toHaveAccessibleDescription(/Your model leads/);
+    await expect(teamRow).toHaveAccessibleDescription(/Name workers in your prompt/);
+    await page.keyboard.press('Escape');
     await expect(trigger(page)).toHaveAttribute('aria-description', /^Team: off\. Your model leads/);
     await saveDefaultTeam(page);
     await expect(setup(page)).toHaveCount(0);

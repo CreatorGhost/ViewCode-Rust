@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { pickFromPlus } from './composer-more-helper';
 
 const transcript = (page: Page) => page.getByRole('log', { name: 'Conversation', exact: true });
 const review = (page: Page) => page.locator('.change-review-dialog');
@@ -270,7 +271,7 @@ test.describe('turn changes', () => {
 
   test('completed worker conversations show their own changed files and request their snapshot', async ({ page }) => {
     await page.clock.install(); await install(page); await selectFixture(page);
-    await page.locator('#team-trigger').click();
+    await pickFromPlus(page, page.locator('#team-trigger'));
     await page.getByRole('menuitemradio', { name: 'Balanced team', exact: true }).click();
     await expect(page.locator('#team-trigger')).toHaveAttribute('data-on', '');
     await page.locator('#prompt').fill('Demonstrate the worker change review'); await page.locator('#prompt').press('Enter');

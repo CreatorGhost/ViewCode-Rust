@@ -4,6 +4,7 @@ import { escape, icon, isImeKey } from './dom';
 import { providerLogo } from './provider-logos';
 import { showPopover, hidePopover } from './popover-motion';
 import { trackSegment } from './motion';
+import { mountEffortDrag, stopForKey } from './effort-track';
 
 /** A named agent team from Settings, offered beside the models. `detail` is one line ("lead · N workers"); `roster` its harnesses. */
 export type PickerTeam = { id: string; name: string; detail: string; provider: ProviderId; roster?: ProviderId[]; selected: boolean };
@@ -81,6 +82,14 @@ export function openModelPicker(options: ModelPickerOptions): () => void {
   let settingsKey = '';
   let pendingEffort: string | null | undefined;
   let hoveredEffort: string | null | undefined;
+  /** The stop under the thumb while it is dragged. */
+  let draggedEffort: string | null | undefined;
+  // The thumb can be dragged along the track: it follows the pointer, and letting go saves the stop it is nearest.
+  const effortDrag = mountEffortDrag(settings, {
+    disabled: () => pending || closed || !providers.find(provider => provider.id === current.provider)?.installed,
+    preview: stop => { draggedEffort = stop ? stop.dataset.effort || null : undefined; renderSettings(); },
+    commit: stop => { void saveEffort(stop.dataset.effort || null); },
+  });
   let view = teamSelected ? 'teams' : `h:${current.provider}`;
 
   function restoreFocus(): void {
@@ -385,8 +394,9 @@ export function openModelPicker(options: ModelPickerOptions): () => void {
       button.disabled = disabled;
     });
     group.setAttribute('aria-disabled', String(disabled));
-    trackSegment(group, selected);
-    const shown = hoveredEffort !== undefined ? hoveredEffort : chosen;
+    // A dragged thumb is under the pointer, not on the chosen stop; it is placed again when the drag ends.
+    if (!effortDrag.dragging()) trackSegment(group, selected);
+    const shown = draggedEffort !== undefined ? draggedEffort : hoveredEffort !== undefined ? hoveredEffort : chosen;
     const hint = settings.querySelector<HTMLElement>('.model-menu-effort-hint')!;
     const text = choices.find(effort => effort.id === (shown ?? ''))?.description ?? '';
     if (hint.textContent !== text) hint.textContent = text;
@@ -487,6 +497,8 @@ export function openModelPicker(options: ModelPickerOptions): () => void {
     if (tab) { showView(tab.dataset.view!); search.focus({ preventScroll: true }); }
   });
   settings.addEventListener('click', event => {
+    // The click that ends a drag is the drag's, not a press on the stop it began on.
+    if (effortDrag.swallowClick()) return;
     const radio = (event.target as Element).closest<HTMLButtonElement>('[role="radio"]');
     if (radio && !radio.disabled) void saveEffort(radio.dataset.effort || null);
   });
@@ -515,8 +527,8 @@ export function openModelPicker(options: ModelPickerOptions): () => void {
     if (radio) {
       const radios = [...settings.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
       const index = radios.indexOf(radio);
-      const next = key === 'ArrowRight' || key === 'ArrowDown' ? Math.min(radios.length - 1, index + 1) : key === 'ArrowLeft' || key === 'ArrowUp' ? Math.max(0, index - 1) : key === 'Home' ? 0 : key === 'End' ? radios.length - 1 : -1;
-      if (next < 0) return;
+      const next = stopForKey(key, index, radios.length);
+      if (next === null) return;
       event.preventDefault();
       if (pending || radio.disabled) return;
       radios[next].focus({ preventScroll: true });
