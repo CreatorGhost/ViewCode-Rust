@@ -1,24 +1,21 @@
 /** The rail at the window's left edge: project tiles, then at its foot one usage ring and the shell's
  * icon buttons (`.sidebar-bottom`, which `main.ts` moves in). Pure markup; `main.ts` draws it. */
 import { escape } from './dom';
+import { projectToneAttributes } from './project-colors';
 import { providerLogo } from './provider-logos';
 import type { ProviderId } from './types';
 import { usagePeek, usageTone } from './usage-peek';
 
 /** Tiles shown before the rest fold into the "+N" tile. */
 export const RAIL_PROJECTS = 5;
-/** Tints in `viewcode-shell.css` (`.rail-tile[data-tint]`), each a design-system tone. */
-const TINTS = 7;
 
-export interface RailProject { id: string; name: string; /** Stored colour, once projects carry one. */ color?: string | null; }
+export interface RailProject { id: string; name: string; /** The user's colour for the project (`ProjectColor`), or none. */ color?: string | null; }
 
-/** A project's tile colour. Until projects store one, a stable tint derived from the id; a stored
- * `#rrggbb` wins. Returns the attributes for the tile. */
+/** A project's tile colour, as the tile's attributes: its chosen colour's tone (`--project-<name>`) as `--tile-tone`,
+ * which `viewcode-shell.css` derives the fill and letter from. A project without a colour (or with a name this build
+ * does not know) gets none and stays neutral, as in ViewCode. */
 export function projectTint(project: RailProject): string {
-  if (project.color && /^#[0-9a-f]{6}$/i.test(project.color)) return `style="--tile-tone:${project.color}"`;
-  let hash = 2166136261;
-  for (let index = 0; index < project.id.length; index++) hash = Math.imul(hash ^ project.id.charCodeAt(index), 16777619);
-  return `data-tint="${(hash >>> 0) % TINTS}"`;
+  return projectToneAttributes(project.color, '--tile-tone').trimStart();
 }
 
 /** The first letter (or digit) of a name, for its tile. */
@@ -40,7 +37,7 @@ export function railProjectsHtml(projects: readonly RailProject[], filterId: str
   const tiles = shown.map(project => {
     const pressed = project.id === filterId, open = !pressed && project.id === openId;
     const name = escape(project.name);
-    return `<button type="button" class="rail-tile" data-action="rail-project" data-id="${escape(project.id)}" ${projectTint(project)} aria-pressed="${pressed}"${open ? ' data-open' : ''} aria-label="${name}" title="${pressed ? `${name} · click to show all projects` : name}"><span aria-hidden="true">${escape(initial(project.name))}</span></button>`;
+    return `<button type="button" class="rail-tile" id="rail-tile-${escape(project.id)}" data-action="rail-project" data-id="${escape(project.id)}" ${projectTint(project)} aria-pressed="${pressed}"${open ? ' data-open' : ''} aria-label="${name}" title="${pressed ? `${name} · click to show all projects` : name}"><span aria-hidden="true">${escape(initial(project.name))}</span></button>`;
   }).join('');
   const more = rest > 0 ? `<button type="button" class="rail-tile rail-more" data-action="rail-projects-more" aria-haspopup="dialog" aria-expanded="false" aria-label="${rest} more project${rest === 1 ? '' : 's'}" title="${rest} more project${rest === 1 ? '' : 's'}"><span aria-hidden="true">+${rest}</span></button>` : '';
   return tiles + more;

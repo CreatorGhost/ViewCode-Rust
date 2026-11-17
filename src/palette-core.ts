@@ -116,6 +116,17 @@ export function projectTones(mode: 'light' | 'dark'): Tokens {
   return Object.fromEntries(Object.entries(PROJECT_HUES).map(([name, { h, c }]) => [`--project-${name}`, toHex(oklch(l, c, h))]));
 }
 
+/** How a project's rail tile and row badge draw from its tone, in percent of the tone: `fill` into the surface behind
+ * (hover and the chosen tile are stronger), `ink` into the text ink for the letter. The stylesheets carry the same numbers
+ * as `--tile-fill`/`--tile-ink` and `--badge-fill`/`--badge-ink`; tests/palette.test.mjs holds both to these and the
+ * pairs to 4.5:1. */
+export const PROJECT_MARK = { fill: 12, ink: 40, hover: 15, pressed: 18 };
+/** The fill and letter colour of a mark in `tone` on `surface` with `text` ink, as `color-mix(in srgb, …)` resolves them. */
+export function projectMark(tone: string, surface: string, text: string, fill = PROJECT_MARK.fill): { fill: string; ink: string } {
+  const t = parseHex(tone)!.rgb;
+  return { fill: toHex(mix(parseHex(surface)!.rgb, t, fill / 100)), ink: toHex(mix(parseHex(text)!.rgb, t, PROJECT_MARK.ink / 100)) };
+}
+
 /** The accent a fresh profile starts with, and what the scene accent falls back to while no wallpaper or scene shows:
  * the teal of ViewCode's default look ("Obsidian"), per base. `accentTokens` derives every accent token from it. */
 export const DEFAULT_ACCENT = { dark: '#2dd4bf', light: '#0f8577' };
