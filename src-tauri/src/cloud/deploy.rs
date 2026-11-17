@@ -294,10 +294,10 @@ pub fn prepare(tool: &str, args: &[String]) -> Result<(Command, Vec<String>), St
         "netlify" => {
             let token = super::secret("netlify_token").ok_or("Connect Netlify in Settings / Agents / Cloud sandboxes first.")?;
             let mut command = match crate::providers::tool_path("netlify") {
-                Some(path) => crate::providers::command(&path)?.into_std(),
+                Some(path) => crate::providers::tool_command(&path)?.into_std(),
                 None => {
                     let path = crate::providers::tool_path("npx").ok_or("Node.js (npx) is needed to run Netlify. Install Node.js and try again.")?;
-                    let mut command = crate::providers::command(&path)?.into_std();
+                    let mut command = crate::providers::tool_command(&path)?.into_std();
                     command.args(["--yes", NETLIFY]);
                     command
                 }

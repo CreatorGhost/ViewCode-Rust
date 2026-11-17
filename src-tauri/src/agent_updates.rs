@@ -222,11 +222,29 @@ fn installed() -> Vec<Installation> {
     group_installations(
         PROVIDERS
             .iter()
+            // A harness that is not enabled is not checked: its binary is never run
+            // for a version, and no package manager is asked about it.
+            .filter(|(id, _)| crate::launch_gate::enabled(id))
             .filter_map(|(id, name)| {
                 crate::providers::executable(id).map(|path| ((*id).into(), (*name).into(), path))
             })
             .collect(),
     )
+}
+
+/// What an update check would probe: each installation's harnesses and whether its
+/// version could be read (`providers/launch_gate_tests.rs`).
+#[cfg(test)]
+pub(crate) fn checked_for_test() -> Vec<(Vec<String>, bool)> {
+    installed().into_iter().map(|local| {
+        let version = install::version(&local.provider, &local.path, family(&local.provider));
+        (local.providers, version.is_ok())
+    }).collect()
+}
+
+#[cfg(test)]
+pub(crate) fn version_for_test(harness: &str, path: &std::path::Path) -> Result<String> {
+    install::version(harness, path, family(harness)).map(|version| version.text)
 }
 
 #[derive(Clone)]
@@ -248,6 +266,10 @@ fn cache() -> &'static Mutex<Cache> {
     CACHE.get_or_init(Default::default)
 }
 static GENERATION: AtomicU64 = AtomicU64::new(0);
+/// Drops the cached check, so a harness turned on or off is reflected at once.
+pub(crate) fn forget() {
+    invalidate();
+}
 fn invalidate() {
     GENERATION.fetch_add(1, Ordering::SeqCst);
 }
@@ -440,7 +462,7 @@ async fn inspect(installation: Installation) -> Checked {
         );
         let local = installation.clone();
         if let Ok(Ok(version)) = tokio::task::spawn_blocking(move || {
-            install::version(&local.path, family(&local.provider))
+            install::version(&local.provider, &local.path, family(&local.provider))
         })
         .await
         {
@@ -454,7 +476,7 @@ async fn inspect(installation: Installation) -> Checked {
     }
     let local = installation.clone();
     let details = tokio::task::spawn_blocking(move || {
-        let version = install::version(&local.path, family(&local.provider))?;
+        let version = install::version(&local.provider, &local.path, family(&local.provider))?;
         let method = install::detect(&local, &version);
         let source = install::source(&local, &version, method.as_ref().ok());
         Ok::<_, String>((version, method, source))
@@ -601,6 +623,7 @@ pub async fn update_agent(
     if !PROVIDERS.iter().any(|(id, _)| *id == provider) {
         return Err("Unknown agent.".into());
     }
+    crate::launch_gate::allow(&provider)?;
     let checked = check(false)
         .await?
         .into_iter()
@@ -622,7 +645,7 @@ pub async fn update_agent(
         if current != checked.install {
             return Err("The agent installation changed. Check for updates again.".into());
         }
-        let before = install::version(&current.path, family(&provider))?;
+        let before = install::version(&provider, &current.path, family(&provider))?;
         let target = parse_version(row.latest_version.as_deref().unwrap_or(""))
             .ok_or("Check the latest version before updating.")?;
         let plan = install::detect(&current, &before)?;
@@ -643,6 +666,7 @@ pub async fn update_agent(
         };
         progress("updating", None);
         let result = install::apply(
+            &provider,
             &plan,
             &current.path,
             family(&provider),

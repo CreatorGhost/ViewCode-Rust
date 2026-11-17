@@ -218,7 +218,7 @@ mod tests {
             "accessToken":"fixture-oauth-token", "refreshToken":"fixture-refresh-token", "expiresAt":expires_at,
             "scopes":["user:inference","user:profile"], "subscriptionType":"max"
         }}).to_string()).unwrap();
-        let mut command = super::super::command(&path).unwrap();
+        let mut command = super::super::command("claude", &path).unwrap();
         command.env("CLAUDE_CONFIG_DIR", &directory).env("ANTHROPIC_API_KEY", "fixture-api-key")
             .env("ANTHROPIC_AUTH_TOKEN", "fixture-auth-token").env("ANTHROPIC_BASE_URL", "https://invalid.example");
         let status = inspect_saved_login_command(command);

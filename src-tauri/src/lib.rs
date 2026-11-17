@@ -80,6 +80,7 @@ mod usage_keychain;
 mod usage_ledger;
 mod workspace;
 mod jj;
+mod launch_gate;
 mod tray;
 mod headless;
 mod headless_bots;
@@ -1642,6 +1643,9 @@ fn prepare_task_run_in_project(
     if admission.cloud_attach {
         return prepare_cloud_attach(&store, &mut agents, session, tx, stopped);
     }
+    // Every way a turn starts ends here (the composer, a schedule, a bot, a team role, another
+    // computer): a harness that is not enabled is refused before anything is saved or started.
+    launch_gate::allow(&session.provider)?;
     if admission.goal.is_some() && session.provider != "codex" {
         return Err(
             "Goals require the Codex harness. The task provider changed before it started.".into(),
@@ -3998,6 +4002,8 @@ fn setup_common(app: &tauri::App) -> crate::Result<PathBuf> {
     if let Err(error) = store.discard_empty_drafts() {
         eprintln!("Could not clear unsent new tasks: {error}");
     }
+    // Before anything below can start an agent: until this loads, the gate refuses everything.
+    launch_gate::setup(&dir, &store);
     app.manage(AppState {
         store: Arc::new(Mutex::new(store)),
         agents: Arc::new(Mutex::new(HashMap::new())),
@@ -4019,6 +4025,7 @@ fn setup_common(app: &tauri::App) -> crate::Result<PathBuf> {
     // Machine threads that settled while PandaCode was closed wake their idle tasks.
     remote::orchestrate::reconcile(app.handle());
     schedules::start(app.handle().clone());
+    launch_gate::watch(app.handle().clone());
     Ok(dir)
 }
 
@@ -4320,6 +4327,9 @@ pub fn run() {
                 cloud_agents::tasks::cloud_agent_set_claude_token,
                 remote::mirror::remote_repo_check,
                 provider_settings::provider_configuration,
+                launch_gate::launch_gate_state,
+                launch_gate::launch_gate_set_enabled,
+                launch_gate::launch_gate_complete_first_run,
                 connections::connections_list,
                 connections::connection_save,
                 connections::connection_delete,

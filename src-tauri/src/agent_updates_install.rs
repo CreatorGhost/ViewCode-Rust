@@ -56,8 +56,10 @@ pub(super) fn docs(provider: &str) -> Option<&'static str> {
     })
 }
 
-fn command(path: &Path) -> Result<Command> {
-    let prepared = crate::providers::command(path)?;
+/// `harness` is the enabled harness this is run for (the launch gate's key), which can
+/// differ from the binary's family: GLM alone enabled still checks its `claude` binary.
+fn command(harness: &str, path: &Path) -> Result<Command> {
+    let prepared = crate::providers::command(harness, path)?;
     let mut command = Command::new(prepared.as_std().get_program());
     command.args(prepared.as_std().get_args());
     // Keep the launch environment too: AppImage cleanup and the telemetry opt-outs.
@@ -94,8 +96,8 @@ fn run_output(command: Command, timeout: Duration, allow_truncated: bool) -> Res
     Ok(String::from_utf8_lossy(&output.stdout.bytes).into_owned())
 }
 
-fn version_command(path: &Path, provider: &str) -> Result<Command> {
-    let mut command = command(path)?;
+fn version_command(harness: &str, path: &Path, provider: &str) -> Result<Command> {
+    let mut command = command(harness, path)?;
     if provider == "grok" {
         command.arg("--no-auto-update");
     }
@@ -103,9 +105,9 @@ fn version_command(path: &Path, provider: &str) -> Result<Command> {
     Ok(command)
 }
 
-pub(super) fn version(path: &Path, provider: &str) -> Result<Version> {
+pub(super) fn version(harness: &str, path: &Path, provider: &str) -> Result<Version> {
     super::parse_version(&run(
-        version_command(path, provider)?,
+        version_command(harness, path, provider)?,
         Duration::from_secs(5),
     )?)
     .ok_or("The agent did not report a recognized version.".into())
@@ -689,10 +691,12 @@ fn grok_channel(data: &[u8]) -> Result<String> {
     }
 }
 
-fn update_command(plan: &Plan, target: &Version) -> Result<Command> {
+fn update_command(harness: &str, plan: &Plan, target: &Version) -> Result<Command> {
+    // A package manager's upgrade installs the harness's binary: not for one that is off.
+    crate::launch_gate::allow(harness)?;
     let mut cmd = match plan {
         Plan::Native { path, provider } => {
-            let mut cmd = command(path)?;
+            let mut cmd = command(harness, path)?;
             match provider.as_str() {
                 "grok" => {
                     cmd.args(["--no-auto-update", "update"]);
@@ -762,6 +766,7 @@ fn update_command(plan: &Plan, target: &Version) -> Result<Command> {
 }
 
 pub(super) fn apply(
+    harness: &str,
     plan: &Plan,
     path: &Path,
     provider: &str,
@@ -769,10 +774,12 @@ pub(super) fn apply(
     target: &Version,
     verifying: impl FnOnce(),
 ) -> Result<Version> {
-    apply_with(plan, path, provider, before, target, verifying, run_output)
+    apply_with(harness, plan, path, provider, before, target, verifying, run_output)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn apply_with(
+    harness: &str,
     plan: &Plan,
     path: &Path,
     provider: &str,
@@ -782,13 +789,13 @@ fn apply_with(
     mut run: impl FnMut(Command, Duration, bool) -> Result<String>,
 ) -> Result<Version> {
     run(
-        update_command(plan, target)?,
+        update_command(harness, plan, target)?,
         Duration::from_secs(180),
         true,
     )?;
     verifying();
     let after = super::parse_version(&run(
-        version_command(path, provider)?,
+        version_command(harness, path, provider)?,
         Duration::from_secs(5),
         false,
     )?)
@@ -1019,7 +1026,7 @@ mod tests {
             package: "@openai/codex",
         };
         let command =
-            update_command(&plan, &super::super::parse_version("0.156.1").unwrap()).unwrap();
+            update_command("codex", &plan, &super::super::parse_version("0.156.1").unwrap()).unwrap();
         assert_eq!(command.get_program(), "/tools/node");
         let args: Vec<_> = command
             .get_args()
@@ -1047,6 +1054,7 @@ mod tests {
             let mut commands = 0;
             let mut verifying = false;
             let result = apply_with(
+                "claude",
                 &plan,
                 Path::new("/fixture/claude"),
                 "claude",
@@ -1073,6 +1081,7 @@ mod tests {
         }
         let mut verifying = false;
         assert!(apply_with(
+            "claude",
             &plan,
             Path::new("/fixture/claude"),
             "claude",
