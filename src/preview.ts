@@ -1495,6 +1495,7 @@ async function previewVoice(command: string, args: Record<string, any>): Promise
   throw new Error(`Unknown voice command: ${command}`);
 }
 
+let computerUse: Promise<(command: string, args: Record<string, any>) => Promise<unknown>> | undefined;
 export async function invoke<T>(command: string, args: Record<string, any>): Promise<T> {
   if (command.startsWith('voice_')) return await previewVoice(command, args) as T;
   if (/^schedules?_|^scheduler_/.test(command)) return (await import('./preview-schedules')).invokeSchedules<T>(command, args, {
@@ -1504,6 +1505,11 @@ export async function invoke<T>(command: string, args: Record<string, any>): Pro
     send: async (sessionId, text) => { await invoke('send_message', { sessionId, text }); },
   });
   if (command.startsWith('tray_')) return trayCommand(command, args) as T;
+  if (command.startsWith('computer_use_')) {
+    // `?cu=` picks a scenario (src/preview-computer-use.ts lists them and its test hooks).
+    computerUse ??= import('./preview-computer-use').then(module => module.createPreviewComputerUse(emit, new URLSearchParams(location.search).get('cu')));
+    return await (await computerUse)(command, args) as T;
+  }
   // An if chain, not a switch: specs patch the first command switch in this file to record calls.
   if (command.startsWith('agents_dock_')) return previewAgentsDock<T>(command, args);
   if (command.startsWith('jj_')) return (await import('./preview-jj')).invokeJj<T>(command, args);

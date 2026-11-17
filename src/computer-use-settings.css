@@ -1,0 +1,30 @@
+/* Settings → Computer use (src/computer-use-settings.ts). Built on the design-system primitives; only spacing,
+ * wrapping and the danger accents are set here. The bypass dialog's body is in computer-use.css (always loaded). */
+.cu-settings{display:grid;gap:12px;min-width:0}
+.cu-settings .ds-section+.ds-section{margin-top:4px}
+.cu-settings h3{margin:0;font:inherit;color:inherit}
+/* Sub-lines here carry guidance: let them wrap instead of clipping. */
+.cu-settings .ds-row-sub.cu-wrap{white-space:normal;overflow:visible;line-height:1.4}
+.cu-settings .ds-row:has(.cu-wrap){padding-top:8px;padding-bottom:8px}
+.cu-note{margin:0;padding:0 var(--ds-row-pad-x);color:var(--muted);font-size:var(--ds-text-meta);line-height:1.45}
+.ds-card-foot>.cu-note{padding:0}
+.cu-mode{max-width:420px}
+.cu-mode>button:disabled{color:var(--faint);cursor:not-allowed}
+.cu-choice .cu-check{--icon-size:18px;color:var(--text)}
+.cu-choice[aria-checked="true"] .ds-row-title{color:var(--text)}
+.cu-choice:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.cu-recent-row code{font-family:var(--mono);font-size:var(--ds-text-ui)}
+.cu-error{margin:0;padding:0 var(--ds-row-pad-x)}
+.cu-danger-zone .ds-row-title{white-space:normal}
+/* The standing warning: the danger tone on its edge and icon; the words stay in the text colours. */
+.cu-bypass-warning.ds-card{padding:4px;border-color:color-mix(in srgb,var(--ds-danger) 55%,var(--ds-border))}
+
+@media(prefers-contrast:more){
+  .cu-note{color:var(--text)}
+  .cu-bypass-warning.ds-card{border-color:var(--ds-danger);border-width:2px}
+}
+@media(forced-colors:active){
+  .cu-bypass-warning.ds-card{border:2px solid CanvasText}
+  .cu-choice[aria-checked="true"]{outline:1px solid Highlight}
+  .cu-settings [data-state-tone]{color:CanvasText}
+}

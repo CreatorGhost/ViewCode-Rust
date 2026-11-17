@@ -27,6 +27,7 @@ import type { AgentsDockPreferences } from './agents-dock';
 import { SECTIONS, type SettingsPage, type SettingsSection } from './settings-sections';
 import { mountRecommended } from './recommended-settings';
 import { enabled as turnChecksEnabled } from './turn-checks';
+import { mountComputerUseSettings, type ComputerUseSettingsHost } from './computer-use-settings';
 
 /** Panels that live elsewhere and are embedded here: each mounts into a host and returns its cleanup. */
 type Embed = (host: HTMLElement) => Promise<() => void>;
@@ -65,6 +66,8 @@ interface SettingsOptions {
   skills?: SkillsLibraryHost & Pick<SkillManagerHost, 'activeProject'>;
   /** PandaCode Connect: sign-in, remote control and devices. */
   remote?: RemoteHost;
+  /** Settings → Computer use: the gate's settings, its bypass confirmation and thread titles for recent actions. */
+  computerUse?: ComputerUseSettingsHost;
   embed: { colors: Embed; wallpapers: Embed; providerConnections: Embed; openCodeModels: Embed; harnessPrivacy: Embed };
   /** Leaves Settings for the workspace. */
   close(): void;
@@ -182,6 +185,7 @@ function sectionHtml(id: SettingsPage, options: SettingsOptions): string {
     case 'schedules': return '<div id="schedules-settings"></div>';
     case 'skills': return '<div id="skill-manager"></div>';
     case 'rules': return '<div id="skills-library"></div>';
+    case 'computer': return '<div id="computer-use-settings"></div>';
     case 'cloud': return '<div id="cloud-settings"></div>';
     case 'remote': return '<div id="remote-settings"></div>';
     case 'github': return '<div id="github-settings"></div>';
@@ -334,6 +338,7 @@ export function mountSettings(host: HTMLElement, options: SettingsOptions): Sett
     }
     if (id === 'skills' && options.skills) cleanups.push(mountSkillManager(panel.querySelector<HTMLElement>('#skill-manager')!, options.skills));
     if (id === 'rules' && options.skills) cleanups.push(mountSkillsLibrary(panel.querySelector<HTMLElement>('#skills-library')!, options.skills));
+    if (id === 'computer' && options.computerUse) cleanups.push(mountComputerUseSettings(panel.querySelector<HTMLElement>('#computer-use-settings')!, options.computerUse));
     if (id === 'cloud' && options.cloud) cleanups.push(mountCloudSettings(panel.querySelector<HTMLElement>('#cloud-settings')!, options.cloud));
     if (id === 'about') {
       cleanups.push(mountSupportDetails(panel.querySelector<HTMLDetailsElement>('.support-details')!));

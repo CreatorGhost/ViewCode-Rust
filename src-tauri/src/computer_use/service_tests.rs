@@ -890,3 +890,15 @@ async fn bypass_under_look_only_lifts_the_protected_apps_rule_and_still_takes_no
     assert_eq!(rig.refused(json!({"command":"observe","window":vault})).await.code, ErrorCode::Off);
     assert!(!rig.ops().iter().any(|op| op.starts_with("did:")));
 }
+
+#[tokio::test]
+async fn while_off_reading_the_status_starts_no_helper() {
+    let rig = rig_for("plain", Mode::Off, true).await;
+    let status = rig.service.status().await;
+    assert_eq!(serde_json::to_value(&status).unwrap(), json!({"mode":"off","platform":"macos","driverAvailable":true,"accessibility":"unknown"}));
+    assert_eq!(rig.service.driver().helpers_started().await, 0);
+    // Turned on, the helper is asked.
+    rig.host.set(|settings| settings.mode = Mode::Observe);
+    assert_eq!(serde_json::to_value(rig.service.status().await).unwrap()["accessibility"], "granted");
+    assert_eq!(rig.service.driver().helpers_started().await, 1);
+}

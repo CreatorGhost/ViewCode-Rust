@@ -92,6 +92,7 @@ import { JevActivity } from './jev-activity';
 import { initializeSidebarResizing } from './sidebar-resize';
 import { changeUiScale, initializeUiSizing, setUiScale } from './ui-size';
 import { approvalBarHtml } from './approval-bar';
+import { bypassDialogBody, confirmBypassIn, createComputerUse } from './computer-use';
 import { decorateTranscript, initOrchestration, lineageSource, syncOrchestration } from './machine-orchestration';
 import { createThreadFind } from './thread-find';
 import { installPointerDrag } from './pointer-drag';
@@ -194,6 +195,15 @@ let transientId = -1;
 const savedMarkdownSources = new WeakMap<HTMLElement, string>();
 let olderMessagesRequest: { sessionId: string; generation: number; beforeId: number } | undefined;
 const pendingApprovals = new Set<string>();
+/** Computer use in the shell: its approval cards, the "using the computer" strip and the bypass indicator (src/computer-use.ts). */
+const computerUse = createComputerUse({
+  call, listen: callback => (subscribe as unknown as (name: string, callback: (event: { sessionId?: string | null } | null) => void) => Promise<() => void>)('computer-use-changed', callback),
+  changed: threads => {
+    if (!threads || threads.includes(state.sessionId)) renderComputerUse();
+    syncBypassIndicator(); scheduleNavigation();
+  },
+  arrived: approval => { if (approval.threadId !== state.sessionId) notify(`${(state.sessions.find(s => s.id === approval.threadId)?.title ?? 'Task').replace(/ · You$/, '')} needs approval to use the computer`); },
+});
 const configuringSessions = new Set<string>();
 const modelCatalogs = new Map<ProviderId, { expires: number; pending: Promise<ProviderModel[]> }>();
 let slashPicker: ReturnType<typeof mountSlashCommands> | undefined;
@@ -522,7 +532,7 @@ $app.innerHTML = `<div class="workspace" data-tauri-drag-region>
     <div class="sidebar-bottom"><button data-action="settings-page" data-id="remote" title="Remote access" aria-label="Remote access">${icon('phone')}</button>${button('rail-github', 'Pull requests and issues', 'pull')}<button data-action="settings" title="Settings (${shortcut(',')})" aria-label="Settings">${icon('settings')}</button></div>
   </aside>
   <main class="main-pane">
-    <header class="workspace-header" data-tauri-drag-region="deep"><div class="header-leading" data-tauri-drag-region>${button('toggle-sidebar', 'Hide sidebar', 'sidebar', 'sidebar-toggle', 'id="sidebar-toggle" aria-controls="workspace-sidebar" aria-expanded="true" aria-keyshortcuts="Meta+B Control+B"')}<span id="view-divider" class="header-divider" aria-hidden="true" hidden></span><div id="breadcrumb" class="breadcrumb" data-tauri-drag-region></div></div><div class="header-actions">${preview ? '<span class="preview-status">Browser preview · sample data</span>' : ''}</div><div id="agents-dock-host"></div><div id="action-dock" class="action-dock" role="toolbar" aria-label="Workspace actions" aria-orientation="vertical" data-tauri-drag-region="false"><div class="action-dock-group" data-group="panels">${button('toggle-inspector', 'Toggle inspector', 'panel', 'active', 'id="inspector-toggle" aria-keyshortcuts="Meta+Shift+B Control+Shift+B"', `Toggle inspector (${shortcut('B', true)})`)}${button('terminal', 'Toggle terminal', 'terminal', '', 'id="terminal-toggle" aria-controls="terminal-drawer" aria-expanded="false" aria-keyshortcuts="Meta+J Control+J"', `Toggle terminal (${shortcut('J')})`)}${button('browser', 'Open browser', 'globe', '', 'id="browser-toggle"')}${button('moodboards', 'Project moodboards', 'images')}<button type="button" id="agents-toggle" class="agents-toggle" aria-label="Agents" aria-haspopup="dialog" aria-expanded="false" aria-controls="agents-flyout" data-dock-notip hidden>${icon('team')}<b class="dock-badge" aria-hidden="true" hidden></b></button></div><div class="action-dock-group" data-group="actions"><button type="button" class="header-run" id="run-project-button" data-action="run-project" aria-label="Run project" title="Run pandacode-run.sh" hidden>${icon('play')}<span>Run</span></button>${button('deploy', 'Deploy', 'upload', '', 'id="deploy-button" aria-haspopup="dialog"')}${button('task-menu', 'Task actions', 'more', '', 'id="task-menu-trigger" aria-haspopup="dialog" aria-expanded="false"')}</div><div class="action-dock-group" data-group="status"><button type="button" id="update-status" class="update-status" hidden>${icon('refresh')}<span>Restart to update</span></button></div></div><div id="agents-flyout" class="agents-flyout" data-tauri-drag-region="false" hidden><div id="subagents-host" class="subagents-host" hidden></div><div id="lineage-host" class="lineage-host"></div></div></header>
+    <header class="workspace-header" data-tauri-drag-region="deep"><div class="header-leading" data-tauri-drag-region>${button('toggle-sidebar', 'Hide sidebar', 'sidebar', 'sidebar-toggle', 'id="sidebar-toggle" aria-controls="workspace-sidebar" aria-expanded="true" aria-keyshortcuts="Meta+B Control+B"')}<span id="view-divider" class="header-divider" aria-hidden="true" hidden></span><div id="breadcrumb" class="breadcrumb" data-tauri-drag-region></div></div><div class="header-actions">${preview ? '<span class="preview-status">Browser preview · sample data</span>' : ''}<button type="button" id="cu-bypass-indicator" class="cu-bypass-indicator" data-action="settings-page" data-id="computer" aria-label="Bypass all permissions is on for computer use. Open the setting." title="Computer use: Bypass all permissions is on" hidden>${icon('alert').replace('<svg ', '<svg data-state-tone="danger" ')}<span>Bypass on</span></button></div><div id="agents-dock-host"></div><div id="action-dock" class="action-dock" role="toolbar" aria-label="Workspace actions" aria-orientation="vertical" data-tauri-drag-region="false"><div class="action-dock-group" data-group="panels">${button('toggle-inspector', 'Toggle inspector', 'panel', 'active', 'id="inspector-toggle" aria-keyshortcuts="Meta+Shift+B Control+Shift+B"', `Toggle inspector (${shortcut('B', true)})`)}${button('terminal', 'Toggle terminal', 'terminal', '', 'id="terminal-toggle" aria-controls="terminal-drawer" aria-expanded="false" aria-keyshortcuts="Meta+J Control+J"', `Toggle terminal (${shortcut('J')})`)}${button('browser', 'Open browser', 'globe', '', 'id="browser-toggle"')}${button('moodboards', 'Project moodboards', 'images')}<button type="button" id="agents-toggle" class="agents-toggle" aria-label="Agents" aria-haspopup="dialog" aria-expanded="false" aria-controls="agents-flyout" data-dock-notip hidden>${icon('team')}<b class="dock-badge" aria-hidden="true" hidden></b></button></div><div class="action-dock-group" data-group="actions"><button type="button" class="header-run" id="run-project-button" data-action="run-project" aria-label="Run project" title="Run pandacode-run.sh" hidden>${icon('play')}<span>Run</span></button>${button('deploy', 'Deploy', 'upload', '', 'id="deploy-button" aria-haspopup="dialog"')}${button('task-menu', 'Task actions', 'more', '', 'id="task-menu-trigger" aria-haspopup="dialog" aria-expanded="false"')}</div><div class="action-dock-group" data-group="status"><button type="button" id="update-status" class="update-status" hidden>${icon('refresh')}<span>Restart to update</span></button></div></div><div id="agents-flyout" class="agents-flyout" data-tauri-drag-region="false" hidden><div id="subagents-host" class="subagents-host" hidden></div><div id="lineage-host" class="lineage-host"></div></div></header>
     <div class="work-area"><section id="project-board" class="project-board" aria-label="Project board" hidden></section><section id="github-hub" aria-label="GitHub" hidden></section><section class="conversation-pane"><div id="task-details-heading" class="task-details-heading" hidden></div><aside id="progress-pip" class="progress-pip" aria-label="Visual progress" hidden></aside><div id="transcript" class="transcript" role="log" aria-label="Conversation" aria-live="off"></div><div id="composer-area" class="composer-area"></div><div id="composer-live" class="sr-only" role="status" aria-live="polite"></div></section></div>
     <div id="terminal-drawer" class="terminal-drawer" hidden><div class="drawer-heading"><span>${icon('terminal')}<span id="terminal-project" class="muted"></span></span><div class="terminal-tabs" role="tablist" aria-label="Terminal tabs"></div><div class="terminal-heading-actions"><button class="icon-button" data-terminal-action="new" aria-label="New terminal" title="New terminal">${icon('plus')}</button><button class="icon-button" data-terminal-action="minimize" aria-label="Minimize terminal" title="Minimize terminal">${icon('minimize')}</button><button class="icon-button" data-terminal-action="close" aria-label="Close terminal" title="Close terminal" aria-haspopup="dialog">${icon('close')}</button></div></div><div id="terminal-host"></div></div>
   </main>
@@ -1515,7 +1525,7 @@ async function adaptPickerToComputer(task: Session, deviceId: string, name: stri
 /** Whether a task needs you, as its sidebar row and board card say it: a state, its full label, and the word shown. */
 function taskSignal(s: Session, now: number): { status: string; statusLabel: string; word: string } {
   const live = state.streams.get(s.id), answer = Boolean(live?.inputs.size);
-  const status = live && (live.approvals.size || live.inputs.size) || s.status === 'waiting_approval' ? 'attention' : isRunning(s.id) && !teamHeld(s.id) ? 'running' : limitActive(s, now) ? 'limited' : FAILED_STATUS.has(s.status) ? 'failed' : '';
+  const status = live && (live.approvals.size || live.inputs.size) || s.status === 'waiting_approval' || computerUse.waiting(s.id) ? 'attention' : isRunning(s.id) && !teamHeld(s.id) ? 'running' : limitActive(s, now) ? 'limited' : FAILED_STATUS.has(s.status) ? 'failed' : '';
   const statusLabel = status === 'attention' ? answer ? 'Needs your answer' : 'Needs approval' : status === 'limited' ? `Usage limit · ${resetLabel(s.limitedUntil, now)}` : status === 'failed' ? s.status === 'interrupted' ? 'Interrupted' : 'Failed' : 'Running';
   // States that need you say so in a word; running shows its clock, the rest their age.
   const word = status === 'attention' ? answer ? 'Answer' : 'Approval' : status === 'failed' ? statusLabel : status === 'limited' ? (limitReset(s.limitedUntil, now) ? `Limited · ${limitReset(s.limitedUntil, now)}` : 'Limited') : '';
@@ -2815,6 +2825,32 @@ function renderApprovalBar(): void {
   if (!filled) approvalGroupsOpen.delete(sessionId);
   if (appeared) settleUnfolded(host);
 }
+/** The open thread's computer-use approval cards and its "using the computer" strip, above the prompt. */
+let computerUseShown = { sessionId: '', filled: false };
+function renderComputerUse(): void {
+  const cards = document.querySelector<HTMLElement>('#cu-approval'), strip = document.querySelector<HTMLElement>('#cu-activity');
+  const sessionId = state.sessionId;
+  if (cards) {
+    const html = computerUse.cardHtml(sessionId), filled = Boolean(html);
+    const appeared = filled && computerUseShown.sessionId === sessionId && !computerUseShown.filled;
+    computerUseShown = { sessionId, filled };
+    if (!showsHtml(cards, html)) {
+      const focused = cards.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.decision : undefined;
+      cards.innerHTML = html;
+      if (focused) cards.querySelector<HTMLElement>(`[data-decision="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
+      if (appeared) settleUnfolded(cards);
+    }
+  }
+  if (strip) { const html = computerUse.activityHtml(sessionId); if (!showsHtml(strip, html)) strip.innerHTML = html; }
+}
+function syncBypassIndicator(): void {
+  const indicator = document.querySelector<HTMLElement>('#cu-bypass-indicator');
+  if (indicator) indicator.hidden = !computerUse.bypass();
+}
+/** The bypass confirmation in the shared dialog; true only on an explicit confirm. */
+function confirmComputerUseBypass(): Promise<boolean> {
+  return confirmBypassIn(modal('Bypass all computer-use permissions?', bypassDialogBody(), 'cu-bypass-dialog'), closeModal);
+}
 /** A task's pending approvals as the bar above its prompt. */
 function taskApprovalsHtml(sessionId: string): string {
   const approvals = [...state.streams.get(sessionId)?.approvals ?? []].map(([id, text]) => ({ id, text }));
@@ -2903,10 +2939,10 @@ function renderComposer(): void {
   }
   // Approvals sit above everything that rides on the prompt, the context bar included.
   $('#composer-area').insertAdjacentHTML('afterbegin', '<div id="bot-failover-bar"></div>');
-  $('#composer-area').insertAdjacentHTML('afterbegin', '<div id="approval-bar"></div>');
+  $('#composer-area').insertAdjacentHTML('afterbegin', '<div id="approval-bar"></div><div id="cu-approval"></div><div id="cu-activity"></div>');
   $('#composer').insertAdjacentHTML('beforebegin', '<div id="machine-orchestration"></div>' + cloudStrip(s) + remoteStartStrip(s.id) + remoteMissingNote(s) + (composerNotes.has(s.id) ? `<div class="composer-inline-note">${escape(composerNotes.get(s.id))}</div>` : '') + (running && !teamHeld(s.id) ? '' : limitBanner(s, Date.now(), limitAlternatives(s), teamHeld(s.id))));
   if (orchestrationSlot) $('#machine-orchestration').replaceWith(orchestrationSlot);
-  renderApprovalBar(); renderBotFailover(); syncOrchestration(); resizePrompt();
+  renderApprovalBar(); renderComputerUse(); renderBotFailover(); syncOrchestration(); resizePrompt();
   trayStateChanged();
   $('#transcript').toggleAttribute('data-running', running);
   void github.status(s.projectId);
@@ -4626,7 +4662,8 @@ function onAgent(event: AgentEvent): void {
   queueMicrotask(() => btwPanel.event(event.sessionId, event.kind));
   if (botsView) queueMicrotask(() => botsView?.agent(event.sessionId, event.kind));
   if ((event.kind === 'done' || event.kind === 'turn_start') && botForThread()) queueMicrotask(renderHeader);
-  if (event.kind === 'done') tilePages.delete(event.sessionId);
+  if (event.kind === 'done') { tilePages.delete(event.sessionId); computerUse.turnEnded(event.sessionId); }
+  if (event.kind === 'tool') computerUse.toolEvent(event);
   queueMicrotask(() => tiles.event(event.sessionId));
   if (deletedSessions.has(event.sessionId)) return;
   // Managed workers are deliberately absent from sidebar/board task summaries.
@@ -5965,6 +6002,10 @@ async function showSettings(section?: import('./settings').SettingsSection, inte
       cloud: { call, listen: (name, callback) => subscribe(name, callback) },
       skills: { call, projects: () => userProjects().map(p => ({ id: p.id, name: p.name })), activeProject: () => project()?.id ?? '' },
       remote: remoteHost,
+      computerUse: {
+        call, confirmBypass: confirmComputerUseBypass, threadTitle: id => state.sessions.find(s => s.id === id)?.title,
+        listen: callback => (subscribe as unknown as (name: string, callback: () => void) => Promise<() => void>)('computer-use-changed', callback),
+      },
       schedules: { intent, openThread: id => { closeSettings(); run(selectSession(id, true)); } },
       embed: {
         colors: async target => (await import('./theme-settings')).mountThemeSettings(target, { call, notify, chooseVsix: () => import('./bridge').then(bridge => bridge.chooseVsix()) }),
@@ -7021,6 +7062,8 @@ async function action(name: string, element: HTMLElement): Promise<void> {
     case 'retry-response': { const id = actionTask(element)?.id ?? state.sessionId, finishing = finishingStreams.get(id); if (finishing) await finishResponse(id, finishing); break; }
     case 'settings': case 'refresh-settings': await showSettings(); break;
     case 'settings-page': await showSettings(element.dataset.id as import('./settings').SettingsSection); break;
+    case 'cu-respond': await computerUse.respond(element.dataset.thread!, element.dataset.request!, element.dataset.decision as import('./computer-use-model').ComputerUseDecision); break;
+    case 'cu-activity': computerUse.toggleActivity(element.dataset.thread!); break;
     case 'wallpaper-settings': await showWallpaperSettings(); break;
     case 'provider-connections': await showProviderConnections(); break;
     case 'opencode-models': await showOpenCodeModels(); break;
@@ -7335,6 +7378,7 @@ if (localStorage.getItem('pandacode.compact') === 'true') document.body.classLis
 function refreshFileIcons(): void { if (state.inspector && state.inspectorTab === 'files' && !state.selectedFile) renderInspector(); }
 async function boot(): Promise<void> {
   await subscribe('agent-event', onAgent);
+  run(computerUse.start());
   await subscribe('provider-models-changed', event => invalidateModels(event.provider));
   await subscribe('architect-event', onArchitect);
   window.addEventListener(TEAM_MODE_EVENT, () => { if (session()) renderComposer(); });
