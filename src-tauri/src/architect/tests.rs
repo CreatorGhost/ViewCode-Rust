@@ -134,21 +134,9 @@ fn generated_review_keeps_model_input_but_projects_a_timed_coordination_turn() {
         "Continue review",
     )
     .unwrap();
-    let history = restored
-        .split("Earlier conversation (JSON):\n")
-        .nth(1)
-        .unwrap()
-        .split("\n\nCurrent request:")
-        .next()
-        .unwrap();
-    let history: Value = serde_json::from_str(history).unwrap();
-    let restored = history
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|entry| entry["origin"] == "pandacode_coordination")
-        .unwrap();
-    assert_eq!(restored["content"], original);
+    let history = crate::handoff::carried(&restored);
+    let restored = history.iter().find(|(_, role, _)| role == "user (team coordination)").unwrap();
+    assert_eq!(restored.2, original);
 }
 
 #[test]

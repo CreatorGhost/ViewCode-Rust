@@ -211,8 +211,10 @@ fn copies_full_saved_response_and_keeps_a_bounded_context_handoff() {
         .unwrap();
     assert_eq!(saved, response);
     let (prompt, _) = crate::context_recovery::prepare(&store, &fork, "Continue").unwrap();
-    assert!(prompt.contains("bounded excerpt"));
-    assert!(prompt.len() < 66 * 1024);
+    // The long reply is a marked excerpt; the default window's allowance bounds the whole.
+    assert!(prompt.contains(" assistant · excerpt: the first ") && !prompt.contains("END_OF_FULL_RESPONSE\n[… "));
+    assert!(prompt.contains("END_OF_FULL_RESPONSE"), "the excerpt keeps the end of the reply");
+    assert!(prompt.len() < 96_000);
 }
 
 #[test]

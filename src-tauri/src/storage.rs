@@ -173,7 +173,7 @@ pub struct Store {
 type Result<T> = std::result::Result<T, String>;
 /// The newest `PRAGMA user_version`. Every migration step below must run for any
 /// database older than this, so the guard reads this constant, never a literal.
-pub const SCHEMA_VERSION: i64 = 40;
+pub const SCHEMA_VERSION: i64 = 41;
 
 const SIDEBAR_ORDER: &str = "pinned DESC,sidebar_order IS NULL,sidebar_order,COALESCE(MAX(last_response_at,last_prompt_at),last_response_at,last_prompt_at,created_at) DESC,id";
 
@@ -667,6 +667,19 @@ impl Store {
                 }
                 migration.execute_batch(crate::side_chat::SCHEMA).map_err(|e| e.to_string())?;
                 migration.execute_batch("PRAGMA user_version=40;").map_err(|e| e.to_string())?;
+            }
+            if version < 41 {
+                // Handoffs (docs/handoff.md): what a pending handoff covers and who wrote the
+                // history, and the native session each harness and account left behind.
+                for definition in crate::context_recovery::SCHEMA.split(';').map(str::trim).filter(|statement| !statement.is_empty()) {
+                    let name = definition.split_whitespace().nth(5).unwrap_or_default();
+                    let exists: bool = migration.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('context_recovery') WHERE name=?1)", [name], |r| r.get(0)).map_err(|e| e.to_string())?;
+                    if !exists {
+                        migration.execute_batch(definition).map_err(|e| e.to_string())?;
+                    }
+                }
+                migration.execute_batch(crate::handoff::resume::SCHEMA).map_err(|e| e.to_string())?;
+                migration.execute_batch("PRAGMA user_version=41;").map_err(|e| e.to_string())?;
             }
             migration.commit().map_err(|e| e.to_string())?;
         }
@@ -1369,29 +1382,7 @@ impl Store {
         mode: &str,
     ) -> Result<Session> {
         self.project(project_id)?;
-        if ![
-            "claude",
-            "codex",
-            "kimi",
-            "opencode",
-            "glm",
-            "antigravity",
-            "grok",
-            "mimo",
-            "pi",
-            "deepseek",
-            "commandcode",
-            "cline",
-            "kilo",
-            "omp",
-            "github-copilot",
-            "muse",
-            "devin",
-            "zcode",
-            "hermes",
-        ]
-        .contains(&provider)
-        {
+        if !crate::providers::PROVIDERS.iter().any(|(id, _)| *id == provider) {
             return Err("Unknown provider.".into());
         }
         if !valid_permission_mode(mode) {
@@ -1555,29 +1546,7 @@ impl Store {
         project_id: Option<&str>,
     ) -> Result<Session> {
         crate::architect::check_manual(self, sid)?;
-        if ![
-            "claude",
-            "codex",
-            "kimi",
-            "opencode",
-            "glm",
-            "antigravity",
-            "grok",
-            "mimo",
-            "pi",
-            "deepseek",
-            "commandcode",
-            "cline",
-            "kilo",
-            "omp",
-            "github-copilot",
-            "muse",
-            "devin",
-            "zcode",
-            "hermes",
-        ]
-        .contains(&provider)
-        {
+        if !crate::providers::PROVIDERS.iter().any(|(id, _)| *id == provider) {
             return Err("Unknown provider.".into());
         }
         if model.len() > 200 {
@@ -1595,14 +1564,29 @@ impl Store {
         ).map_err(|e| e.to_string())?);
         // New-task creation can already have a transaction. Without history,
         // configuration is still one atomic UPDATE, even if team defaults chose another harness.
+        // A thread is never moved onto an agent that is off or blocked: the gate's own
+        // refusal here, not a turn that cannot start (docs/managed-mode.md).
+        if needs_handoff { crate::launch_gate::allow(provider)?; }
         let transaction = needs_handoff.then(|| self.db.unchecked_transaction()).transpose().map_err(|e| e.to_string())?;
-        if needs_handoff { crate::context_recovery::queue(self, sid)?; }
+        // The session this harness and account leaves is set aside under that pair, and the
+        // one the target pair left earlier, if any, is taken back (`handoff::resume`): the
+        // target then needs only what happened since.
+        let mut restored = None;
+        if needs_handoff {
+            crate::context_recovery::queue(self, sid)?;
+            crate::handoff::resume::stash(self, sid, &current.provider, &crate::handoff::resume::account(sid, &current.provider), now())?;
+            restored = crate::handoff::resume::take(self, sid, provider, &crate::handoff::resume::account(sid, provider), now())?;
+            if let Some(saved) = &restored {
+                crate::context_recovery::only_after(self, sid, saved.through, saved.used_tokens)?;
+            }
+        }
+        let restored_id = restored.as_ref().map(|saved| saved.resume_id.as_str());
         let changed = self
             .db
             .execute(
                 "UPDATE sessions SET provider=?2,model=?3,project_id=COALESCE(?5,project_id),
-               resume_id=CASE WHEN provider<>?2 THEN NULL ELSE resume_id END,
-               goal_state=CASE WHEN provider<>?2 THEN NULL ELSE goal_state END,
+               resume_id=CASE WHEN provider<>?2 THEN ?6 ELSE resume_id END,
+               goal_state=CASE WHEN provider<>?2 AND json_valid(goal_state) AND json_extract(goal_state,'$.status')='active' THEN json_set(goal_state,'$.status','paused') ELSE goal_state END,
                codex_settings=CASE WHEN provider<>?2 THEN NULL ELSE codex_settings END,
                reasoning_effort=CASE WHEN provider<>?2 OR model<>?3 THEN NULL ELSE reasoning_effort END,
                context_used_tokens=CASE WHEN provider<>?2 OR model<>?3 THEN NULL ELSE context_used_tokens END,
@@ -1612,7 +1596,7 @@ impl Store {
                AND (worktree_path IS NULL OR project_id=COALESCE(?5,project_id))
                AND (project_id=COALESCE(?5,project_id) OR (resume_id IS NULL AND NOT EXISTS
                (SELECT 1 FROM messages WHERE session_id=?1)))",
-                params![sid, provider, model, now(), project_id],
+                params![sid, provider, model, now(), project_id, restored_id],
             )
             .map_err(|e| e.to_string())?;
         let session = self.session(sid)?;
@@ -1638,7 +1622,7 @@ impl Store {
         if needs_handoff {
             let notice = serde_json::json!({
                 "fromProvider": current.provider, "toProvider": provider,
-                "summary": "Switched harness. The next message includes up to 200 recent conversation entries (64 KiB). Files and project stay in place. Older text may be shortened; private reasoning, native tool state, and image contents are not transferred. Reattach images if needed."
+                "summary": if restored.is_some() { crate::handoff::SWITCHED_BACK } else { crate::handoff::SWITCHED }
             });
             self.message(sid, "handoff", &notice.to_string())?;
         }
@@ -1736,7 +1720,8 @@ impl Store {
     pub fn resume(&self, sid: &str, resume_id: &str) -> Result<()> {
         self.db
             .execute(
-                "UPDATE sessions SET resume_id=?2,goal_state=CASE WHEN resume_id=?2 THEN goal_state ELSE NULL END WHERE id=?1",
+                // A new native session has no goal of its own; the thread keeps its goal, paused.
+                "UPDATE sessions SET goal_state=CASE WHEN resume_id IS NOT ?2 AND json_valid(goal_state) AND json_extract(goal_state,'$.status')='active' THEN json_set(goal_state,'$.status','paused') ELSE goal_state END,resume_id=?2 WHERE id=?1",
                 params![sid, resume_id],
             )
             .map_err(|e| e.to_string())?;
@@ -3344,7 +3329,8 @@ mod tests {
         store.db.execute_batch("DROP TRIGGER reject_handoff;").unwrap();
         let switched = store.configure(&task.id, "kimi", "default", None).unwrap();
         assert!(switched.resume_id.is_none());
-        assert!(switched.goal_state.is_none());
+        // The goal belongs to the thread, not to the harness that set it (docs/handoff.md).
+        assert_eq!(switched.goal_state.as_ref().map(|goal| (goal.objective.as_str(), goal.status.as_str())), Some(("Finish the original work", "paused")));
         assert!(switched.codex_settings.is_none());
         assert!(crate::context_recovery::pending(&store, &switched).unwrap());
     }
@@ -3922,7 +3908,8 @@ mod tests {
         assert!(through.is_some());
         assert!(prompt.contains("Original prompt"));
         assert!(prompt.contains("Keep the exact code"));
-        assert!(!prompt.contains("Tool completed"));
+        // Tool steps are one condensed line each, not replayed.
+        assert_eq!(prompt.matches(" tool Tool completed] ").count(), 100);
         assert_eq!(store.messages(&session.id, None).unwrap().last().unwrap().role, "handoff");
         store.resume(&session.id, "new-native-id").unwrap();
         assert!(crate::context_recovery::pending(&store, &store.session(&session.id).unwrap()).unwrap());

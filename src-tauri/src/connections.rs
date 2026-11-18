@@ -493,9 +493,11 @@ pub async fn connection_delete(state: tauri::State<'_, crate::AppState>, id: Str
     // The tasks go back to the harness's own setup, whose copy of their session (if an account
     // pool left one there) may be stale: start fresh and carry the conversation forward.
     let store = state.store.lock().map_err(|e| e.to_string())?;
+    crate::handoff::resume::forget_account(&store, &removed.id)?;
     for task in &affected {
         if store.session(task).is_ok() {
-            fresh_context(&store, task)?;
+            // The removed account's session is gone with it: nothing is set aside.
+            switch_account(&store, task, Some(&removed.id), None, false)?;
         }
     }
     Ok(snapshot)
@@ -518,7 +520,7 @@ pub async fn connection_assign(
     if current != connection_id {
         let store = state.store.lock().map_err(|e| e.to_string())?;
         if store.session(&session_id).is_ok() {
-            fresh_context(&store, &session_id)?;
+            switch_account(&store, &session_id, current.as_deref(), connection_id.as_deref(), true)?;
         }
     }
     crate::blocking(move || save_assignment(session_id, connection_id)).await
@@ -532,17 +534,29 @@ fn save_assignment(session_id: String, connection_id: Option<String>) -> Result<
     Ok(runtime.data.clone())
 }
 
-/// A harness session lives in its connection's config folder and cannot be resumed
-/// from another, so the task starts a fresh one and the next message carries the
-/// conversation forward through context recovery, as a harness switch does.
-fn fresh_context(store: &crate::storage::Store, session_id: &str) -> Result<()> {
+/// A harness session lives in its connection's config folder and cannot be resumed from
+/// another, so a task that changes account never takes its session along. The session it
+/// leaves is set aside under that account (`keep`), and one this task left on the new account
+/// earlier is taken back with only the messages since handed over; otherwise the task starts
+/// fresh and the next message carries the conversation forward, as a harness switch does.
+/// The thread's goal stays, paused.
+pub(crate) fn switch_account(store: &crate::storage::Store, session_id: &str, from: Option<&str>, to: Option<&str>, keep: bool) -> Result<()> {
     let transaction = store.db.unchecked_transaction().map_err(|e| e.to_string())?;
+    let task = store.session(session_id)?;
+    let now = crate::storage::now();
     crate::context_recovery::queue(store, session_id)?;
+    if keep {
+        crate::handoff::resume::stash(store, session_id, &task.provider, from.unwrap_or_default(), now)?;
+    }
+    let restored = crate::handoff::resume::take(store, session_id, &task.provider, to.unwrap_or_default(), now)?;
+    if let Some(saved) = &restored {
+        crate::context_recovery::only_after(store, session_id, saved.through, saved.used_tokens)?;
+    }
     store
         .db
         .execute(
-            "UPDATE sessions SET resume_id=NULL,goal_state=NULL,codex_settings=NULL,context_used_tokens=NULL,context_window=NULL WHERE id=?1",
-            [session_id],
+            "UPDATE sessions SET resume_id=?2,goal_state=CASE WHEN json_valid(goal_state) AND json_extract(goal_state,'$.status')='active' THEN json_set(goal_state,'$.status','paused') ELSE goal_state END,codex_settings=NULL,context_used_tokens=NULL,context_window=NULL WHERE id=?1",
+            rusqlite::params![session_id, restored.map(|saved| saved.resume_id)],
         )
         .map_err(|e| e.to_string())?;
     transaction.commit().map_err(|e| e.to_string())
@@ -679,7 +693,7 @@ mod tests {
         store.message(&task.id, "user", "Earlier request").unwrap();
         store.message(&task.id, "assistant", "Earlier answer").unwrap();
         store.resume(&task.id, "session-in-work-config").unwrap();
-        fresh_context(&store, &task.id).unwrap();
+        switch_account(&store, &task.id, None, Some("work"), true).unwrap();
         let task = store.session(&task.id).unwrap();
         assert_eq!(task.resume_id, None);
         let (prompt, through) = crate::context_recovery::prepare(&store, &task, "Continue where you left off.").unwrap();

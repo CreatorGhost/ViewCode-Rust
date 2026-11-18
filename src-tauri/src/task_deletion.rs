@@ -95,7 +95,10 @@ pub(crate) fn delete_state(state: &AppState, sid: &str) -> Result<DeletedSession
 /// Deletes the rows, then the app-data files of every deleted task (progress snapshots), best effort.
 fn delete_with_files(state: &AppState, sid: &str, app_data: Option<&std::path::Path>) -> Result<DeletedSessions> {
     let deleted = delete_state(state, sid)?;
-    if let Some(dir) = app_data { crate::progress::forget(dir, &deleted.deleted_session_ids); }
+    if let Some(dir) = app_data {
+        crate::progress::forget(dir, &deleted.deleted_session_ids);
+        crate::handoff::archive::forget(dir, &deleted.deleted_session_ids);
+    }
     Ok(deleted)
 }
 

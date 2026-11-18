@@ -50,16 +50,9 @@ fn recovery_admission_sends_previous_code_before_saving_the_new_request() {
         .unwrap();
         assert!(prepared.context_handoff.is_some());
         assert!(prepared.context_handoff.unwrap() < prepared.turn_message_id);
-        let history = prepared
-            .config
-            .prompt
-            .split_once("Earlier conversation (JSON):\n")
-            .unwrap()
-            .1;
-        let history = history.split_once("\n\nCurrent request:\n").unwrap().0;
-        let history: Vec<serde_json::Value> = serde_json::from_str(history).unwrap();
+        let history = crate::handoff::carried(&prepared.config.prompt);
         assert_eq!(history.len(), 2);
-        assert_eq!(history[1]["content"], code);
+        assert_eq!(history[1].2, code);
         assert_eq!(
             prepared
                 .config

@@ -103,6 +103,24 @@ fn admission(provider: &str) -> Result<(), String> {
     crate::prepare_task_run(&state, task.id, Some("Run the nightly check".into()), Vec::new(), tx, Arc::new(std::sync::atomic::AtomicBool::new(false))).map(|_| ())
 }
 
+/// Moving a thread that already has a conversation onto `provider`.
+fn switch(provider: &str) -> Result<(), String> {
+    let (state, project) = crate::concurrent_task_tests::test_state();
+    let store = state.store.lock().unwrap();
+    let from = if provider == "claude" { "codex" } else { "claude" };
+    let task = store.create_session(&project, from, "default", "ask").unwrap();
+    store.message(&task.id, "user", "Earlier request").unwrap();
+    store.resume(&task.id, "native-session").unwrap();
+    let result = store.configure(&task.id, provider, "default", None).map(|_| ());
+    if result.is_err() {
+        // A refused switch leaves the thread on its agent, with its session and no notice.
+        let after = store.session(&task.id).unwrap();
+        assert_eq!((after.provider.as_str(), after.resume_id.as_deref()), (from, Some("native-session")));
+        assert!(store.messages(&task.id, None).unwrap().iter().all(|message| message.role != "handoff"));
+    }
+    result
+}
+
 fn warm_config() -> RunConfig {
     RunConfig { session_id: "gate-warm".into(), ..tests::config("claude") }
 }
@@ -137,6 +155,8 @@ async fn never_starts(id: &str, reason: &str) {
     assert_eq!(result.unwrap_err(), refused);
     assert!(events.contains(&format!("error: {refused}")), "{events:?}");
     assert_eq!(admission(id).unwrap_err(), refused);
+    // A thread switched onto it mid-chat: the gate's refusal at the switch, not a broken turn.
+    assert_eq!(switch(id).unwrap_err(), refused);
     // A turn started from another computer.
     assert!(crate::remote::require_installed(id).await.unwrap_err().starts_with(&refused));
 }

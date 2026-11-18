@@ -44,6 +44,7 @@ mod task_usage;
 mod skill_manager;
 mod skills;
 mod goal_state;
+mod handoff;
 #[cfg(test)]
 mod goal_workflow_tests;
 mod integrations;
@@ -673,6 +674,7 @@ async fn delete_session_with_attachment_cleanup(
             if let Err(error) = crate::blocking(move || {
                 for sid in sessions {
                     computer_use::thread_removed(&data_dir, &sid);
+                    handoff::archive::forget(&data_dir, std::slice::from_ref(&sid));
                     let path = data_dir.join("attachments").join(sid);
                     if let Err(error) = std::fs::remove_dir_all(path) {
                         if error.kind() != std::io::ErrorKind::NotFound {
@@ -1740,11 +1742,13 @@ fn prepare_task_run_in_project(
     }
     let (prompt, context_handoff) = if goal_control {
         if needs_context {
-            context_recovery::queue(&store, &session_id)?;
+            context_recovery::keep(&store, &session_id)?;
         }
         (prompt, None)
     } else {
-        context_recovery::prepare(&store, &session, &prompt)?
+        // Sized from the target model's context window. When the history cannot fit, this
+        // is where the turn is refused: nothing has been saved and no process started.
+        context_recovery::prepare_with(&store, &session, &prompt, &context_recovery::Options { images: images.len(), window: None })?
     };
     let turn_started = std::time::Instant::now();
     let turn_message_id = if admission.goal.is_some() {
@@ -2783,7 +2787,10 @@ async fn list_provider_models(app: tauri::AppHandle, provider: String, force: Op
 }
 pub(crate) async fn local_provider_models(provider: &str, force: bool) -> Result<Vec<providers::ModelInfo>> {
     if force { providers::acp_catalog::invalidate(provider); }
-    providers::list_models(provider).await
+    let models = providers::list_models(provider).await?;
+    // The windows a handoff to these models is sized from (docs/handoff.md).
+    handoff::note_models(provider, &models);
+    Ok(models)
 }
 
 #[tauri::command]

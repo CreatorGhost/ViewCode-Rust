@@ -6,6 +6,8 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 
 #[path = "side_chat_stream_tests.rs"]
 mod side_chat_stream_tests;
+#[path = "handoff_stream_tests.rs"]
+mod handoff_stream_tests;
 
 pub(crate) fn process_test_lock() -> &'static tokio::sync::Mutex<()> {
     static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
