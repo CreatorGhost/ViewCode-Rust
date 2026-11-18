@@ -250,7 +250,7 @@ fn harness_command(context: &HarnessContext<'_>, root: &Path) -> Result<CommandB
     if context.provider == "hermes" && executable.file_stem().is_some_and(|s| s == "hermes-acp") {
         return Err("Hermes ACP server does not have an interactive console. Install the `hermes` CLI for terminal chat, or continue in PandaCode.".into());
     }
-    let mut cmd = crate::providers::pty_command(&executable)?;
+    let mut cmd = crate::providers::pty_command(context.provider, &executable)?;
     crate::provider_settings::apply_environment(context.provider, &mut cmd);
     for name in crate::providers::claude_auth::removed_environment(context.provider) {
         cmd.env_remove(name);
@@ -442,15 +442,10 @@ fn harness_arguments(context: &HarnessContext<'_>) -> Result<Vec<String>, String
             }
         }
         "claude" | "glm" | "mimo" => {
-            let mode = match context.mode {
-                "plan" => "plan",
-                "full" => "bypassPermissions",
-                "auto" => "acceptEdits",
-                "review" => "auto",
-                _ => "default",
-            };
+            // The same mapping as a task run, administrator's bypass setting included.
+            let mode = crate::launch_gate::claude::permission_mode(context.mode);
             args.extend(["--permission-mode".into(), mode.into()]);
-            if context.mode == "full" {
+            if crate::launch_gate::claude::allows_bypass(context.mode) {
                 args.push("--allow-dangerously-skip-permissions".into());
             }
         }
@@ -555,6 +550,13 @@ fn harness_arguments(context: &HarnessContext<'_>) -> Result<Vec<String>, String
     // Never pass a slash command as a positional prompt, invoke a shell, or alter
     // the harness's approval policy. TUI input is supplied by the user after launch.
     Ok(args)
+}
+
+/// Open harness consoles as (terminal id, task id), for the launch gate to close the ones
+/// whose harness was turned off.
+pub(crate) fn harness_consoles(terms: &Terminals) -> Vec<(String, String)> {
+    let Ok(terms) = terms.lock() else { return Vec::new() };
+    terms.iter().filter(|(_, terminal)| !terminal.closed.load(Ordering::SeqCst)).filter_map(|(id, terminal)| Some((id.clone(), terminal.harness_session.clone()?))).collect()
 }
 
 pub fn harness_running(terms: &Terminals, session_id: &str) -> Result<bool, String> {

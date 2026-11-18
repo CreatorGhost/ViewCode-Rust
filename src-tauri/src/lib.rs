@@ -81,6 +81,8 @@ mod usage_keychain;
 mod usage_ledger;
 mod workspace;
 mod jj;
+mod keep_awake;
+mod launch_gate;
 mod tray;
 mod headless;
 mod headless_bots;
@@ -1644,6 +1646,9 @@ fn prepare_task_run_in_project(
     if admission.cloud_attach {
         return prepare_cloud_attach(&store, &mut agents, session, tx, stopped);
     }
+    // Every way a turn starts ends here (the composer, a schedule, a bot, a team role, another
+    // computer): a harness that is not enabled is refused before anything is saved or started.
+    launch_gate::allow(&session.provider)?;
     if admission.goal.is_some() && session.provider != "codex" {
         return Err(
             "Goals require the Codex harness. The task provider changed before it started.".into(),
@@ -4001,6 +4006,9 @@ fn setup_common(app: &tauri::App) -> crate::Result<PathBuf> {
     if let Err(error) = store.discard_empty_drafts() {
         eprintln!("Could not clear unsent new tasks: {error}");
     }
+    // Before anything below can start an agent: until this loads, the gate refuses everything.
+    launch_gate::setup(&dir, &store);
+    keep_awake::setup(&dir);
     app.manage(AppState {
         store: Arc::new(Mutex::new(store)),
         agents: Arc::new(Mutex::new(HashMap::new())),
@@ -4022,6 +4030,7 @@ fn setup_common(app: &tauri::App) -> crate::Result<PathBuf> {
     // Machine threads that settled while PandaCode was closed wake their idle tasks.
     remote::orchestrate::reconcile(app.handle());
     schedules::start(app.handle().clone());
+    launch_gate::watch(app.handle().clone());
     side_chat::start(app.handle().clone());
     Ok(dir)
 }
@@ -4073,6 +4082,7 @@ fn on_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
                 tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             }
             providers::shutdown_all();
+            keep_awake::shutdown();
             // Let pending pipe EOFs finish persistence after a forced cleanup.
             for _ in 0..20 {
                 if agents.lock().map(|a| a.is_empty()).unwrap_or(true) {
@@ -4094,6 +4104,7 @@ fn on_run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
         app.state::<vm::Vms>().shutdown();
         cloud::aws_screen::close(None);
         providers::shutdown_all();
+        keep_awake::shutdown();
     }
 }
 
@@ -4324,6 +4335,11 @@ pub fn run() {
                 cloud_agents::tasks::cloud_agent_set_claude_token,
                 remote::mirror::remote_repo_check,
                 provider_settings::provider_configuration,
+                launch_gate::launch_gate_state,
+                launch_gate::launch_gate_set_enabled,
+                launch_gate::launch_gate_complete_first_run,
+                keep_awake::keep_awake_state,
+                keep_awake::keep_awake_set_enabled,
                 connections::connections_list,
                 connections::connection_save,
                 connections::connection_delete,

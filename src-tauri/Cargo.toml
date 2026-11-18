@@ -21,6 +21,8 @@ tauri-plugin-global-shortcut = "2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Reads an MDM managed-preferences policy in-process (launch_gate/policy.rs); already in the tree through Tauri.
+plist = "1"
 toml = { version = "=0.9.12", default-features = false, features = ["parse", "serde"] }
 tokio = { version = "1", features = ["full"] }
 rusqlite = { version = "0.38", features = ["bundled"] }

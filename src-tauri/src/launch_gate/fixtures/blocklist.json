@@ -1,0 +1,10 @@
+{
+  "providers": {
+    "codex": {
+      "allowed": false
+    }
+  },
+  "tailscale": {
+    "allowed": false
+  }
+}

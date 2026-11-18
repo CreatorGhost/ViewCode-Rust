@@ -1888,7 +1888,7 @@ mod tests {
         cfg.cwd = std::env::temp_dir().join(format!("pandacode-acp-smoke-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&cfg.cwd).unwrap();
         let path = executable("opencode").expect("Install OpenCode first");
-        let mut command = super::super::command(&path).unwrap();
+        let mut command = super::super::command("opencode", &path).unwrap();
         configure(&mut command, &cfg);
         let mut pipe = Pipe::spawn(command, &cfg.cwd, Duration::from_secs(30)).unwrap();
         let mut protocol = Protocol::new(cfg.clone());
@@ -2107,7 +2107,7 @@ mod tests {
         cfg.reasoning_effort = Some(chosen.reasoning_efforts.last().unwrap().id.clone());
         cfg.cwd = std::env::temp_dir().join(format!("pandacode-grok-smoke-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&cfg.cwd).unwrap();
-        let mut command = super::super::command(&path).unwrap();
+        let mut command = super::super::command("grok", &path).unwrap();
         configure(&mut command, &cfg);
         let mut pipe = Pipe::spawn(command, &cfg.cwd, Duration::from_secs(30)).unwrap();
         let mut protocol = Protocol::new(cfg.clone());

@@ -70,6 +70,15 @@ struct Runtime {
 }
 static CONFIG: OnceLock<Mutex<Runtime>> = OnceLock::new();
 
+/// Harness ids that have a named connection: the profile was set up to use them
+/// (`launch_gate`'s upgrade rule).
+pub(crate) fn providers_in_use() -> Vec<String> {
+    CONFIG
+        .get()
+        .and_then(|config| config.lock().ok().map(|runtime| runtime.data.connections.iter().map(|connection| connection.provider.clone()).collect()))
+        .unwrap_or_default()
+}
+
 pub fn setup(dir: &Path) -> Result<()> {
     let path = dir.join("connections.json");
     let data = match std::fs::read(&path) {

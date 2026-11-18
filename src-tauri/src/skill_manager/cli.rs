@@ -367,7 +367,7 @@ pub(super) fn run(
     let path = crate::providers::tool_path("npx")
         .ok_or("Install Node.js to add skills (npx was not found).")?;
     // Reuse the launcher to resolve Windows npm shims without invoking a shell.
-    let mut command = crate::providers::command(&path)
+    let mut command = crate::providers::tool_command(&path)
         .map_err(|error| {
             if error.to_lowercase().contains("node") {
                 "Install Node.js to add skills.".to_string()

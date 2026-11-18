@@ -205,7 +205,7 @@ pub(crate) fn parse_about(stdout: &str, stderr: &str) -> About {
 /// Runs `cursor-agent about`. Blocking: call from a worker thread.
 pub(crate) fn about(path: &Path) -> Result<(About, String), String> {
     let run = |args: &[&str]| {
-        let mut command = launch::std_command(path)?;
+        let mut command = launch::std_command("cursor", path)?;
         crate::provider_settings::apply_environment("cursor", &mut command);
         command.args(args);
         let output = crate::workspace::run_process(command, "Cursor CLI", 64 * 1024, ABOUT_TIMEOUT)

@@ -262,7 +262,7 @@ mod tests {
         assert!(models.len() > 1, "{models:?}");
         // A rejected inline config can still produce a valid catalog. Check that
         // this CLI accepts the exact permission format used for task processes.
-        let mut command = super::super::command(&path).unwrap();
+        let mut command = super::super::command("kilo", &path).unwrap();
         command.args(["debug", "config", "--pure"])
             .env("KILO_CONFIG_CONTENT", configuration("ask", Some(r#"{"model":"pandacode/config-check","mode":{"code":{"permission":{"*":"allow"}},"plan":{"permission":{"*":"allow"}}}}"#)))
             .env_remove("KILO_PERMISSION")

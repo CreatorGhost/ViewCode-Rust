@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>allowedProviders</key>
+	<array>
+		<string>claude</string>
+		<string>cursor</string>
+		<string>commandCode</string>
+	</array>
+	<key>futureKey</key>
+	<integer>3</integer>
+	<key>keepAwake</key>
+	<dict>
+		<key>allowed</key>
+		<false/>
+	</dict>
+	<key>providers</key>
+	<dict>
+		<key>claudeAgent</key>
+		<dict>
+			<key>allowed</key>
+			<true/>
+		</dict>
+		<key>codex</key>
+		<dict>
+			<key>allowed</key>
+			<false/>
+		</dict>
+		<key>grok</key>
+		<dict>
+			<key>allowed</key>
+			<false/>
+		</dict>
+	</dict>
+	<key>strict</key>
+	<true/>
+</dict>
+</plist>
