@@ -230,11 +230,7 @@ function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Props = {}, ...
 /** Draws a fence: ```ui JSON, or ```chart/```svg/```html through the questions' renderer. */
 export async function renderBlock(kind: string, source: string): Promise<HTMLElement> {
   const host = h('div', { class: 'gu' });
-  if (kind === 'mermaid') {
-    // No diagram renderer ships with PandaCode: show the source, labelled and copyable.
-    host.append(codeView('Diagram · Mermaid', source));
-    return host;
-  }
+  // ```mermaid never reaches here: generative-ui.ts draws diagrams through mermaid-view.ts.
   if (kind !== 'ui') {
     const rich = await import('./rich-markdown');
     const box = h('div');

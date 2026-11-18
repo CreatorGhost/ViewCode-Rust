@@ -1,0 +1,46 @@
+/* The diagram viewer (diagram-viewer.ts). The <dialog> is transparent; its plate is the shared
+   glass, like the progress lightbox. The stage is the diagram's own canvas colour (it was drawn
+   for it) with a faint dot grid from the text colour. Only tokens: no literal colours. */
+dialog.diagram-viewer{width:min(1280px,calc(100vw - 48px));height:calc(100vh - 48px);max-width:none;max-height:none;padding:0;margin:auto;border:0;background:transparent;overflow:visible;color:var(--text)}
+dialog.diagram-viewer:focus{outline:none}
+dialog.diagram-viewer.is-closing{pointer-events:none}
+dialog.diagram-viewer::backdrop{background:var(--scrim)}
+.diagram-viewer-plate{box-sizing:border-box;height:100%;display:flex;flex-direction:column;gap:10px;padding:10px;border-radius:var(--sheet-radius,14px);border:1px solid var(--glass-border);background:var(--glass-warm);
+  backdrop-filter:blur(54px) saturate(1.9) brightness(1.04);-webkit-backdrop-filter:blur(54px) saturate(1.9) brightness(1.04);
+  box-shadow:0 40px 100px -30px var(--glass-shadow-deep),0 16px 36px -20px var(--glass-shadow-near)}
+html[data-theme="dark"] .diagram-viewer-plate{backdrop-filter:blur(54px) saturate(1.7) brightness(.92);-webkit-backdrop-filter:blur(54px) saturate(1.7) brightness(.92)}
+.diagram-viewer-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 2px 0 6px;min-height:var(--ds-btn-h,30px)}
+.diagram-viewer-title{display:flex;align-items:center;gap:7px;min-width:0;color:var(--ds-title-ink,var(--text));font-size:var(--ds-text-body,13px);font-weight:var(--weight-medium,500)}
+.diagram-viewer-title>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.diagram-viewer-title .icon{width:16px;height:16px;color:var(--muted)}
+.diagram-viewer-tools{display:flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+.diagram-viewer-button{display:grid;place-items:center;width:var(--ds-btn-h,30px);height:var(--ds-btn-h,30px);padding:0;border:0;border-radius:var(--ds-radius-inner,7px);color:var(--muted);background:var(--ds-raised);box-shadow:inset 0 0 0 1px var(--ds-border),var(--ds-shadow-raised);cursor:pointer;
+  transition:color 140ms var(--ds-ease-out,ease-out),background-color 140ms var(--ds-ease-out,ease-out),scale 120ms var(--ds-ease-out,ease-out)}
+.diagram-viewer-button:hover{color:var(--text);background:color-mix(in srgb,var(--text) 4%,var(--ds-raised))}
+.diagram-viewer-button:active{scale:.96}
+.diagram-viewer-button:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.diagram-viewer-button .icon{width:16px;height:16px}
+.diagram-viewer-sep{width:1px;height:16px;margin:0 4px;background:var(--ds-border)}
+.diagram-viewer-zoom{min-width:44px;text-align:center;font:var(--text-xs,11px)/1 var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.diagram-viewer-stage{position:relative;flex:1;min-height:0;overflow:hidden;border-radius:var(--ds-radius-card,10px);cursor:grab;touch-action:none;
+  background-color:var(--diagram-canvas,var(--raised));background-image:radial-gradient(circle,color-mix(in srgb,var(--text) 12%,transparent) 1px,transparent 1.2px);background-size:18px 18px;box-shadow:inset 0 0 0 1px var(--ds-border)}
+.diagram-viewer-stage.is-dragging{cursor:grabbing}
+.diagram-viewer-stage:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.diagram-viewer-content{position:absolute;top:0;left:0;transform-origin:0 0}
+.diagram-viewer-content svg{display:block}
+.diagram-viewer-status{margin:0;min-height:1.2em;padding:0 6px;font-size:var(--text-xs,11px);color:var(--muted)}
+.diagram-viewer-status:empty{visibility:hidden}
+@media(prefers-reduced-motion:reduce){.diagram-viewer-button{transition:none}}
+@media(prefers-reduced-transparency:reduce),(prefers-contrast:more){
+  .diagram-viewer-plate,html[data-theme="dark"] .diagram-viewer-plate{background:var(--panel);backdrop-filter:none;-webkit-backdrop-filter:none}
+}
+@media(prefers-contrast:more){
+  .diagram-viewer-plate,html[data-theme="dark"] .diagram-viewer-plate{background:var(--bg);border-color:var(--border);box-shadow:none}
+  .diagram-viewer-button{box-shadow:inset 0 0 0 1px var(--text)}
+  .diagram-viewer-stage{background-image:none;box-shadow:inset 0 0 0 1px var(--text)}
+}
+@media(forced-colors:active){
+  .diagram-viewer-plate{background:Canvas;border-color:CanvasText;backdrop-filter:none;-webkit-backdrop-filter:none}
+  .diagram-viewer-button{border:1px solid ButtonText;background:ButtonFace;color:ButtonText}
+  .diagram-viewer-stage{background:Canvas;border:1px solid CanvasText}
+}

@@ -24,6 +24,7 @@ mod context_recovery;
 mod conversation_fork;
 mod conversation_import;
 mod design;
+mod diagrams;
 mod progress;
 mod file_preview;
 mod run_script;
@@ -597,7 +598,7 @@ fn app_instructions(chat: bool, worker: bool) -> String {
         return [turn_changes::instruction(), TURN_ENDS].concat();
     }
     let run = if chat { "" } else { run_script::INSTRUCTIONS };
-    [session_titles::GUIDANCE, run, turn_changes::instruction(), TURN_ENDS, RICH_QUESTIONS, GENERATIVE_UI, VISUAL_PROGRESS].concat()
+    [session_titles::GUIDANCE, run, turn_changes::instruction(), TURN_ENDS, RICH_QUESTIONS, GENERATIVE_UI, diagrams::MERMAID_GUIDANCE, VISUAL_PROGRESS].concat()
 }
 
 /// The largest prompt, steer or task description PandaCode accepts: large enough for long
@@ -611,7 +612,7 @@ const TURN_ENDS: &str = "\n\nYour turn ends when you reply, and PandaCode then c
 const RICH_QUESTIONS: &str = "\n\nQuestions you ask through the request_user_input tool, where available, render Markdown in PandaCode: use links, images by workspace path (![alt](relative/path.png)), ```chart blocks with JSON {\"type\":\"bar\"|\"line\"|\"pie\",\"title\",\"labels\":[…],\"series\":[{\"name\",\"values\":[…]}]}, ```svg drawings, or static ```html views when a visual helps the user decide. Remote images show as links; scripts never run.";
 
 /// Replies may carry generative UI blocks that PandaCode draws in the thread.
-const GENERATIVE_UI: &str = "\n\nGenerative UI: when a visual beats prose, a reply may include a ```ui block holding JSON {\"type\":…}; ```chart, ```svg and ```html work too. Types (fields): callout(tone info|success|warning|danger|note,title,body), card(title,body,footer,actions,children), stats(items[{label,value,delta,hint,spark[]}]), table(title,columns[],rows[[…]]), chart(chart bar|line|pie|area|sparkline,title,labels,series[{name,values}]), progress(label,value,max), plan|steps|timeline(title,summary,items[{title,detail,status done|active|pending|error|skipped,time}],actions), checklist(items[{text,done}]), tabs|accordion(items[{label,body,children}]), tree(paths[] or items[{name,status,children}]), diff(file,diff), code(file,language,code), terminal(command,output,exitCode), compare(items[{title,pros,cons,verdict}]), gallery(images[{path,caption}]), actions(buttons[{label,prompt,tone}]), chips|followups(options[{label,prompt}]), or inline :codex-followup[Label]{prompt=\"…\"}, form(title,fields[{name,label,type text|textarea|number|select|checkbox,options}],submit,prompt with {name}), stack|grid(columns,children), custom(html,css,state; data-ui-toggle=\"#id\", data-ui-tab/data-ui-panel, data-ui-set=\"k=v\", data-ui-bind=\"k\", data-ui-prompt). Bodies are Markdown. Buttons and forms only put a prompt in the user's composer; nothing runs, and remote URLs are not loaded. ```mermaid shows as labelled source. For a page that needs scripts, write an HTML file and open it with pandacode_preview_file.";
+const GENERATIVE_UI: &str = "\n\nGenerative UI: when a visual beats prose, a reply may include a ```ui block holding JSON {\"type\":…}; ```chart, ```svg and ```html work too. Types (fields): callout(tone info|success|warning|danger|note,title,body), card(title,body,footer,actions,children), stats(items[{label,value,delta,hint,spark[]}]), table(title,columns[],rows[[…]]), chart(chart bar|line|pie|area|sparkline,title,labels,series[{name,values}]), progress(label,value,max), plan|steps|timeline(title,summary,items[{title,detail,status done|active|pending|error|skipped,time}],actions), checklist(items[{text,done}]), tabs|accordion(items[{label,body,children}]), tree(paths[] or items[{name,status,children}]), diff(file,diff), code(file,language,code), terminal(command,output,exitCode), compare(items[{title,pros,cons,verdict}]), gallery(images[{path,caption}]), actions(buttons[{label,prompt,tone}]), chips|followups(options[{label,prompt}]), or inline :codex-followup[Label]{prompt=\"…\"}, form(title,fields[{name,label,type text|textarea|number|select|checkbox,options}],submit,prompt with {name}), stack|grid(columns,children), custom(html,css,state; data-ui-toggle=\"#id\", data-ui-tab/data-ui-panel, data-ui-set=\"k=v\", data-ui-bind=\"k\", data-ui-prompt). Bodies are Markdown. Buttons and forms only put a prompt in the user's composer; nothing runs, and remote URLs are not loaded. For a page that needs scripts, write an HTML file and open it with pandacode_preview_file.";
 
 /// Agents building a GUI post one annotated screenshot per iteration to the progress timeline.
 const VISUAL_PROGRESS: &str = "\n\nVisual progress: only when your work has a graphical interface you can actually capture (a web page, desktop or mobile app, simulator, VM screen or design artboard), after each meaningful visual iteration save a screenshot of only that app's own window or page (a headless browser screenshot, a simulator or VM screenshot tool, or `screencapture -l<windowid>` on macOS; never the whole screen or other windows) under .pandacode/progress-shots/, call pandacode_progress_snapshot with a short title, an optional note and a few annotations pointing at what changed, then delete the file, since the image is copied. Before a UI exists you may post an svg idea sketch instead. Post at most one per iteration, and skip this entirely for CLIs, libraries, backend or docs work, or when no such screenshot can be taken.";
@@ -632,10 +633,11 @@ mod instruction_tests {
         assert_eq!(reminded, [1, 9, 17]);
         assert!(!reminder_turn(0));
         let text = app_instructions(false, false);
-        for part in ["Sidebar titles:", "Run and preview workflow:", "File change tracking:", "Questions you ask through the request_user_input tool", "Your turn ends when you reply", "Generative UI:", "Visual progress:"] {
+        for part in ["Sidebar titles:", "Run and preview workflow:", "File change tracking:", "Questions you ask through the request_user_input tool", "Your turn ends when you reply", "Generative UI:", "Diagrams: a ```mermaid block", "Visual progress:"] {
             assert!(text.contains(part), "{part}");
         }
         assert!(text.contains("wait for every subagent you started"), "a harness whose turn end closes its subagents waits for them");
+        assert!(!text.contains("labelled source"), "mermaid renders as a diagram");
         let chat = app_instructions(true, false);
         assert!(!chat.contains("Run and preview workflow:") && chat.contains("Sidebar titles:") && chat.contains("Visual progress:"));
     }
@@ -2176,7 +2178,15 @@ async fn launch_operation_admitted(
     }
     if restore_stage.is_none() {
         let worker = team.as_ref().is_some_and(|admission| admission.parent != session_id);
-        let instructions = app_instructions(chats::is_chat_folder(&config.cwd), worker);
+        let mut instructions = app_instructions(chats::is_chat_folder(&config.cwd), worker);
+        // The bundled diagram skill lives on this computer, so a cloud task's agent can't read it.
+        if !worker && !cloud {
+            let skill_session = session_id.clone();
+            let skill = blocking(move || Ok((diagrams::prepare_skill(), skill_manager::disabled_for(&skill_session)))).await;
+            if let Ok((dir, disabled)) = skill {
+                instructions.push_str(&diagrams::skill_instructions(dir.as_deref(), &disabled));
+            }
+        }
         if providers::takes_system_instructions(&config.provider) {
             // Cached with the system prompt: paid once, then read at a tenth of the price.
             config.instructions = instructions;

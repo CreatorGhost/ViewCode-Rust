@@ -2,11 +2,15 @@
 import css from './generative-ui.css?inline';
 import richCss from './rich-markdown.css?inline';
 import { icon } from './dom';
+import { diagramPhase, isDiagramLanguage } from './view-fence.ts';
+import type { DiagramHandle } from './mermaid-view.ts';
 
-/* Generative UI in threads. `renderMarkdown` wraps ```ui, ```chart, ```svg and ```html fences
- * in <pandacode-ui>; the fence source stays in the light DOM (so streaming reconciles and
- * morphs see plain text) and the view is drawn in a shadow root that survives them.
- * Nothing runs agent code: buttons only put a prompt in the composer for the user to send. */
+/* Generative UI in threads. `renderMarkdown` wraps ```ui, ```chart, ```svg, ```html and
+ * ```mermaid fences in <pandacode-ui>; the fence source stays in the light DOM (so streaming
+ * reconciles and morphs see plain text) and the view is drawn in a shadow root that survives them.
+ * Nothing runs agent code: buttons only put a prompt in the composer for the user to send.
+ * A ```mermaid diagram shows its (slotted) source until its fence closes, then the diagram
+ * (mermaid-view.ts), so a streaming diagram never flickers or reports half-written errors. */
 
 let sheet: CSSStyleSheet | undefined;
 /** One constructed sheet shared by every view; styles arrive with the element, so nothing reflows. */
@@ -17,13 +21,18 @@ export function generativeSheet(): CSSStyleSheet {
 
 let library: Promise<typeof import('./generative-ui-components')> | undefined;
 const components = () => (library ??= import('./generative-ui-components'));
+let diagrams: Promise<typeof import('./mermaid-view.ts')> | undefined;
+const diagramView = () => (diagrams ??= import('./mermaid-view.ts').catch(error => { diagrams = undefined; throw error; }));
 
 class GenerativeView extends HTMLElement {
   static observedAttributes = ['class'];
   private drawn = '';
   private queued = false;
+  private diagram: DiagramHandle | undefined;
   connectedCallback(): void { this.schedule(); }
   attributeChangedCallback(): void { this.schedule(); }
+  // A morph or re-render moves the element; keep the diagram until it is really gone.
+  disconnectedCallback(): void { queueMicrotask(() => { if (!this.isConnected) { this.diagram?.dispose(); this.diagram = undefined; this.drawn = ''; } }); }
   /** Streaming sets attributes before it updates children, so read the source a microtask later. */
   private schedule(): void {
     if (this.queued || !this.isConnected) return;
@@ -40,6 +49,8 @@ class GenerativeView extends HTMLElement {
     this.drawn = key;
     const root = this.shadowRoot ?? this.attachShadow({ mode: 'open' });
     root.adoptedStyleSheets = [generativeSheet()];
+    if (isDiagramLanguage(kind)) { await this.drawDiagram(root, source, pending, key); return; }
+    this.diagram?.dispose(); this.diagram = undefined;
     if (pending) { root.replaceChildren(placeholder()); return; }
     if (!root.firstChild) root.append(placeholder());
     try {
@@ -52,6 +63,37 @@ class GenerativeView extends HTMLElement {
       if (this.drawn === key) { const note = document.createElement('p'); note.className = 'gu-error'; note.textContent = 'This view could not be shown.'; root.replaceChildren(note); }
     }
   }
+  /** Source while the fence is open (no flicker, no errors for half-written diagrams), then the diagram. */
+  private async drawDiagram(root: ShadowRoot, source: string, pending: boolean, key: string): Promise<void> {
+    const frame = diagramFrame(root);
+    if (diagramPhase(pending, source) === 'source') {
+      this.diagram?.dispose(); this.diagram = undefined;
+      frame.dataset.phase = 'source';
+      return;
+    }
+    try {
+      const view = await diagramView();
+      if (this.drawn !== key || !this.isConnected) return;
+      if (this.diagram) this.diagram.update(source);
+      else this.diagram = view.mountDiagram(frame, source);
+    } catch {
+      // The diagram module could not load: the source stays, with the same quiet note as a parse error.
+      frame.dataset.phase = 'failed';
+    }
+  }
+}
+
+/** A diagram block's frame; until the diagram is drawn it shows the block's own (slotted) source. */
+function diagramFrame(root: ShadowRoot): HTMLElement {
+  const existing = root.querySelector<HTMLElement>(':scope > .gu-diagram');
+  if (existing) return existing;
+  const frame = document.createElement('figure');
+  frame.className = 'gu-diagram';
+  frame.dataset.phase = 'source';
+  frame.setAttribute('aria-label', 'Diagram');
+  frame.innerHTML = `<figcaption class="gu-diagram-head"><span class="gu-diagram-title">${icon('diagram')}<span class="gu-diagram-label" data-label="Diagram"></span></span><span class="gu-diagram-actions" role="toolbar" aria-label="Diagram actions"></span></figcaption><div class="gu-diagram-body"><div class="gu-diagram-source"><slot></slot></div></div>`;
+  root.replaceChildren(frame);
+  return frame;
 }
 
 function sourceToggle(): HTMLElement {

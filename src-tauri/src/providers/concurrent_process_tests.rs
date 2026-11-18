@@ -4,6 +4,8 @@
 use super::*;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 
+#[path = "diagram_stream_tests.rs"]
+mod diagram_stream_tests;
 #[path = "side_chat_stream_tests.rs"]
 mod side_chat_stream_tests;
 

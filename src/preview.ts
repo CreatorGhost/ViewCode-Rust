@@ -44,6 +44,21 @@ if (typeof location !== 'undefined') {
   if (first) saved = { ...saved, [projects[0].id]: first };
   projects = projects.map(p => PROJECT_COLORS.includes(saved[p.id]) ? { ...p, color: saved[p.id] as Project['color'] } : p);
 }
+/** What an agent's reply with a ```mermaid block looks like; also streamed for a prompt starting "Draw a diagram". */
+export const DIAGRAM_REPLY = 'Here is how a prompt reaches the agent and comes back:\n\n```mermaid\nflowchart LR\n  user([You]) --> composer[Composer]\n  composer -->|send_message| core{{Rust core}}\n  subgraph agents [Agent CLIs]\n    claude[Claude Code]\n    codex[Codex]\n  end\n  core -->|stream-json| claude\n  core -->|app-server| codex\n  claude --> events[(Transcript)]\n  codex --> events\n  events -->|agent-event| composer\n```\n\nEach reply streams back as `agent-event`s and is saved to the transcript.';
+const CHART_REPLY = 'Bundle sizes for the last four releases, and where the current one goes:\n\n```mermaid\nxychart-beta\n  title "Startup bundle (KiB, gzip)"\n  x-axis [0.3.105, 0.3.106, 0.3.107, 0.3.108]\n  y-axis "KiB" 0 --> 90\n  bar [74, 77, 71, 68]\n  line [74, 77, 71, 68]\n```\n\n```mermaid\npie title Current bundle\n  "Markdown" : 31\n  "Shell" : 24\n  "Composer" : 18\n  "Settings" : 15\n  "Other" : 12\n```';
+const ARCHITECTURE_REPLY = 'Here is the architecture, with the products\' own logos:\n\n```ui\n{"type":"gallery","images":[{"path":"diagrams/how-pandacode-runs-an-agent.png","caption":"How PandaCode runs an agent"}]}\n```\n\nThe full page is `diagrams/how-pandacode-runs-an-agent.html`; icons: provider marks shipped with PandaCode and stack-diagram\'s generic glyphs.';
+function diagramMessages(): Message[] {
+  const at = Date.now() - 6000;
+  return [
+    { id: 9101, sessionId: 'session-diagrams', role: 'user', content: 'How does a prompt reach the agent?', createdAt: at },
+    { id: 9102, sessionId: 'session-diagrams', role: 'assistant', content: DIAGRAM_REPLY, createdAt: at + 1000 },
+    { id: 9103, sessionId: 'session-diagrams', role: 'user', content: 'Chart the bundle size over the last releases.', createdAt: at + 2000 },
+    { id: 9104, sessionId: 'session-diagrams', role: 'assistant', content: CHART_REPLY, createdAt: at + 3000 },
+    { id: 9105, sessionId: 'session-diagrams', role: 'user', content: 'Draw the architecture with the real logos.', createdAt: at + 4000 },
+    { id: 9106, sessionId: 'session-diagrams', role: 'assistant', content: ARCHITECTURE_REPLY, createdAt: at + 5000 },
+  ];
+}
 let sessions: Session[] = [
   { id: 'session-1', projectId: 'project-1', title: 'Make search feel instant', provider: 'claude', model: 'sonnet', mode: 'ask', status: 'idle', createdAt: now - 420000, updatedAt: now, archived: false, worktreePath: null, resumeId: 'preview-session', lastResponseAt: now - 300000 },
   { id: 'session-2', projectId: 'project-1', title: 'Refine the navigation', provider: 'codex', model: '', mode: 'ask', status: 'idle', createdAt: now - 8200000, updatedAt: now - 8000000, archived: false, worktreePath: null, resumeId: null, lastResponseAt: null },
@@ -60,6 +75,10 @@ const slowTurn = typeof location !== 'undefined' && new URLSearchParams(location
 const shortReply = typeof location !== 'undefined' && new URLSearchParams(location.search).has('shortreply');
 const showCards = typeof location !== 'undefined' && new URLSearchParams(location.search).has('cards');
 if (showCards) sessions = [{ id: 'session-cards', projectId: 'project-1', title: 'Turn cards', provider: 'claude', model: 'sonnet', mode: 'ask', status: 'idle', createdAt: now - 30000, updatedAt: now + 4000, archived: false, worktreePath: null, resumeId: null, lastResponseAt: now - 1000 }, ...sessions];
+// ?diagrams adds a thread whose replies hold a Mermaid flowchart, two charts and an architecture diagram (docs/diagrams.md).
+const showDiagrams = typeof location !== 'undefined' && new URLSearchParams(location.search).has('diagrams');
+const DIAGRAMS_ID = 'session-diagrams';
+if (showDiagrams) sessions = [{ id: DIAGRAMS_ID, projectId: 'project-1', title: 'Diagrams', provider: 'claude', model: 'sonnet', mode: 'ask', status: 'idle', createdAt: now - 20000, updatedAt: now + 5000, archived: false, worktreePath: null, resumeId: null, lastResponseAt: now - 500 }, ...sessions];
 // The preview persists sidebar preferences only, never sample conversation data.
 const THREAD_ORDER_KEY = 'pandacode.preview.threadOrder';
 type ThreadOrder = { id: string; pinned: boolean; sidebarOrder: number | null };
@@ -261,7 +280,7 @@ const messages: Record<string, Message[]> = { ...(showCards ? { 'session-cards':
   { id: 5, sessionId: 'session-1', role: 'tool', content: encodeTool({ id: 'sample-bash', name: 'Bash', status: 'completed', input: 'npm test -- --runInBand', output: sampleTestOutput }), createdAt: now - 290000 },
   { id: 7, sessionId: 'session-1', role: 'tool', content: 'Legacy tool report\nOlder saved output remains readable.', createdAt: now - 280000 },
   { id: 8, sessionId: 'session-1', role: 'tool', content: 'Tool finished', createdAt: now - 270000 },
-], 'session-4': [{ id: 6, sessionId: 'session-4', role: 'assistant', content: 'The project is a small native workspace for coding agents.', createdAt: now - 259200000 }] };
+], [DIAGRAMS_ID]: diagramMessages(), 'session-4': [{ id: 6, sessionId: 'session-4', role: 'assistant', content: 'The project is a small native workspace for coding agents.', createdAt: now - 259200000 }] };
 const providers: Provider[] = [
   { id: 'claude', name: 'Claude Code', installed: true, path: '/sample/bin/claude', version: 'Sample provider', models: ['sonnet', 'opus', 'haiku'].map(id => fallbackModel('claude', id)) },
   { id: 'codex', name: 'Codex', installed: true, path: '/sample/bin/codex', version: 'Sample provider', models: [] },
@@ -2287,7 +2306,7 @@ export async function invoke<T>(command: string, args: Record<string, any>): Pro
       messages[s.id].push(toolMessage);
       activeTools.set(s.id, { activity: tool, message: toolMessage });
       agent({ sessionId: s.id, kind: 'tool', text: 'Bash', tool: { ...tool } });
-      const output = shortReply ? 'All tests pass in the preview.' : 'This is the browser preview. Your task and conversation are saved in this preview session, but no agent or shell is running here.\n\nOpen the native PandaCode app to work with your files using Claude Code, Codex, or Kimi Code. The desktop app connects to the CLI tools installed on your machine.';
+      const output = /^draw a diagram\b/i.test(text) ? DIAGRAM_REPLY : shortReply ? 'All tests pass in the preview.' : 'This is the browser preview. Your task and conversation are saved in this preview session, but no agent or shell is running here.\n\nOpen the native PandaCode app to work with your files using Claude Code, Codex, or Kimi Code. The desktop app connects to the CLI tools installed on your machine.';
       let cursor = 0;
       const tick = () => {
         const next = output.slice(cursor, cursor + 13); cursor += 13;
@@ -2595,6 +2614,12 @@ export async function invoke<T>(command: string, args: Record<string, any>): Pro
       result = { path, name: path.split('/').pop(), url: 'http://127.0.0.1:4179/preview/' + encodeURIComponent(args.sessionId ?? args.projectId) + '/' + path.split('/').map(encodeURIComponent).join('/') }; break;
     }
     case 'workspace_image': {
+      if (String(args.path) === 'diagrams/how-pandacode-runs-an-agent.png') {
+        const response = await fetch('/tests/fixtures/architecture.png');
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        let binary = ''; for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+        result = `data:image/png;base64,${btoa(binary)}`; break;
+      }
       // A drawn stand-in for any workspace image a question shows.
       if (!/\.(png|jpe?g|gif|webp|svg)$/i.test(String(args.path)) || String(args.path).includes('..')) throw new Error('Only workspace images can be shown');
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><defs><linearGradient id="g" x1="0" x2="1"><stop stop-color="#2e513b"/><stop offset="1" stop-color="#ffd43b"/></linearGradient></defs><rect width="320" height="180" rx="12" fill="url(#g)"/><text x="160" y="96" fill="#fffcef" font-family="sans-serif" font-size="18" text-anchor="middle">${String(args.path).split('/').pop()}</text></svg>`;

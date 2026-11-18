@@ -1,5 +1,7 @@
 import { captureFileLinkContext, decorateFileLinks, fileReference } from './file-links.ts';
 import { preserveTranscriptPosition } from './transcript-scroll.ts';
+import { openViewFence } from './view-fence.ts';
+export { openViewFence };
 export function escape(value: unknown): string {
   return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 }
@@ -67,6 +69,12 @@ const paths: Record<string, string> = {
   pull: '<circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="19" r="2"/><path d="M6 7v10M18 17v-6a3 3 0 0 0-3-3h-4m3-3-3 3 3 3"/>',
   upload: '<path d="M12 16V5m-5 5 5-5 5 5M4 19h16"/>',
   download: '<path d="M12 4v11m-5-5 5 5 5-5M4 19h16"/>',
+  expand: '<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>',
+  zoomIn: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5M11 8v6M8 11h6"/>',
+  zoomOut: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5M8 11h6"/>',
+  fit: '<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/>',
+  code: '<path d="m9 7-5 5 5 5M15 7l5 5-5 5"/>',
+  diagram: '<rect x="3" y="3" width="7" height="6" rx="1.5"/><rect x="14" y="15" width="7" height="6" rx="1.5"/><path d="M6.5 9v3.5a2 2 0 0 0 2 2H14"/>',
   sketch: '<path d="M4 20h16"/><path d="m5 16 9.5-9.5a2.1 2.1 0 0 1 3 3L8 19l-4 1Z"/>',
   square: '<rect x="4" y="4" width="16" height="16" rx="2"/>',
   circle: '<circle cx="12" cy="12" r="8"/>',
@@ -209,18 +217,6 @@ export async function markdownNodes(value: string): Promise<HTMLTemplateElement>
   // Removed tags leave their text beside its neighbours; parsing the HTML would have joined them.
   template.content.normalize();
   return template;
-}
-const FENCE_LINE = /^ {0,3}(`{3,}|~{3,})[ \t]*([^\s`]*)/;
-/** Whether the text ends inside an open generative-UI fence (a reply still streaming). */
-export function openViewFence(value: string): boolean {
-  let open: { mark: string; view: boolean } | undefined;
-  for (const line of value.split('\n')) {
-    const fence = line.match(FENCE_LINE);
-    if (!fence) continue;
-    if (!open) open = { mark: fence[1], view: /^(?:ui|chart|svg|html|mermaid)$/i.test(fence[2]) };
-    else if (fence[1][0] === open.mark[0] && fence[1].length >= open.mark.length && !fence[2] && !line.slice(line.indexOf(fence[1]) + fence[1].length).trim()) open = undefined;
-  }
-  return Boolean(open?.view);
 }
 /** An unfinished view shows a placeholder until its fence closes, instead of half-parsed JSON. */
 function pendingView(value: string, html: string): string {

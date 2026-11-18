@@ -3,6 +3,7 @@
  * with the node set its web renderer supports. Math renders through KaTeX on demand. */
 
 import { brandFor } from './trace-brands.ts';
+import { VIEW_LANGUAGES } from './view-fence.ts';
 
 type NodeType =
   | 'Document' | 'Paragraph' | 'Text' | 'Link' | 'Heading' | 'LineBreak' | 'SoftBreak' | 'Strong' | 'Emphasis'
@@ -100,7 +101,7 @@ const escapeAttr = (text: string) => escapeText(text).replace(/"/g, '&quot;');
 const text = (node: MarkdownNode): string => node.content ?? (node.children ?? []).map(text).join('');
 const ADMONITIONS: Record<string, string> = { note: 'Note', tip: 'Tip', important: 'Important', warning: 'Warning', caution: 'Caution' };
 const ALIGN = new Set(['left', 'center', 'right']);
-const GENERATIVE = new Set(['ui', 'chart', 'svg', 'html', 'mermaid']);
+const GENERATIVE = new Set<string>(VIEW_LANGUAGES);
 // Raw HTML is text to md4c; these collapsibles are the one HTML form agents rely on.
 const DETAILS_OPEN = /^<details( open)?>\s*(?:<summary>([\s\S]*?)<\/summary>)?$/i;
 const SUMMARY = /^<summary>([\s\S]*?)<\/summary>$/i;

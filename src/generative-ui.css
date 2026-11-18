@@ -124,3 +124,31 @@ button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visi
 @media (prefers-contrast:more){.gu-card,.gu-stat,.gu-code,.gu-table{box-shadow:0 0 0 1px var(--text)}}
 .gu-source{margin-top:6px}.gu-source>summary{cursor:pointer;font-size:var(--text-xs);color:var(--muted)}.gu-source>summary::after{content:"Source"}
 .gu-source[open]>summary{margin-bottom:6px}
+/* diagrams (```mermaid; generative-ui.ts frame, mermaid-view.ts contents). The source is the block's
+   own light-DOM <pre>, slotted; chrome text comes from CSS so it never joins the message's text. */
+.gu-diagram{margin:0;border-radius:var(--radius-md);background:var(--raised);overflow:hidden;box-shadow:inset 0 0 0 1px var(--ds-border)}
+.gu-diagram-head{display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:30px;padding:3px 4px 3px 10px;color:var(--muted);font:.74rem var(--mono)}
+.gu-diagram-title{display:flex;align-items:center;gap:6px;min-width:0}
+.gu-diagram-title .icon{width:14px;height:14px;flex:none}
+.gu-diagram-label::after{content:attr(data-label)}
+.gu-diagram-actions{display:flex;align-items:center;gap:2px}
+.gu-diagram-action{display:grid;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:var(--radius-sm);color:var(--muted);background:none;cursor:pointer;transition:color 140ms var(--ds-ease-out,ease-out),background-color 140ms var(--ds-ease-out,ease-out),scale 120ms var(--ds-ease-out,ease-out)}
+.gu-diagram-action:hover{color:var(--text);background:var(--ds-fill-hover,var(--fill-hover))}
+.gu-diagram-action:active{scale:.94}
+.gu-diagram-action[aria-pressed="true"]{color:var(--text)}
+.gu-diagram-action .icon{width:14px;height:14px}
+.gu-diagram-body{min-width:0}
+.gu-diagram-source[hidden]{display:none}
+::slotted(pre){margin:0!important;border-radius:0!important;background:transparent!important;max-height:420px;padding:8px 12px 10px!important}
+.gu-diagram-canvas{display:flex;justify-content:center;width:100%;margin:0;padding:14px 16px 18px;border:0;background:none;color:inherit;font:inherit;cursor:zoom-in;border-radius:0}
+.gu-diagram-canvas:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.gu-diagram-canvas svg{display:block;max-width:100%;height:auto}
+.gu-diagram-note{display:flex;align-items:center;gap:6px;margin:0;padding:5px 6px 5px 10px;border-top:1px solid var(--ds-border);font-size:var(--text-xs);color:var(--muted)}
+.gu-diagram-note .icon{width:13px;height:13px;flex:none}
+.gu-diagram-note-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gu-diagram-note-text::after{content:attr(data-label)}
+.gu-diagram-retry{font:inherit;font-size:var(--text-2xs);color:var(--muted);background:none;border:0;border-radius:var(--radius-sm);padding:2px 8px;cursor:pointer}
+.gu-diagram-retry:hover{background:var(--ds-fill-hover,var(--fill-hover));color:var(--text)}
+@media (prefers-reduced-motion:reduce){.gu-diagram-action{transition:none}}
+@media (prefers-contrast:more){.gu-diagram{box-shadow:0 0 0 1px var(--text)}.gu-diagram-note{border-top-color:var(--text)}}
+@media (forced-colors:active){.gu-diagram{border:1px solid CanvasText}.gu-diagram-canvas svg{forced-color-adjust:none}}
