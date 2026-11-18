@@ -3609,7 +3609,7 @@ async fn run_process(
 fn self_scoped_host_tool(name: &str) -> bool {
     // Computer-use tools are decided by their own gate on every call, which asks the user
     // itself and never shows typed text; a harness prompt showing the arguments would.
-    optional_metadata_tool(name) || crate::bots::tools::self_scoped(name) || crate::schedules::tools::self_scoped(name) || crate::architect::team_tool(name) || crate::computer_use::tools::self_gated(name)
+    optional_metadata_tool(name) || crate::bots::tools::self_scoped(name) || crate::schedules::tools::self_scoped(name) || crate::child_agents::tools::self_scoped(name) || crate::architect::team_tool(name) || crate::computer_use::tools::self_gated(name)
 }
 fn optional_metadata_tool(name: &str) -> bool {
     name == crate::session_titles::TOOL || name == crate::turn_changes::TRACK_TOOL

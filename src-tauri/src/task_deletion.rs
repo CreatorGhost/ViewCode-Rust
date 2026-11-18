@@ -25,6 +25,11 @@ fn candidates(store: &Store, sid: &str) -> Result<Vec<String>> {
     }
     // A thread's side chats (hidden everywhere else) go with it.
     ids.extend(crate::side_chat::children(store, sid)?);
+    // So do the child agents it started, and theirs (docs/child-agents.md).
+    for child in crate::child_agents::descendants(store, sid)? {
+        ids.extend(crate::side_chat::children(store, &child)?);
+        ids.push(child);
+    }
     for id in &ids {
         let task = store.session(id)?;
         if matches!(task.status.as_str(), "running" | "waiting") {
@@ -94,8 +99,18 @@ pub(crate) fn delete_state(state: &AppState, sid: &str) -> Result<DeletedSession
 
 /// Deletes the rows, then the app-data files of every deleted task (progress snapshots), best effort.
 fn delete_with_files(state: &AppState, sid: &str, app_data: Option<&std::path::Path>) -> Result<DeletedSessions> {
+    // Child agents' worktrees were made for them alone: read them before their rows go.
+    let worktrees = {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        let ids = candidates(&store, sid).unwrap_or_default();
+        crate::child_agents::worktrees(&store, &ids)
+    };
     let deleted = delete_state(state, sid)?;
     if let Some(dir) = app_data { crate::progress::forget(dir, &deleted.deleted_session_ids); }
+    // ViewCode's rule: a clean checkout goes, one with uncommitted changes stays.
+    for (path, reason) in crate::child_agents::remove_worktrees(&worktrees) {
+        eprintln!("PandaCode: kept child agent worktree {}: {reason}", path.display());
+    }
     Ok(deleted)
 }
 

@@ -16,6 +16,7 @@ mod chats;
 mod browser;
 mod child_env;
 mod checks;
+mod child_agents;
 mod code_search;
 mod connections;
 mod command_operations;
@@ -1511,6 +1512,10 @@ pub(crate) async fn send_prompt(
     let (target, project_id) = {
         let store = state.store.lock().map_err(|e| e.to_string())?;
         let task = store.session(&session_id)?;
+        // Writing to a paused agent resumes it; its held mail follows this turn.
+        if child_agents::user_prompted(&store, &session_id)? {
+            child_agents::announce(&app, &store, &session_id, "resumed");
+        }
         (send_target(&store, &session_id)?, task.project_id)
     };
     if target == SendTarget::Team {
@@ -1577,6 +1582,8 @@ struct RunAdmission<'a> {
     cloud_attach: bool,
     /// An app-origin turn PandaCode itself starts (`launch_app_turn`).
     kind: Option<architect::internal_turns::CoordinationKind>,
+    /// A held agent message this turn delivers (`child_agents::claim`).
+    mail: Option<String>,
 }
 
 struct PreparedRun {
@@ -1648,6 +1655,9 @@ fn prepare_task_run_in_project(
     // Every way a turn starts ends here (the composer, a schedule, a bot, a team role, another
     // computer): a harness that is not enabled is refused before anything is saved or started.
     launch_gate::allow(&session.provider)?;
+    if let Some(mail) = admission.mail.as_deref() {
+        child_agents::check_claimable(&store, mail, &session_id)?;
+    }
     if admission.goal.is_some() && session.provider != "codex" {
         return Err(
             "Goals require the Codex harness. The task provider changed before it started.".into(),
@@ -1791,12 +1801,13 @@ fn prepare_task_run_in_project(
     let prompt = architect::prompt(&store, &session_id, &prompt, admission.team.as_ref()).map_err(restore)?;
     let config = RunConfig {
         session_id: session_id.clone(),
-        provider: session.provider,
-        model: session.model,
-        reasoning_effort: session.reasoning_effort,
-        mode: session.mode,
+        provider: session.provider.clone(),
+        model: session.model.clone(),
+        reasoning_effort: session.reasoning_effort.clone(),
+        // A child agent never runs in a broader mode than its parent (docs/child-agents.md).
+        mode: child_agents::effective_mode(&store, &session),
         cwd,
-        resume_id: session.resume_id,
+        resume_id: session.resume_id.clone(),
         prompt,
         instructions: String::new(),
         images,
@@ -1808,6 +1819,10 @@ fn prepare_task_run_in_project(
     let mut agent = RunningAgent::new(tx, stopped.clone());
     agent.team_maintenance = team_maintenance;
     let run_id = agent.run_id.clone();
+    if let Some(mail) = admission.mail.as_deref() {
+        // Replies are routed by this run id only.
+        child_agents::claim(&store, mail, &session_id, &run_id, storage::now())?;
+    }
     let pending_approvals = agent.approvals.clone();
     let pending_requests = agent.pending_requests.clone();
     let subagents = agent.subagents.clone();
@@ -1894,8 +1909,32 @@ pub(crate) async fn attach_cloud_run(app: tauri::AppHandle, session_id: String) 
             goal: None,
             team: None,
             cloud_attach: true,
+            mail: None,
             kind: None,
             command: None,
+        },
+    )
+    .await
+}
+
+/// Starts a turn that delivers a held agent message (`child_agents::pump`): `text` is its
+/// envelope, saved as the turn's input; the run that starts is bound to `mail`.
+pub(crate) async fn launch_mail_turn(app: tauri::AppHandle, session_id: String, mail: String, text: String) -> Result<()> {
+    let state = app.state::<AppState>();
+    launch_operation_admitted(
+        app.clone(),
+        state,
+        session_id,
+        Some(text),
+        None,
+        OperationAdmission {
+            expected_project: None,
+            goal: None,
+            team: None,
+            cloud_attach: false,
+            kind: None,
+            command: None,
+            mail: Some(mail),
         },
     )
     .await
@@ -1921,6 +1960,7 @@ pub(crate) async fn launch_app_turn(
             goal: None,
             team: None,
             cloud_attach: false,
+            mail: None,
             kind: Some(kind),
             command: None,
         },
@@ -1978,6 +2018,7 @@ async fn launch_operation(
             goal,
             team: None,
             cloud_attach: false,
+            mail: None,
             kind: None,
             command: None,
         },
@@ -2004,6 +2045,7 @@ pub(crate) fn launch_team_task<'a>(
             goal: None,
             team: Some(admission),
             cloud_attach: false,
+            mail: None,
             kind: None,
             command: None,
         },
@@ -2031,6 +2073,7 @@ pub(crate) fn launch_team_maintenance<'a>(
             goal: None,
             team: None,
             cloud_attach: false,
+            mail: None,
             kind: None,
             command: Some(command),
         },
@@ -2045,6 +2088,8 @@ struct OperationAdmission {
     kind: Option<architect::internal_turns::CoordinationKind>,
     /// Already resolved by the caller, so it is not looked up again.
     command: Option<PreparedCommand>,
+    /// A held agent message this turn delivers (`child_agents`): bound to the run on start.
+    mail: Option<String>,
 }
 
 async fn launch_operation_admitted(
@@ -2062,13 +2107,14 @@ async fn launch_operation_admitted(
         cloud_attach,
         kind,
         command: prepared,
+        mail,
     } = admission;
     if state.shutdown.load(Ordering::SeqCst) != 0 {
         return Err("PandaCode is shutting down.".into());
     }
     let command = if prepared.is_some() {
         prepared
-    } else if goal.is_none() && team_admission.is_none() && !cloud_attach && kind.is_none() {
+    } else if goal.is_none() && team_admission.is_none() && !cloud_attach && kind.is_none() && mail.is_none() {
         prepare_command(&state, &session_id, text.as_deref()).await?
     } else {
         None
@@ -2132,6 +2178,7 @@ async fn launch_operation_admitted(
             team: team_admission,
             cloud_attach,
             kind,
+            mail,
         },
     )?;
     if !cloud_attach && turn_message_id > 0 && (!attachment_ids.is_empty() || attachment_text.contains("(moodboard ID: ")) {
@@ -2384,6 +2431,7 @@ async fn launch_operation_admitted(
         let host = agent_tools::with_jev(host, app.clone(), session_id.clone(), stopped.clone());
         let host = bots::tools::with_bot(host, app.clone(), session_id.clone(), stopped.clone());
         let host = schedules::tools::with_schedules(host, app.clone(), session_id.clone(), stopped.clone());
+        let host = if team.is_some() { host } else { child_agents::tools::with_children(host, app.clone(), session_id.clone(), stopped.clone()) };
         let host = review::tools::with_review(host, app.clone(), session_id.clone(), stopped.clone());
         let host = computer_use::tools::with_computer_use(host, app.clone(), session_id.clone(), stopped.clone());
         let host = simulator::tools::with_simulator_for(host, app.clone(), session_id.clone(), stopped.clone());
@@ -2626,6 +2674,8 @@ async fn launch_operation_admitted(
         tray::finished(&app, &session_id, was_stopped, successful);
         let _ = app.emit("agent-event", event(&session_id, "done", done));
         remote::run_finished(&app, &session_id, successful, was_stopped, done);
+        // Agent mail: a reply from this run goes back to whoever asked, and held mail follows.
+        child_agents::run_ended(&app, &session_id, &ended_run_id, turn_message_id, successful, was_stopped, provider_error.as_deref());
         // A wake turn that never reached the agent gives its claim back (at-least-once).
         let restored = kind.is_some() && turn_message_id != 0 && store.lock().ok().is_some_and(|db| remote::orchestrate::restore_wake(&db, &session_id, turn_message_id).unwrap_or(false));
         // Settled machine threads wake this task now that it is idle.
@@ -2710,6 +2760,8 @@ async fn stop_session(
         return Ok(());
     }
     remote::orchestrate::task_stopped(&app, &session_id);
+    // In an agent tree, Stop pauses this agent and the agents it started.
+    child_agents::task_stopped(&app, &session_id);
     let is_team = {
         let store = state.store.lock().map_err(|e| e.to_string())?;
         // Saved before the run hears of it: a quit right after Stop must not leave the
@@ -4030,6 +4082,7 @@ fn setup_common(app: &tauri::App) -> crate::Result<PathBuf> {
     schedules::start(app.handle().clone());
     launch_gate::watch(app.handle().clone());
     side_chat::start(app.handle().clone());
+    child_agents::start(app.handle().clone());
     Ok(dir)
 }
 
@@ -4475,6 +4528,12 @@ pub fn run() {
                 side_chat::side_chat_stop,
                 side_chat::side_chat_close,
                 side_chat::side_chat_promote,
+                child_agents::child_agents_list,
+                child_agents::child_agents_mail,
+                child_agents::child_agent_stop,
+                child_agents::child_agent_resume,
+                child_agents::child_agent_discard,
+                child_agents::child_agent_open,
                 task_controls::get_message_content,
                 task_controls::archive_codex_task,
                 task_controls::export_task,

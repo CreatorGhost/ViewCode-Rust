@@ -173,7 +173,7 @@ pub struct Store {
 type Result<T> = std::result::Result<T, String>;
 /// The newest `PRAGMA user_version`. Every migration step below must run for any
 /// database older than this, so the guard reads this constant, never a literal.
-pub const SCHEMA_VERSION: i64 = 40;
+pub const SCHEMA_VERSION: i64 = 42;
 
 const SIDEBAR_ORDER: &str = "pinned DESC,sidebar_order IS NULL,sidebar_order,COALESCE(MAX(last_response_at,last_prompt_at),last_response_at,last_prompt_at,created_at) DESC,id";
 
@@ -668,6 +668,15 @@ impl Store {
                 migration.execute_batch(crate::side_chat::SCHEMA).map_err(|e| e.to_string())?;
                 migration.execute_batch("PRAGMA user_version=40;").map_err(|e| e.to_string())?;
             }
+            if version < 42 {
+                // Child agents (docs/child-agents.md): sessions of kind `child` keep using the
+                // general `parent_session_id`; these tables hold their tree facts, the user's
+                // pause/stop state per agent and the mail between agents. Version 41 is left to
+                // another branch; every statement here is idempotent, so the order they land in
+                // does not matter.
+                migration.execute_batch(crate::child_agents::SCHEMA).map_err(|e| e.to_string())?;
+                migration.execute_batch("PRAGMA user_version=42;").map_err(|e| e.to_string())?;
+            }
             migration.commit().map_err(|e| e.to_string())?;
         }
         let recovery = db.transaction().map_err(|e| e.to_string())?;
@@ -1000,7 +1009,7 @@ impl Store {
     pub fn sessions(&self) -> Result<Vec<Session>> {
         // Lists only need a card preview. Full details remain in SQLite and are
         // fetched for the selected task or directly for an agent's Start prompt.
-        let mut stmt=self.db.prepare(&format!("SELECT id,project_id,title,provider,model,mode,status,created_at,updated_at,archived,resume_id,last_response_at,worktree_path,reasoning_effort,context_used_tokens,context_window,task_stage,substr(task_description,1,512),completed_at,goal_state,codex_settings,worktree_branch,last_prompt_at,pinned,sidebar_order,draft,limited_at,limited_until,resume_at_reset,remote_device,cloud,kind,parent_session_id FROM sessions WHERE draft=0 AND kind<>'side' AND id NOT IN (SELECT session_id FROM architect_workers) ORDER BY {SIDEBAR_ORDER} LIMIT 500")).map_err(|e|e.to_string())?;
+        let mut stmt=self.db.prepare(&format!("SELECT id,project_id,title,provider,model,mode,status,created_at,updated_at,archived,resume_id,last_response_at,worktree_path,reasoning_effort,context_used_tokens,context_window,task_stage,substr(task_description,1,512),completed_at,goal_state,codex_settings,worktree_branch,last_prompt_at,pinned,sidebar_order,draft,limited_at,limited_until,resume_at_reset,remote_device,cloud,kind,parent_session_id FROM sessions WHERE draft=0 AND kind NOT IN ('side','child') AND id NOT IN (SELECT session_id FROM architect_workers) ORDER BY {SIDEBAR_ORDER} LIMIT 500")).map_err(|e|e.to_string())?;
         let rows = stmt
             .query_map([], Self::session_row)
             .map_err(|e| e.to_string())?;
@@ -1058,7 +1067,7 @@ impl Store {
             "SELECT s.id,s.title,s.updated_at,
                (SELECT m.content FROM messages m WHERE m.session_id=s.id AND m.role IN ('user','assistant') AND m.content LIKE ?2 ESCAPE '\\' ORDER BY m.id DESC LIMIT 1)
              FROM sessions s
-             WHERE s.project_id=?1 AND s.draft=0 AND s.kind<>'side' AND s.id NOT IN (SELECT session_id FROM architect_workers)
+             WHERE s.project_id=?1 AND s.draft=0 AND s.kind NOT IN ('side','child') AND s.id NOT IN (SELECT session_id FROM architect_workers)
                AND (s.title LIKE ?2 ESCAPE '\\' OR EXISTS(SELECT 1 FROM messages m WHERE m.session_id=s.id AND m.role IN ('user','assistant') AND m.content LIKE ?2 ESCAPE '\\'))
              ORDER BY s.updated_at DESC LIMIT ?3").map_err(|e| e.to_string())?;
         let needle = query.to_lowercase();

@@ -279,8 +279,8 @@ fn schema_40_adds_kinds_and_parent_links_to_an_older_database() {
     store.db.execute_batch("DROP TABLE side_chats; DROP INDEX sessions_parent; ALTER TABLE sessions DROP COLUMN kind; ALTER TABLE sessions DROP COLUMN parent_session_id; PRAGMA user_version=39;").unwrap();
     drop(store);
     let store = Store::open(&path).unwrap();
-    assert_eq!(crate::storage::SCHEMA_VERSION, 40);
-    assert_eq!(store.db.pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0)).unwrap(), 40);
+    assert_eq!(crate::storage::SCHEMA_VERSION, 42);
+    assert_eq!(store.db.pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0)).unwrap(), 42);
     let migrated = store.session(&old.id).unwrap();
     assert_eq!((migrated.kind.as_str(), migrated.parent_session_id), ("thread", None));
     assert_eq!(open(&store, &old.id, "q", 1).unwrap().kind, KIND);
