@@ -3,11 +3,10 @@
 An agent sees the apps open on this machine and, if the user allows it, operates them.
 Ported from ViewCode. Port status: [viewcode-port.md](viewcode-port.md).
 
-The backend is here; there is no screen for it yet. `src-tauri/src/computer_use/` holds
-the rules (pure functions and tables), the client that runs the native helper
-(`native/computer-driver`, macOS only), the service that applies the rules to each
-request, the settings and the agent tools. It is **off** until the setting is changed,
-and until a settings screen exists that takes the `computer_use_set_settings` command.
+`src-tauri/src/computer_use/` holds the rules (pure functions and tables), the client
+that runs the native helper (`native/computer-driver`, macOS only), the service that
+applies the rules to each request, the settings and the agent tools. It is **off** until
+it is turned on in Settings → Computer use ([Screens](#screens)).
 
 ## The rules
 
@@ -184,13 +183,60 @@ the launcher-command and screenshot-read recognisers; the protocol types; the he
 client; the service with its dispatch lock, approvals, screenshots and recent actions;
 the walk of the app's process ancestry; the settings; the agent tools.
 
-Not ported yet: every screen (settings, approval cards, recent actions), so nothing
-shows a waiting approval to the user; bundling the helper into the macOS build; the
+Ported since: the screens (below). Not ported yet: bundling the helper into the macOS build; the
 `viewcode-computer` launcher that refusals name, with its session credential; granting
 a thread's screenshot folder to harnesses that take directory grants (an agent without
 Full access may be asked before it reads a screenshot); input to windows that are not
 in front, and the on-screen agent cursor that goes with it. The helper drives macOS
 only.
+
+## Screens
+
+All in the webview; nothing is polled.
+
+- **Shell store** (`src/computer-use.ts`, always loaded; pure words and decisions in
+  `src/computer-use-model.ts`, tested by `tests/computer-use-model.test.mjs`): reads
+  `computer_use_state` at launch, then on `computer-use-changed` reads only
+  `computer_use_approvals` when the event names a thread (a card opened or closed) and
+  the whole state when it does not (a settings change). While the mode is off,
+  `Service::status` reports availability without asking the helper, so reading the state
+  at launch starts nothing.
+- **Approval card** (`#cu-approval`, above the prompt with the other approval bar): the
+  thread whose agent asked shows the backend's `detail` as it came (typed text is only
+  ever a count there) and exactly the options it sent, in its order; the first yes is the
+  primary button, refusals are quiet. Variants are told apart by the options (screen
+  question: no `accept`; destructive: a warning or no "rest of this turn"). A button sends
+  `computer_use_respond`; a refusal (answered elsewhere, ended) shows inline and the list is
+  read again. Cards close on the event: answered elsewhere, turn ended, 10-minute timeout,
+  computer use turned off. A thread with a card reads **Approval** in its row
+  (`taskSignal` in `main.ts`), and a card for a thread that is not open raises a toast.
+- **Activity strip** (`#cu-activity`): while a turn calls the gate's tools (any tool
+  named `…pandacode_computer_<command>`), one line says what it is doing and how many
+  actions; it opens to the thread's recent actions (read when it opens) and goes when the
+  run ends.
+- **Settings → Computer use** (`src/computer-use-settings.ts`, loaded with Settings):
+  this computer (not available with the reason off macOS or without the helper; the
+  Accessibility state with the privacy pane to open; Screen Recording as guidance, since
+  it is only known when a screenshot is refused), the mode as a three-way `.ds-seg` (Off,
+  Look only, Control; only Off is offered when unavailable), and under Control the
+  approvals and show-on-screen rows, the recent actions, then **Bypass all permissions**
+  in a danger zone. Turning bypass on opens a confirmation listing everything it removes,
+  with a checkbox that must be ticked before **Turn on bypass** works; only then is
+  `{approvals: "bypass", acknowledgeRisk: true}` sent. Turning it off (the switch or the
+  warning's **Turn off**) sends `{approvals: "thread"}` without asking. While it is on a
+  standing warning heads the page and `#cu-bypass-indicator` (danger tone) shows in the
+  header and opens the page.
+- **Preview** (`src/preview-computer-use.ts`): `?cu=unavailable|missing|off|observe|denied|control|destructive|screen|bypass`;
+  hooks `__cuCalls`, `__cuApprove(variant, threadId?)`, `__cuResolve(requestId?)`,
+  `__cuTool(threadId, command, status, id)`. Spec: `tests/computer-use.spec.ts`.
+
+Differences from ViewCode's screens: the mode is a segment rather than a select and reads
+Look only / Control; approvals and the screen are rows rather than selects; the status
+needs no "Allow access…" button, since this app has no command to open a System Settings
+pane, so the page names the pane; recent actions are shown at once (they come with the
+state) rather than behind a Show disclosure; there is no "Getting started" disclosure;
+bypass, the standing warning, the header indicator and the activity strip do not exist
+in ViewCode, whose approvals reuse its generic approval request card.
 
 ## Differences from ViewCode
 

@@ -1,0 +1,72 @@
+/* Computer use in the shell (src/computer-use.ts): the approval card and the "using the computer" strip above
+ * the prompt, and the bypass indicator in the header. Always loaded, since the composer draws the first two.
+ * Tokens only; the leading icon carries the state tone (data-state-tone), the text stays neutral. */
+
+/* Approval card: the gate's own question, in the width of the prompt. */
+.cu-approvals{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;margin:0 0 6px}
+.cu-approval.ds-card{gap:0;padding:4px 6px 6px}
+.workspace[data-scene] .conversation-pane .cu-approval.ds-card{background:var(--thread-surface,var(--ds-card))}
+.cu-approval-head{display:flex;align-items:center;gap:8px;min-height:30px;padding:0 8px;color:var(--muted);font-size:var(--ds-text-meta);letter-spacing:var(--ds-row-tracking)}
+.cu-approval-mark{--icon-size:16px;flex:none}
+.cu-approval-app{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cu-approval-body.ds-card-inner{gap:6px;padding:10px 12px 12px}
+.cu-approval-title{margin:0;font-size:var(--ds-text-ui);font-weight:var(--weight-medium);letter-spacing:var(--ds-row-tracking);color:var(--ds-row-ink)}
+/* The backend's one line (action, control, app, window): never typed text, so it may wrap in full. */
+.cu-approval-detail{margin:0;color:var(--text);font-size:var(--ds-text-ui);line-height:1.45;overflow-wrap:anywhere}
+.cu-approval-warning{margin:0;color:var(--ds-danger);font-size:var(--ds-text-meta)}
+.cu-approval-error{margin:0;color:var(--ds-danger);font-size:var(--ds-text-meta)}
+.cu-approval-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;margin-top:4px}
+.cu-approval-actions>:is(.ds-btn,.ds-btn-primary){height:30px;padding:0 12px;font-size:var(--ds-text-meta)}
+.cu-approval-actions>:disabled{opacity:.5;cursor:default}
+
+/* While a turn calls the gate's tools: one quiet line, opening to the thread's recent actions. */
+.cu-activity{margin:0 0 6px;border:1px solid var(--ds-border);border-radius:var(--ds-radius-inner);background:var(--ds-card)}
+.cu-activity-line{display:flex;align-items:center;gap:8px;width:100%;min-height:30px;padding:0 10px;border-radius:inherit;background:none;color:var(--muted);font-size:var(--ds-text-meta);text-align:left;--press:1;transition:color var(--ds-ease-out) ease-out,background-color var(--ds-ease-out) ease-out}
+.cu-activity-line:hover{color:var(--text);background:var(--ds-row-hover);transition-duration:var(--ds-ease-in)}
+.cu-activity-mark{--icon-size:15px;flex:none}
+.cu-activity-word{color:var(--text)}
+.cu-activity-count{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--faint);font-variant-numeric:tabular-nums}
+.cu-activity-chevron{--icon-size:12px;flex:none;margin-left:auto;color:var(--ds-glyph-faint);transition:rotate var(--spring-fast-duration) var(--spring-fast)}
+.cu-activity.is-open .cu-activity-chevron{rotate:90deg}
+.cu-activity-list{list-style:none;margin:0;padding:2px 10px 8px 33px;display:grid;gap:2px;font-size:var(--ds-text-meta)}
+.cu-activity-list>li{display:flex;align-items:baseline;gap:10px;min-width:0;color:var(--muted)}
+.cu-activity-command{font-family:var(--mono);color:var(--text)}
+.cu-activity-refused .cu-activity-outcome{font-family:var(--mono);color:var(--ds-danger)}
+.cu-activity-list time{margin-left:auto;color:var(--faint);font-variant-numeric:tabular-nums}
+
+/* Bypass on: a compact, always-visible mark in the header that opens the setting. */
+.cu-bypass-indicator{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px 0 7px;margin-right:4px;border-radius:var(--ds-radius-control);background:var(--ds-fill);box-shadow:inset 0 0 0 1px var(--ds-chip-border);color:var(--muted);font-size:var(--ds-text-meta);white-space:nowrap;
+  transition:color var(--ds-ease-out) ease-out,background-color var(--ds-ease-out) ease-out,scale var(--spring-fast-duration) var(--spring-fast)}
+.cu-bypass-indicator[hidden]{display:none}
+.cu-bypass-indicator>.icon{--icon-size:15px;flex:none}
+.cu-bypass-indicator:hover{color:var(--text);background:var(--ds-fill-hover);transition-duration:var(--ds-ease-in),var(--ds-ease-in),var(--spring-fast-duration)}
+.cu-bypass-indicator:active{scale:var(--ds-press)}
+
+/* The bypass confirmation, in the shared dialog (its plate carries the glass). */
+#dialog.cu-bypass-dialog{max-width:500px}
+.cu-bypass-lead{margin:0 0 6px;color:var(--text);font-size:var(--ds-text-ui);font-weight:var(--weight-medium)}
+.cu-bypass-list{margin:0;padding:0 0 0 18px;display:grid;gap:6px;color:var(--text);font-size:var(--ds-text-ui);line-height:1.45}
+.cu-bypass-list>li::marker{color:var(--ds-danger)}
+.cu-bypass-keeps{margin:12px 0 0;color:var(--muted);font-size:var(--ds-text-meta);line-height:1.45}
+.cu-bypass-ack{display:flex;align-items:flex-start;gap:10px;margin-top:14px;padding:10px 12px;border:1px solid var(--ds-border);border-radius:var(--ds-radius-inner);background:var(--ds-card-inner);color:var(--text);font-size:var(--ds-text-ui);line-height:1.4;cursor:pointer}
+/* Dialog fields are full-width at zero specificity; this one is a plain checkbox beside its sentence. */
+#dialog .cu-bypass-ack>input[type=checkbox]{flex:none;width:16px;height:16px;min-width:0;min-height:0;margin:2px 0 0;padding:0;border:0;box-shadow:none;background:none;accent-color:var(--ds-danger)}
+.cu-bypass-ack>span{flex:1;min-width:0}
+.cu-bypass-confirm{color:var(--ds-danger)}
+.cu-bypass-confirm:not(:disabled):hover{background:color-mix(in srgb,var(--ds-danger) 12%,transparent)}
+.cu-bypass-confirm:disabled{opacity:.5;cursor:not-allowed}
+
+@media(prefers-contrast:more){
+  .cu-bypass-ack{border-color:var(--text)}
+  .cu-bypass-keeps{color:var(--text)}
+  .cu-activity,.cu-bypass-indicator{border-color:var(--text);box-shadow:inset 0 0 0 1px var(--text)}
+  .cu-approval-head,.cu-activity-line,.cu-activity-count,.cu-activity-list>li,.cu-activity-list time,.cu-bypass-indicator{color:var(--text)}
+}
+@media(prefers-reduced-transparency:reduce){.workspace[data-scene] .conversation-pane .cu-approval.ds-card{background:var(--panel-surface,var(--bg))}}
+@media(forced-colors:active){
+  .cu-activity,.cu-bypass-indicator{border:1px solid CanvasText}
+  .cu-approval-mark,.cu-activity-mark,.cu-bypass-indicator>.icon{color:CanvasText}
+  .cu-approval-warning,.cu-approval-error,.cu-activity-refused .cu-activity-outcome,.cu-bypass-confirm{color:CanvasText}
+  .cu-bypass-ack{border:1px solid CanvasText}
+}
+@media(prefers-reduced-motion:reduce){.cu-activity-line,.cu-activity-chevron,.cu-bypass-indicator{transition:none}}

@@ -15,7 +15,7 @@ use super::policy::{
     protected_overlay, screenshots_dir, validate_request, ApprovalAnswer, ApprovalOption, ApprovalPrompt, ApprovalResponse, AskOutcome, CheckedInput, ComputerUseError, Hit, InputDecision, InputRequest, Live, Mode, PendingApprovals, Request,
     ResolvedTarget, ScreenStep, ThreadGate, TurnContext, APPROVAL_APP_NAME, APPROVAL_TIMEOUT_SECS, DEFAULT_SCREENSHOT_SIZE, MAX_OBSERVED_ELEMENTS, SCREENSHOTS_KEPT, SETTLE_DELAY_MS,
 };
-use super::protocol::{Accessibility, DispatchTarget, DriverFailure, DriverRequest, DriverWindow, ElementIdentity, InputResult, Observation, Phase, Rect, Screenshot, WindowKind};
+use super::protocol::{Accessibility, DispatchTarget, DriverFailure, DriverRequest, DriverStatus, DriverWindow, ElementIdentity, InputResult, Observation, Phase, Rect, Screenshot, WindowKind};
 use super::settings::Settings;
 use super::targets::{NewShot, WindowRecord};
 use serde::Serialize;
@@ -240,9 +240,15 @@ impl Service {
     }
 
     /// Fresh every call: the setting plus what the helper can do right now.
+    /// While computer use is off nothing is started: the settings screen and the app's
+    /// shell read this at launch, and asking the helper would start it.
     pub(crate) async fn status(&self) -> Status {
         let mode = self.host.settings().map_or(Mode::Off, |settings| settings.mode);
-        let driver = self.driver.status().await;
+        let driver = if mode == Mode::Off {
+            self.driver.unavailable_reason().map_or(DriverStatus { available: true, accessibility: Accessibility::Unknown, reason: None }, DriverStatus::unavailable)
+        } else {
+            self.driver.status().await
+        };
         Status { mode, platform: self.os, driver_available: driver.available, accessibility: driver.accessibility, reason: driver.reason }
     }
 
