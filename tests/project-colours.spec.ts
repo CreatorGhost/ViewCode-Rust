@@ -77,7 +77,7 @@ test('a project without a colour is neutral; its menu offers None and 18 named s
   // The grid stays inside the menu, and the project's other actions are there too.
   const box = (await menu(page).boundingBox())!;
   for (const name of ['None', 'Teal', 'Rose']) { const dot = (await swatch(page, name).boundingBox())!; expect(dot.x).toBeGreaterThanOrEqual(box.x); expect(dot.x + dot.width).toBeLessThanOrEqual(box.x + box.width); expect(dot.width).toBeGreaterThanOrEqual(22); }
-  await expect(menu(page).getByRole('menuitem', { name: 'New task', exact: true })).toBeVisible();
+  await expect(menu(page).getByRole('menuitem', { name: 'New thread', exact: true })).toBeVisible();
   await expect(menu(page).getByRole('menuitem', { name: 'Remove project…', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(menu(page)).toHaveCount(0);
@@ -141,7 +141,7 @@ test('the keyboard reaches the menu and every swatch; a second project keeps its
   await tile(page, 'orbit').focus();
   await page.keyboard.press('Shift+F10');
   await expect(menu(page)).toBeVisible();
-  await expect(menu(page).getByRole('menuitem', { name: 'New task', exact: true })).toBeFocused();
+  await expect(menu(page).getByRole('menuitem', { name: 'New thread', exact: true })).toBeFocused();
   // ↓ enters the swatches at the current one; → and ← move along them.
   await page.keyboard.press('ArrowDown');
   await expect(swatch(page, 'None')).toBeFocused();
