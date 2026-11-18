@@ -33,7 +33,8 @@ export type AttachmentsHost = {
 export const MAX_IMAGES = 4;
 const MAX_DOCUMENTS = 5;
 const MAX_FOLDERS = 3;
-const IMAGE_EXTENSIONS = /\.(png|jpe?g|webp)$/i;
+// HEIC photos are converted natively (macOS); elsewhere the import says why it cannot.
+const IMAGE_EXTENSIONS = /\.(png|jpe?g|webp|heic|heif)$/i;
 const MAX_INLINE_TEXT = 32768;
 
 function id(): string { return crypto.randomUUID(); }

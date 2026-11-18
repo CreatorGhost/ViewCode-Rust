@@ -113,7 +113,7 @@ fn decode(bytes: &[u8]) -> Result<(DynamicImage, ImageFormat), String> {
         format,
         ImageFormat::Png | ImageFormat::Jpeg | ImageFormat::WebP
     ) {
-        return Err("Choose a PNG, JPEG or WebP image. HEIC, GIF and SVG are not supported yet.".into());
+        return Err("Choose a PNG, JPEG or WebP image. GIF and SVG are not supported yet.".into());
     }
     let mut reader = ImageReader::with_format(Cursor::new(bytes), format);
     let mut limits = Limits::default();
@@ -125,6 +125,35 @@ fn decode(bytes: &[u8]) -> Result<(DynamicImage, ImageFormat), String> {
         .decode()
         .map_err(|_| "This image is damaged or too large to decode.".to_string())?;
     Ok((image, format))
+}
+
+/// Whether the bytes open with an ISO media `ftyp` box of a HEIF brand (HEIC and HEIF photos).
+fn is_heif(bytes: &[u8]) -> bool {
+    bytes.len() >= 12
+        && &bytes[4..8] == b"ftyp"
+        && matches!(&bytes[8..12], b"heic" | b"heix" | b"hevc" | b"hevx" | b"heim" | b"heis" | b"mif1" | b"msf1")
+}
+
+/// A HEIC photo as PNG bytes, through macOS's own `sips` (bounded like every external tool).
+#[cfg(target_os = "macos")]
+fn heif_to_png(path: &Path) -> Result<Vec<u8>, String> {
+    let out = std::env::temp_dir().join(format!("pandacode-heic-{}.png", uuid::Uuid::new_v4()));
+    let mut command = Command::new("/usr/bin/sips");
+    command.args(["-s", "format", "png", "-Z"]).arg(MAX_IMAGE_EDGE.to_string()).arg(path).arg("--out").arg(&out);
+    // Whatever went wrong (no converter, a damaged photo, no output), the user hears one reason.
+    let result = run_process(command, "sips", 64 * 1024, EXTRACTOR_TIMEOUT)
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|_| checked_file(&out, MAX_IMAGE_SOURCE as u64, "image").ok())
+        .and_then(|(file, _)| read_bounded(file, MAX_IMAGE_SOURCE).ok())
+        .ok_or_else(|| "Could not convert this HEIC image. Export it as JPEG or PNG and try again.".to_string());
+    let _ = std::fs::remove_file(&out);
+    result
+}
+
+#[cfg(not(target_os = "macos"))]
+fn heif_to_png(_path: &Path) -> Result<Vec<u8>, String> {
+    Err("HEIC images can be attached on macOS. Export it as JPEG or PNG and try again.".into())
 }
 
 fn encode_png(image: &DynamicImage, edge: u32) -> Result<Vec<u8>, String> {
@@ -165,7 +194,10 @@ pub fn import_image(dir: &Path, source: ImageSource) -> Result<ImportedImage, St
     let (name, bytes) = match source {
         ImageSource::Path(path) => {
             let (file, _) = checked_file(&path, MAX_IMAGE_SOURCE as u64, "image")?;
-            (file_name(&path, "Image.png"), read_bounded(file, MAX_IMAGE_SOURCE)?)
+            let bytes = read_bounded(file, MAX_IMAGE_SOURCE)?;
+            // An iPhone photo: the system converts it, since no decoder for it ships here.
+            let bytes = if is_heif(&bytes) { heif_to_png(&path)? } else { bytes };
+            (file_name(&path, "Image.png"), bytes)
         }
         ImageSource::Data { name, data_url } => {
             if data_url.len() > MAX_IMAGE_SOURCE * 4 / 3 + 128 {
@@ -640,6 +672,27 @@ mod tests {
         assert_eq!((image.width(), image.height()), (2, 1));
         assert_eq!(image.get_pixel(0, 0).0, [255, 0, 0, 255]);
         assert_eq!(image.get_pixel(1, 0).0, [0, 255, 0, 255]);
+    }
+
+    #[test]
+    fn heic_photos_are_recognised_by_their_brand_not_their_name() {
+        let heic = |brand: &[u8; 4]| [&[0, 0, 0, 24][..], b"ftyp", brand, &[0; 12]].concat();
+        assert!(is_heif(&heic(b"heic")) && is_heif(&heic(b"mif1")) && is_heif(&heic(b"heix")));
+        // An MP4, an AVIF, a PNG and a short file are not HEIC.
+        assert!(!is_heif(&heic(b"isom")) && !is_heif(&heic(b"avif")));
+        assert!(!is_heif(&STANDARD.decode(PNG).unwrap()) && !is_heif(b"....ftyp"));
+    }
+
+    #[test]
+    fn a_heic_file_is_converted_by_the_system_or_refused_with_the_reason() {
+        let dir = temp_dir("heic");
+        let path = dir.join("IMG_0001.HEIC");
+        std::fs::write(&path, [&[0, 0, 0, 24][..], b"ftyp", b"heic", &[0; 12]].concat()).unwrap();
+        // Not a real photo: macOS's converter fails on it, other systems have none. Either
+        // way the message names HEIC instead of calling the file an unknown format.
+        let error = import_image(&dir.join("out"), ImageSource::Path(path)).unwrap_err();
+        assert!(error.contains("HEIC"), "{error}");
+        assert!(!dir.join("out").exists());
     }
 
     #[test]

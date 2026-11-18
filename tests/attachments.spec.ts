@@ -218,9 +218,12 @@ test('a sent message shows its attachments as chips that open what they carried'
   // The image shows at full size from the capture registry.
   await expect(sentChips.nth(2).locator('img')).toHaveAttribute('src', /^data:image\/png;base64,/);
   await sentChips.nth(2).click();
+  const viewer = page.locator('dialog.image-viewer');
+  await expect(viewer.locator('.image-viewer-stage img')).toHaveAttribute('src', /^data:image\/png;base64,/);
+  await expect(viewer.locator('.image-viewer-caption')).toHaveText('wireframe.png');
+  await viewer.getByRole('button', { name: 'Close image preview' }).click();
+  await expect(viewer).toHaveCount(0);
   const dialog = page.locator('#dialog');
-  await expect(dialog.locator('img.message-attachment-image')).toHaveAttribute('src', /^data:image\/png;base64,/);
-  await dialog.getByRole('button', { name: 'Close dialog' }).click();
 
   // GitHub opens the https URL; an element shows its raw text, escaped.
   await sentChips.nth(3).click();

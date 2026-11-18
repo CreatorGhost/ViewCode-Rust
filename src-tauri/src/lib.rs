@@ -15,6 +15,7 @@ mod bots;
 mod chats;
 mod browser;
 mod child_env;
+mod chat_images;
 mod checks;
 mod code_search;
 mod connections;
@@ -3649,6 +3650,19 @@ async fn workspace_image(
     blocking(move || workspace::image_data_url(&root, &path)).await
 }
 
+/// An image an agent's reply refers to, for the transcript and the image viewer. Relative
+/// paths come from the task's checkout; the rule for everything else is in `chat_images`.
+#[tauri::command]
+async fn chat_image(
+    state: State<'_, AppState>,
+    project_id: String,
+    session_id: Option<String>,
+    path: String,
+) -> Result<chat_images::ChatImage> {
+    let root = state.root(&project_id, session_id.as_deref())?;
+    blocking(move || chat_images::load(&root, &path)).await
+}
+
 #[tauri::command]
 async fn remote_resubscribe(app: tauri::AppHandle) -> Result<()> {
     remote::mirror::subscribe_soon(&app);
@@ -4643,6 +4657,7 @@ pub fn run() {
                 progress::progress_thumb,
                 progress::progress_clear,
                 workspace_image,
+                chat_image,
                 resolve_workspace_files,
                 prepare_file_preview,
                 get_run_script,

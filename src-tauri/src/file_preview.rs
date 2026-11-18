@@ -25,6 +25,10 @@ pub struct ResolvedFile {
     pub input: String,
     pub path: String,
     pub previewable: bool,
+    /// An image outside the workspace, named by its absolute path. `path` is then absolute,
+    /// and the file opens in the image viewer (`chat_images`), never a file tab or preview.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub external: bool,
 }
 #[derive(Debug, Serialize)]
 pub struct FilePreview {
@@ -126,6 +130,25 @@ fn candidate(root: &Path, input: &str) -> Option<PathBuf> {
     public_path(&path).then_some(path)
 }
 
+/// An absolute path to an image outside the workspace (a screenshot an agent saved to /tmp).
+/// Only what the image viewer would show: see `chat_images::resolve`.
+fn external_image(root: &Path, value: &str) -> Option<String> {
+    let path = if value.starts_with("file://") {
+        let url = tauri::Url::parse(value).ok()?;
+        if url.host_str().is_some_and(|host| !host.is_empty() && host != "localhost") {
+            return None;
+        }
+        url.to_file_path().ok()?
+    } else {
+        PathBuf::from(value)
+    };
+    if !path.is_absolute() {
+        return None;
+    }
+    let (target, _) = crate::chat_images::resolve(root, path.to_str()?).ok()?;
+    (!target.starts_with(root)).then(|| target.to_str().map(str::to_owned)).flatten()
+}
+
 pub fn resolve_files(root: &Path, paths: Vec<String>) -> Result<Vec<ResolvedFile>> {
     if paths.len() > 128 {
         return Err("Too many file references.".into());
@@ -152,7 +175,9 @@ pub fn resolve_files(root: &Path, paths: Vec<String>) -> Result<Vec<ResolvedFile
             }
         }
         if let Some(path) = found {
-            resolved.push((position, input, path));
+            resolved.push((position, input, path, false));
+        } else if let Some(path) = external_image(&root, decoded.as_deref().unwrap_or(trimmed)) {
+            resolved.push((position, input, path, true));
         } else if let Some(path) = candidate(&root, trim_location(input.trim().trim_matches('`'))) {
             if path.components().count() == 1 {
                 pending.push((position, input, path));
@@ -210,7 +235,7 @@ pub fn resolve_files(root: &Path, paths: Vec<String>) -> Result<Vec<ResolvedFile
         if complete {
             for (position, input, name) in pending {
                 if let Some(Some(path)) = name.to_str().and_then(|name| names.get(name)) {
-                    resolved.push((position, input, path.clone()));
+                    resolved.push((position, input, path.clone(), false));
                 }
             }
         }
@@ -218,10 +243,11 @@ pub fn resolve_files(root: &Path, paths: Vec<String>) -> Result<Vec<ResolvedFile
     resolved.sort_unstable_by_key(|entry| entry.0);
     Ok(resolved
         .into_iter()
-        .map(|(_, input, path)| ResolvedFile {
+        .map(|(_, input, path, external)| ResolvedFile {
             previewable: previewable(&path),
             input,
             path,
+            external,
         })
         .collect())
 }
@@ -322,7 +348,7 @@ impl FilePreviews {
             .into_iter()
             .next()
             .ok_or("File is no longer available.")?;
-        if !file.previewable {
+        if !file.previewable || file.external {
             return Err("This file does not have a browser preview.".into());
         }
         let target = checked_file(&root, Path::new(&file.path))?;
@@ -681,6 +707,35 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn an_absolute_image_outside_the_workspace_resolves_as_external_and_nothing_else_does() {
+        let f = Fixture::new();
+        let outside = Fixture::new();
+        f.write("inside.png", "png");
+        outside.write("shot.png", "png");
+        outside.write("notes.md", "# Notes");
+        let shot = outside.0.join("shot.png").to_str().unwrap().to_owned();
+        let files = resolve_files(
+            &f.0,
+            vec![
+                shot.clone(),
+                format!("file://{shot}"),
+                outside.0.join("notes.md").to_str().unwrap().to_owned(),
+                outside.0.join("missing.png").to_str().unwrap().to_owned(),
+                f.0.join("inside.png").to_str().unwrap().to_owned(),
+            ],
+        )
+        .unwrap();
+        let found: Vec<_> = files.iter().map(|file| (file.path.as_str(), file.external)).collect();
+        assert_eq!(found, [(shot.as_str(), true), (shot.as_str(), true), ("inside.png", false)]);
+        assert!(files[0].previewable);
+        // The browser preview server never serves it.
+        assert!(FilePreviews::default().prepare(&f.0, &shot).is_err());
+        let json = serde_json::to_value(&files).unwrap();
+        assert_eq!(json[0]["external"], true);
+        assert!(json[2].get("external").is_none());
     }
 
     #[test]

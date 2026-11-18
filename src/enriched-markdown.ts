@@ -159,7 +159,10 @@ export function renderMarkdown(root: MarkdownNode, options: RenderOptions = {}):
         return `<a href="${link(a.url ?? '')}"${a.title ? ` title="${escapeAttr(a.title)}"` : ''}>${kids(node)}</a>`;
       }
       // Remote images are not loaded in the transcript; their description links to them instead.
-      case 'Image': case 'Video': { const label = text(node) || a.title || (node.type === 'Video' ? 'Video' : 'Image'); return `<a class="md-media" href="${link(a.url ?? '')}">${escapeText(label)}</a>`; }
+      // A local image is drawn in its place by `chat-images.ts`, from this link (`md-image`).
+      // A Windows drive path gets a leading slash so the sanitizer does not read `C:` as a scheme.
+      case 'Image': { const url = a.url ?? ''; return `<a class="md-media md-image" href="${link(/^[a-z]:[\\/]/i.test(url) ? `/${url.replace(/\\/g, '/')}` : url)}">${escapeText(text(node) || a.title || 'Image')}</a>`; }
+      case 'Video': return `<a class="md-media" href="${link(a.url ?? '')}">${escapeText(text(node) || a.title || 'Video')}</a>`;
       case 'Blockquote': return `<blockquote>\n${kids(node)}</blockquote>\n`;
       case 'Admonition': {
         const type = ADMONITIONS[a.admonitionType ?? ''] ? a.admonitionType! : 'note';

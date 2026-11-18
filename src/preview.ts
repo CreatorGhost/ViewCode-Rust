@@ -2577,7 +2577,7 @@ export async function invoke<T>(command: string, args: Record<string, any>): Pro
       // Any picked or pasted image becomes a small PNG id; the thumbnail is a yellow swatch.
       if (!args.path && !args.dataUrl) throw new Error('Choose an image to attach.');
       const name = String(args.name || String(args.path ?? '').split('/').pop() || 'Image.png');
-      if (/\.(svg|gif|heic)$/i.test(name)) throw new Error('Choose a PNG, JPEG or WebP image. HEIC, GIF and SVG are not supported yet.');
+      if (/\.(svg|gif)$/i.test(name)) throw new Error('Choose a PNG, JPEG or WebP image. GIF and SVG are not supported yet.');
       result = { id: crypto.randomUUID(), name, width: 1280, height: 800, thumbnail: String(args.dataUrl ?? '').startsWith('data:image/png') ? args.dataUrl : 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==' };
       break;
     }
@@ -2609,6 +2609,8 @@ export async function invoke<T>(command: string, args: Record<string, any>): Pro
         let path = input.replace(/(?::\d+(?::\d+)?|#L\d+(?:-L?\d+)?)$/, '').replace(/^\.\//, '');
         if (path.startsWith('file://')) { try { path = decodeURIComponent(new URL(path).pathname); } catch { return []; } }
         if (root && path.startsWith(root + '/')) path = path.slice(root.length + 1);
+        // An image outside the project opens in the image viewer (native: `external_image`).
+        else if (path.startsWith('/') && /\.(png|jpe?g|gif|webp|avif|svg|ico)$/i.test(path) && !/missing/i.test(path)) return [{ input, path, previewable: true, external: true }];
         const matches = previewWorkspaceFiles.filter(file => file === path || (!path.includes('/') && file.endsWith('/' + path)));
         return matches.length === 1 ? [{ input, path: matches[0], previewable: isPreviewableFile(matches[0]) }] : [];
       }); break;
@@ -2617,6 +2619,19 @@ export async function invoke<T>(command: string, args: Record<string, any>): Pro
       const path = String(args.path);
       if (!previewWorkspaceFiles.includes(path) || !isPreviewableFile(path)) throw new Error('This file cannot be previewed in the browser.');
       result = { path, name: path.split('/').pop(), url: 'http://127.0.0.1:4179/preview/' + encodeURIComponent(args.sessionId ?? args.projectId) + '/' + path.split('/').map(encodeURIComponent).join('/') }; break;
+    }
+    // Images a reply shows (native: chat_images.rs). Any image file on this computer, inside or
+    // outside the project; a name containing "missing" is a file that is gone, "large" a big one.
+    case 'chat_image': {
+      const path = String(args.path ?? ''), name = path.split(/[\\/]/).pop() || 'Image';
+      if (!/\.(png|jpe?g|gif|webp|avif|svg|ico)$/i.test(name)) throw new Error('Only PNG, JPEG, GIF, WebP, AVIF, SVG and ICO images can be shown.');
+      if (/missing/i.test(name)) throw new Error('Image unavailable. The file may have been moved or deleted.');
+      const [width, height] = /large/i.test(name) ? [2400, 1600] : [640, 360];
+      const label = name.replace(/[<>&"']/g, '');
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 640 360"><rect width="640" height="360" fill="#20242b"/><rect x="24" y="24" width="592" height="40" rx="8" fill="#2d333d"/><rect x="24" y="84" width="180" height="252" rx="8" fill="#2a2f38"/><rect x="224" y="84" width="392" height="120" rx="8" fill="#31506b"/><rect x="224" y="224" width="186" height="112" rx="8" fill="#2a2f38"/><rect x="430" y="224" width="186" height="112" rx="8" fill="#2a2f38"/><text x="44" y="50" fill="#d7dbe2" font-family="sans-serif" font-size="16">${label}</text></svg>`;
+      const root = (args.sessionId ? session(args.sessionId).worktreePath : undefined) || projects.find(project => project.id === args.projectId)?.path || '';
+      result = { url: `data:image/svg+xml;base64,${btoa(svg)}`, name, path: /^(?:\/|[a-z]:[\\/])/i.test(path) ? path : `${root}/${path.replace(/^\.\//, '')}`, scaled: /large/i.test(name) };
+      break;
     }
     case 'workspace_image': {
       // A drawn stand-in for any workspace image a question shows.

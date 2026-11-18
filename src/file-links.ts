@@ -1,5 +1,8 @@
+import { decorateChatImages, refreshChatImages } from './chat-images.ts';
+
 export interface FileLinkContext { projectId: string; sessionId?: string }
-export interface ResolvedFile { input: string; path: string; previewable: boolean }
+/** `external`: an image outside the workspace; `path` is then absolute and it opens in the image viewer. */
+export interface ResolvedFile { input: string; path: string; previewable: boolean; external?: boolean }
 interface FileLinkOptions {
   context: () => FileLinkContext | undefined;
   resolve: (context: FileLinkContext, paths: string[]) => Promise<ResolvedFile[]>;
@@ -59,6 +62,7 @@ export function configureFileLinks(value: FileLinkOptions): void { options = val
 
 /** Recheck missing references after the agent writes files or the user refreshes the inspector. */
 export function refreshFileLinks(context: FileLinkContext): void {
+  refreshChatImages();
   const hub = hubs.get(JSON.stringify([context.projectId, context.sessionId ?? '']));
   if (!hub) return;
   if (hub.busy) { hub.refreshPending = true; return; }
@@ -177,6 +181,8 @@ function fileLink(hub: Hub, file: ResolvedFile, contents: Node[]): HTMLElement {
 /** Run on the sanitized fragment before reconciliation, and after asynchronous resolution. */
 export function decorateFileLinks(root: ParentNode, target: HTMLElement): void {
   const hub = capture(target);
+  // Local Markdown images become the images themselves, before their links are read as files.
+  decorateChatImages(root, hub?.context);
   // Relative Markdown links must never navigate the desktop webview, even without a workspace.
   for (const anchor of root.querySelectorAll<HTMLAnchorElement>('a')) {
     const href = anchor.getAttribute('href') ?? '';

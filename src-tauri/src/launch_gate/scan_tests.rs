@@ -31,7 +31,7 @@ const DIRECT: &[(&str, usize, &str)] = &[
     ("local_servers.rs", 1, "lsof/netstat-style port listing"),
     ("local_signing.rs", 1, "codesign"),
     ("model_routing.rs", 1, "sw_vers"),
-    ("prompt_attachments.rs", 1, "a document-to-text tool"),
+    ("prompt_attachments.rs", 2, "a document-to-text tool, and macOS sips to convert a HEIC photo"),
     ("providers.rs", 2, "re-runs an already gated Claude command with --help; taskkill for a PID this app started"),
     ("providers/launch.rs", 3, "the gated builders (two harness, one tool) and the PTY builder"),
     ("quick_connect/process.rs", 1, "wrangler/npx for the user's own relay"),

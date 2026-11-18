@@ -121,6 +121,7 @@ import { createCouncil } from './council-panel';
 import { councilNotice } from './council';
 import { MAX_IMAGES, mountPromptAttachments, type PromptImage } from './attachments';
 import { attachmentChips, parseAttachments } from './message-attachments';
+import { configureChatImages, installChatImageClicks, loadChatImage, type ChatImage } from './chat-images';
 import { compactSublines, infoMark, installTooltips } from './tooltip';
 import { isMac, isWindows, shortcut } from './platform';
 import { createGoalBanner, showGoalDialog, showCommandCenter, type GoalState, type GoalAction, type CommandPanel } from './command-center';
@@ -132,6 +133,7 @@ import { isChatProject, NO_PROJECT } from './chats';
 import { FRESH, activeSideChat, isSideChat, parseBtw, sideChatsOf, sidePreferences } from './btw';
 import { BtwPanel } from './btw-panel';
 import './btw.css';
+import './chat-images.css';
 import { mountAgentsDock } from './agents-dock';
 import { mountChangesView, type ChangesView } from './changes-view';
 import { INSPECTOR_VIEWS, closeTab, closedViews, loadTabs, openTab, sameTabs, saveTabs, threadDefault, type InspectorView } from './inspector-tabs';
@@ -1123,12 +1125,26 @@ function workspaceKey(): string { return `${state.projectId}:${session()?.worktr
 /** PDFs and images open in a file tab like other documents; the tab still offers the browser preview. */
 const OPENS_IN_TAB = /\.(?:pdf|png|jpe?g|gif|webp|avif|bmp|ico|svg)$/i;
 function workspacePath(): string { return session()?.worktreePath ?? project()?.path ?? ''; }
+// Images a reply shows. A task on another computer can only show images from its checkout there.
+configureChatImages((context, path) => {
+  const remote = context.sessionId && state.sessions.find(task => task.id === context.sessionId)?.remoteDevice;
+  if (!remote) return call<ChatImage>('chat_image', { ...context, path });
+  if (/^(?:[\\/]|[a-z]:[\\/])/i.test(path)) return Promise.reject(new Error(`This image is on ${remote.name}, outside the task's folder.`));
+  return call<string>('remote_workspace_image', { sessionId: context.sessionId, path }).then(url => ({ url, name: path.split(/[\\/]/).pop() || 'Image', path }));
+});
+installChatImageClicks();
+async function viewImageFile(context: FileLinkContext, path: string, opener: HTMLElement | null): Promise<void> {
+  const [image, viewer] = await Promise.all([loadChatImage(context, path), import('./image-viewer')]);
+  viewer.openImageViewer([{ name: image.name, src: image.url, path: image.path }], 0, opener);
+}
 configureFileLinks({
   context: () => state.projectId ? workspaceContext() : undefined,
   resolve: (context, paths) => call<ResolvedFile[]>('resolve_workspace_files', { ...context, paths }),
   open: async (context, file) => {
     try {
-      if (file.previewable && !OPENS_IN_TAB.test(file.path)) await previewFile(file.path, context);
+      // An image outside the project (a screenshot saved to /tmp) has no file tab: it opens in the viewer.
+      if (file.external) await viewImageFile(context, file.path, document.activeElement instanceof HTMLElement ? document.activeElement : null);
+      else if (file.previewable && !OPENS_IN_TAB.test(file.path)) await previewFile(file.path, context);
       else await openFile(file.path, 'file', false, context);
     } catch (error) { report(error); }
   },
@@ -2309,6 +2325,7 @@ function loadSentImage(id: string): void {
     sentImages.set(id, url);
     for (const img of document.querySelectorAll<HTMLImageElement>(`img[data-prompt-image="${id}"]`)) {
       img.src = url; img.hidden = false;
+      img.closest('.prompt-chip')?.classList.add('has-preview');
       if (img.nextElementSibling?.matches('svg.icon')) img.nextElementSibling.remove();
     }
   }).catch(() => { /* The chip keeps its icon and still opens the block's text. */ });
@@ -2321,7 +2338,18 @@ async function openMessageAttachment(element: HTMLElement): Promise<void> {
   if (item.kind === 'github') { await call('open_external_url', { url: item.url }); return; }
   if (item.kind === 'image') {
     const url = item.imageId ? sentImages.get(item.imageId) : null;
-    if (url) { modal(item.name, `<img class="message-attachment-image" src="${escape(url)}" alt="${escape(item.name)}">`, 'message-attachment-dialog'); return; }
+    if (url) {
+      // Every image this message carries, so the arrows step through them.
+      const images = parseAttachments(contextBlocks(message!.content).blocks).flatMap(other => {
+        const src = other.kind === 'image' && other.imageId ? sentImages.get(other.imageId) : null;
+        return other.kind === 'image' && src ? [{ name: other.name, src, id: other.imageId }] : [];
+      });
+      // The message may be redrawn (and renumbered once saved) while the viewer is open; focus returns to the chip showing this image.
+      const panel = element.closest('.btw-panel') ? '.btw-panel ' : '';
+      const chip = (): HTMLElement | null => element.isConnected ? element : [...document.querySelectorAll<HTMLElement>(`${panel}.message-attachments img[data-prompt-image="${item.imageId}"]`)].pop()?.closest<HTMLElement>('.prompt-chip') ?? null;
+      (await import('./image-viewer')).openImageViewer(images, Math.max(0, images.findIndex(image => image.id === item.imageId)), chip);
+      return;
+    }
     modal(item.name, `<p class="dialog-description">This image is no longer stored. Here is what was sent with it.</p><pre class="message-attachment-raw">${escape(item.raw)}</pre>`, 'message-attachment-dialog'); return;
   }
   if (item.kind === 'raw') { modal(item.name, `<pre class="message-attachment-raw">${escape(item.raw)}</pre>`, 'message-attachment-dialog'); return; }
@@ -2749,13 +2777,11 @@ function stepImage(tool: ToolActivity): string {
   const match = /"(?:file_path|path|image_path)"\s*:\s*"([^"]+\.(?:png|jpe?g|gif|webp))"/i.exec(tool.input) ?? /^\s*(\S+\.(?:png|jpe?g|gif|webp))\s*$/i.exec(tool.input);
   return match?.[1] ?? '';
 }
-const stepImages = new Map<string, Promise<string | null>>();
 function loadStepImage(label: HTMLElement): void {
-  const image = label.querySelector<HTMLImageElement>('img[data-thumb]'), sessionId = state.sessionId;
+  const image = label.querySelector<HTMLImageElement>('img[data-thumb]');
   if (!image) return;
-  const path = image.dataset.thumb!, key = sessionId + '\0' + path;
-  if (!stepImages.has(key)) stepImages.set(key, call<string>('workspace_image', { sessionId, path }).then(url => url.startsWith('data:image/') ? url : null, () => null));
-  void stepImages.get(key)!.then(url => { if (url && image.isConnected) { image.src = url; image.hidden = false; } });
+  // The transcript's own image rule and cache, so a screenshot the agent reads from outside the project shows too.
+  void loadChatImage(workspaceContext(), image.dataset.thumb!).then(loaded => { if (image.isConnected) { image.src = loaded.url; image.hidden = false; } }, () => { /* The step reads fine without its thumbnail. */ });
 }
 function workingLabel(current: Stream): string {
   let label = current.inputs.size ? 'Waiting for your answer' : current.approvals.size ? 'Waiting for approval' : current.status;
