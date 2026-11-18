@@ -697,7 +697,8 @@ async fn fetch_antigravity() -> Usage {
     }
     // Resolve the standalone CLI independently. The ACP server executable and
     // its saved override must never be replaced or invoked in print mode.
-    let Some(path) = crate::providers::executable("agy") else {
+    // `agy` is run as Antigravity (`antigravity_command`), so Antigravity's switch decides.
+    let Some(path) = crate::providers::executable("antigravity").and_then(|_| crate::providers::tool_path("agy")) else {
         return Usage::empty(
             "antigravity",
             "unsupported",

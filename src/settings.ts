@@ -68,7 +68,7 @@ interface SettingsOptions {
   remote?: RemoteHost;
   /** Settings → Computer use: the gate's settings, its bypass confirmation and thread titles for recent actions. */
   computerUse?: ComputerUseSettingsHost;
-  embed: { colors: Embed; wallpapers: Embed; providerConnections: Embed; openCodeModels: Embed; harnessPrivacy: Embed };
+  embed: { colors: Embed; wallpapers: Embed; providerConnections: Embed; openCodeModels: Embed; harnessPrivacy: Embed; keepAwake: Embed };
   /** Leaves Settings for the workspace. */
   close(): void;
 }
@@ -173,7 +173,7 @@ function sectionHtml(id: SettingsPage, options: SettingsOptions): string {
       <div class="settings-provider-status" role="status" hidden></div>
       <div class="provider-diagnostics settings-group"></div>
       ${options.preview ? '<p class="settings-preview-note">Browser preview · sample agent availability.</p>' : ''}
-      ${fold('Advanced', '<h3 class="settings-heading">Privacy</h3><div class="settings-embed" data-embed="harnessPrivacy"></div><h3 class="settings-heading">OpenCode models</h3><div class="settings-embed" data-embed="openCodeModels"></div>')}`;
+      ${fold('Advanced', '<h3 class="settings-heading">Privacy</h3><div class="settings-embed" data-embed="harnessPrivacy"></div><h3 class="settings-heading">Power</h3><div class="settings-embed" data-embed="keepAwake"></div><h3 class="settings-heading">OpenCode models</h3><div class="settings-embed" data-embed="openCodeModels"></div>')}`;
     case 'providers': return '<div class="settings-embed" data-embed="providerConnections"></div>';
     case 'teams': return '<div id="agent-teams-settings"></div>';
     case 'routing': return '<div id="model-routing-settings"></div>';

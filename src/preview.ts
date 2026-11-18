@@ -172,8 +172,44 @@ const previewPrivacy = () => ({ off: previewTelemetryOff, harnesses: [
 // Provider environment in the preview lives in memory so the Settings UI can be tested in a browser.
 const previewEnvState = { global: [] as [string, string][], providers: {} as Record<string, [string, string][]>, useGlobal: {} as Record<string, boolean> };
 const previewEnvNames = (vars: [string, string][]) => vars.map(([name]) => name);
+/** `?gate=fresh`: nothing enabled, first run pending. `?gate=managed`: a managed computer whose
+ * policy blocks Codex and allows only Claude Code and OpenCode. Otherwise every sample harness
+ * is enabled and no choice is pending, as before the gate existed. */
+const gateScenario = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('gate') : null;
+const gatePolicy = gateScenario === 'managed' ? { blocked: ['codex'], pinned: ['claude', 'opencode'] } : { blocked: [] as string[], pinned: null as string[] | null };
+let gateEnabled: Set<string> | null = gateScenario === 'fresh' || gateScenario === 'managed' ? new Set() : null;
+let gateFirstRunPending = gateScenario === 'fresh' || gateScenario === 'managed';
+const gateLocked = (id: string) => gatePolicy.blocked.includes(id) ? 'blocked' : gatePolicy.pinned && !gatePolicy.pinned.includes(id) ? 'notAllowed' : undefined;
+const gateOn = (id: string) => !gateLocked(id) && (gateEnabled === null || gateEnabled.has(id));
+function previewLaunchGate(): Record<string, unknown> {
+  const harnesses = providers.map(provider => ({ id: provider.id, name: provider.name, installed: provider.installed, path: provider.path, enabled: gateOn(provider.id), changeable: !gateLocked(provider.id), ...(gateLocked(provider.id) ? { locked: gateLocked(provider.id) } : {}), suggested: false }));
+  const managed = gateScenario === 'managed';
+  return { enabled: harnesses.filter(harness => harness.enabled).map(harness => harness.id), firstRunPending: gateFirstRunPending, managed, managedEvidence: managed ? ['Managed preferences are installed (/Library/Managed Preferences).'] : [], strict: managed, policySource: managed ? '/Library/Application Support/ViewCode/policy.json' : null, policyProblem: null, pinned: gatePolicy.pinned, blocked: gatePolicy.blocked, harnesses };
+}
+function previewGateChange(args: any, firstRun: boolean): Record<string, unknown> {
+  ((window as any).__launchGateCalls ??= []).push(firstRun ? { command: 'launch_gate_complete_first_run', enabled: args.enabled } : { command: 'launch_gate_set_enabled', harness: args.harness, enabled: args.enabled });
+  const refuse = (id: string) => { const locked = gateLocked(id), name = providers.find(provider => provider.id === id)?.name ?? id; if (locked) throw new Error(locked === 'blocked' ? `${name} is blocked by your organization, so it was not started.` : `${name} is not one of the agents your organization allows, so it was not started.`); };
+  if (firstRun) {
+    if (!gateFirstRunPending) throw new Error('The agents were already chosen. Change them in Settings → Providers.');
+    (args.enabled as string[]).forEach(refuse);
+    gateEnabled = new Set(args.enabled as string[]);
+  } else {
+    gateEnabled ??= new Set(providers.map(provider => provider.id));
+    if (args.enabled) { refuse(args.harness); gateEnabled.add(args.harness); } else gateEnabled.delete(args.harness);
+  }
+  gateFirstRunPending = false;
+  const next = previewLaunchGate();
+  emit('launch-gate-changed', next);
+  return next;
+}
+/** Keep awake: on by default; `?gate=managed` is a policy that turns it off; `?keepawake=unsupported` is a platform with nothing to hold. */
+let keepAwakeEnabled = true;
+const previewKeepAwake = () => { const permitted = gateScenario !== 'managed', supported = typeof location === 'undefined' || new URLSearchParams(location.search).get('keepawake') !== 'unsupported'; return { enabled: keepAwakeEnabled, permitted, supported, active: false, turns: 0 }; };
+/** The sample harnesses as discovery reports them: one that is not enabled is not usable. */
+const previewProviders = () => providers.map(provider => ({ ...provider, present: provider.installed, enabled: gateOn(provider.id), installed: provider.installed && gateOn(provider.id) }));
 function previewProviderConfiguration(): Record<string, unknown> {
   return {
+    launchGate: previewLaunchGate(),
     executablePaths: {}, claudeConnectionMode: previewClaudeMode,
     globalEnvironment: previewEnvNames(previewEnvState.global),
     environment: Object.fromEntries(Object.entries(previewEnvState.providers).map(([provider, vars]) => [provider, previewEnvNames(vars)])),
@@ -2088,7 +2124,12 @@ export async function invoke<T>(command: string, args: Record<string, any>): Pro
       result = reordered.map(taskSummary); break;
     }
     case 'get_task': result = settleDraft(session(args.sessionId)); break;
-    case 'list_providers': result = args.deviceId ? remoteProviders() : providers; break;
+    case 'list_providers': result = args.deviceId ? remoteProviders() : previewProviders(); break;
+    case 'keep_awake_state': result = previewKeepAwake(); break;
+    case 'keep_awake_set_enabled': ((window as any).__keepAwakeCalls ??= []).push(args.enabled); keepAwakeEnabled = Boolean(args.enabled); result = previewKeepAwake(); emit('keep-awake-changed', result); break;
+    case 'launch_gate_state': result = previewLaunchGate(); break;
+    case 'launch_gate_set_enabled': result = previewGateChange(args, false); break;
+    case 'launch_gate_complete_first_run': result = previewGateChange(args, true); break;
     case 'provider_check_connection': result = { installed: true, acpReady: true, sessionReady: true, state: 'ready', message: 'Sample connection check. No prompt sent.' }; break;
     case 'list_slash_commands': result = slashCatalog(session(args.sessionId).provider); break;
     case 'resolve_slash_command': result = resolveSlash(session(args.sessionId).provider, String(args.text)); break;

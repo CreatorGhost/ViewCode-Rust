@@ -5,6 +5,7 @@ import { providerLogo } from './provider-logos';
 import { infoMark } from './tooltip';
 import type { ConnectionSnapshot } from './connections';
 import type { ProviderId } from './types';
+import { gateLabel, type LaunchGateState } from './launch-gate';
 
 type ClaudeMode = 'inherit' | 'subscription';
 interface ClaudeStatus { mode: ClaudeMode; source: string; environmentVariables: string[]; endpoint: string | null; savedLogin: 'signedIn' | 'notSignedIn' | 'otherCredentials' | 'unknown'; conflict: boolean; }
@@ -32,6 +33,8 @@ interface Configuration {
   secureStorageAvailable: boolean;
   credentialStorageError?: string | null;
   claudeConnectionMode?: ClaudeMode;
+  /** Which harnesses may be started, and what an organization pins (docs/managed-mode.md). */
+  launchGate?: LaunchGateState;
 }
 
 /** Key-based connections share one form/status/remove pattern; the native side owns the secret. */
@@ -159,9 +162,14 @@ export function mountProviderSettings(host: HTMLElement, saved: () => Promise<un
   /** A closed card's one line: the state of its sign-in, key or path, in a status tone. */
   function cardState(inside: Element, text: string, tone = ''): void {
     const state = inside.closest('.connection-card')!.querySelector<HTMLElement>('.connection-state')!;
-    state.textContent = text; state.dataset.tone = tone;
+    // A harness that may not be started says so before anything about its sign-in or path.
+    const refused = gated(inside);
+    state.textContent = refused?.text ?? text; state.dataset.tone = refused?.tone ?? tone;
   }
   let endpointEdited = false;
+  let gate: LaunchGateState | undefined;
+  /** The gate's line for the card around `inside`, when its harness may not be started. */
+  const gated = (inside: Element) => gateLabel(gate?.harnesses.find(harness => harness.id === inside.closest('.connection-card')?.querySelector<HTMLInputElement>('[data-launch-gate]')?.dataset.launchGate));
   function message(text: string, error = false): void { feedback.textContent = text; feedback.hidden = false; feedback.classList.toggle('error', error); }
   function keysDisabled(config: Configuration): boolean { return !config.secureStorageAvailable || preview; }
   function render(config: Configuration): void {
@@ -171,6 +179,18 @@ export function mountProviderSettings(host: HTMLElement, saved: () => Promise<un
       generatedMounted = true;
       const cards = (config.providers ?? []).filter(([id]) => /^[a-z0-9-]+$/.test(id) && !host.querySelector(`[data-use-global="${id}"]`)).map(([id, name]) => generatedCard(id, name)).join('');
       feedback.insertAdjacentHTML('beforebegin', cards);
+    }
+    // The enabled switch, once per harness card: nothing of a harness that is off is ever run.
+    gate = config.launchGate;
+    for (const toggle of host.querySelectorAll<HTMLInputElement>('[data-use-global]')) {
+      const id = toggle.dataset.useGlobal!, card = toggle.closest('.connection-card')!;
+      const harness = gate?.harnesses.find(entry => entry.id === id);
+      if (!harness) continue;
+      if (!card.querySelector('[data-launch-gate]')) card.querySelector('summary')!.insertAdjacentHTML('afterend', `<label class="connection-env-global"><input type="checkbox" role="switch" class="ds-toggle" data-launch-gate="${id}"> Enabled</label>`);
+      const enabled = card.querySelector<HTMLInputElement>('[data-launch-gate]')!;
+      enabled.checked = harness.enabled; enabled.disabled = !harness.changeable && !harness.enabled;
+      const refused = gateLabel(harness);
+      if (refused) cardState(enabled, refused.text, refused.tone);
     }
     if (!claudeEdited) claudeMode.value = config.claudeConnectionMode ?? 'inherit';
     for (const input of host.querySelectorAll<HTMLInputElement>('[data-executable]')) {
@@ -308,6 +328,17 @@ export function mountProviderSettings(host: HTMLElement, saved: () => Promise<un
   };
   const change = (event: Event) => {
     const target = event.target as HTMLElement;
+    if (target instanceof HTMLInputElement && target.matches('[data-launch-gate]')) {
+      if (pending) { target.checked = !target.checked; return; }
+      const harness = target.dataset.launchGate!, enabled = target.checked;
+      void perform(
+        async () => { await call('launch_gate_set_enabled', { harness, enabled }); return call<Configuration>('provider_configuration'); },
+        enabled ? 'Enabled. PandaCode may start this agent.' : 'Turned off. PandaCode will not start this agent.',
+        undefined,
+        () => { target.checked = !enabled; },
+      );
+      return;
+    }
     if (target instanceof HTMLInputElement && target.matches('[data-use-global]')) {
       if (pending) { target.checked = !target.checked; return; }
       const provider = target.dataset.useGlobal!;

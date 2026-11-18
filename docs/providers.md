@@ -8,6 +8,11 @@ entries in PandaCode's secrets store (see [secret storage](#secret-storage)) and
 from PATH and common per-user installation folders; provider settings report the
 actual path and version. The `default` model delegates model selection to the CLI.
 
+An agent's CLI is started only once you enabled that agent (Settings → Agents →
+Providers, or the first-run choice). Until then PandaCode only looks for the file: it
+does not run the binary for its version, its models or anything else. An organization can
+block agents or pin the allowed set. See [managed mode and the launch gate](managed-mode.md).
+
 Pi's managed Windows installation is supported without a separate global npm
 installation, including launchers that leave the `node` command unquoted.
 

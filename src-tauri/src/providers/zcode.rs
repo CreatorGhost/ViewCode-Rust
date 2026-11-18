@@ -1141,7 +1141,7 @@ mod tests {
         let path = bundled().unwrap_or_else(|| executable("zcode").expect("Install ZCode first"));
         // The bundled CLI runs on the desktop app's Electron runtime, so the
         // launch layer builds the process (direct exec of zcode.cjs fails).
-        let mut command = super::launch::command(&path).unwrap();
+        let mut command = super::launch::command("zcode", &path).unwrap();
         command.arg("app-server");
         let workspace = std::env::temp_dir();
         command

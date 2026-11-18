@@ -573,6 +573,8 @@ fn not_installed(provider: &str, host: &str, installed: bool) -> Result<()> {
 /// folders the app searches; `providers::discover` would also run `--version` on all of them
 /// (2-4 s) just to read a list this check ignores.
 pub(crate) async fn require_installed(provider: &str) -> Result<()> {
+    // This computer's user, and its organization, decide which harnesses it starts.
+    crate::launch_gate::allow(provider).map_err(|refused| format!("{refused} (on {})", super::config::device_name()))?;
     let id = provider.to_owned();
     let installed = tauri::async_runtime::spawn_blocking(move || crate::providers::PROVIDERS.iter().any(|(known, _)| *known == id) && crate::providers::executable(&id).is_some()).await.map_err(|e| e.to_string())?;
     not_installed(provider, &super::config::device_name(), installed)

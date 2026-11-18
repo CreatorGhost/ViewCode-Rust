@@ -1,0 +1,23 @@
+{
+  "strict": true,
+  "providers": {
+    "codex": {
+      "allowed": false
+    },
+    "claudeAgent": {
+      "allowed": true
+    },
+    "grok": {
+      "allowed": false
+    }
+  },
+  "allowedProviders": [
+    "claude",
+    "cursor",
+    "commandCode"
+  ],
+  "keepAwake": {
+    "allowed": false
+  },
+  "futureKey": 3
+}

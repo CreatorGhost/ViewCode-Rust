@@ -40,6 +40,8 @@
 .connection-env small{display:block;font-size:var(--ds-text-meta);color:var(--muted);margin-top:4px;line-height:1.5}
 .connection-env-global{display:flex;align-items:center;gap:8px;font-size:var(--ds-text-meta)}
 .connection-env-global input{width:auto;flex:none}
+/* The Enabled switch (launch gate) keeps the design-system toggle width inside this row. */
+.connection-env-global input.ds-toggle{width:var(--ds-toggle-w)}
 .connection-env-list{display:flex;flex-direction:column;gap:.35rem;margin:.6rem 0}
 .connection-env-list:empty{display:none}
 .connection-env-var{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:36px;font-size:var(--ds-text-meta);padding:0 6px 0 12px;border-radius:var(--ds-radius-control);background:var(--ds-card-inset)}

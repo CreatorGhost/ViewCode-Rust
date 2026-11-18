@@ -103,6 +103,24 @@ pub fn setup(dir: &Path) -> Result<()> {
         .map_err(|_| "Provider settings are already initialized.".into())
 }
 
+/// Harness ids with anything saved for them here: an executable, variables, models,
+/// an endpoint or a connection mode (`launch_gate`'s upgrade rule).
+pub(crate) fn configured_providers() -> Vec<String> {
+    let Some(runtime) = CONFIG.get().and_then(|config| config.lock().ok()) else { return Vec::new() };
+    let settings = &runtime.settings;
+    let mut providers: Vec<String> = settings.executable_paths.keys().chain(settings.environment.keys()).chain(&settings.global_environment_disabled).cloned().collect();
+    if !settings.opencode_models.is_empty() {
+        providers.push("opencode".into());
+    }
+    if settings.mimo_endpoint.is_some() {
+        providers.push("mimo".into());
+    }
+    if !settings.claude_connection_mode.is_inherit() {
+        providers.push("claude".into());
+    }
+    providers
+}
+
 pub fn executable_override(provider: &str) -> Option<PathBuf> {
     saved_executable(&CONFIG.get()?.lock().ok()?.settings, provider).map(PathBuf::from)
 }
@@ -406,6 +424,10 @@ pub struct Configuration {
     /// Every known harness as (id, name). The settings page generates a card
     /// for each one its hand-written cards do not cover.
     providers: Vec<(String, String)>,
+    /// Which of them may be started, whether an organization manages this computer and
+    /// what its policy pins (`launch_gate.rs`). Absent only before the gate has loaded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    launch_gate: Option<crate::launch_gate::GateState>,
     glm_key_saved: bool,
     glm_key_from_environment: bool,
     mimo_key_saved: bool,
@@ -469,6 +491,7 @@ fn configuration() -> Result<Configuration> {
         environment,
         use_global_environment,
         providers: crate::providers::PROVIDERS.iter().map(|(id, name)| (id.to_string(), name.to_string())).collect(),
+        launch_gate: crate::launch_gate::state().ok(),
         glm_key_saved,
         glm_key_from_environment: from_environment(GLM_KEY.env),
         mimo_key_saved,
@@ -1090,6 +1113,7 @@ mod tests {
         let (glm_key_saved, credential_storage_error) =
             credential_status(Ok(Some("fixture-private-key".into())));
         let configuration = Configuration {
+            launch_gate: None,
             executable_paths: BTreeMap::new(),
             global_environment: Vec::new(),
             environment: BTreeMap::new(),
@@ -1117,6 +1141,7 @@ mod tests {
         let warning = "Secure storage is locked. Set ZAI_API_KEY in the app environment.";
         let (glm_key_saved, credential_storage_error) = credential_status(Err(warning.into()));
         let configuration = Configuration {
+            launch_gate: None,
             executable_paths: BTreeMap::from([("glm".into(), "installed-executable".into())]),
             global_environment: vec!["HTTP_PROXY".into()],
             environment: BTreeMap::from([("glm".into(), vec!["HTTPS_PROXY".into()])]),
@@ -1427,6 +1452,7 @@ mod tests {
     fn configuration_lists_environment_names_but_never_values() {
         let (glm_key_saved, _) = credential_status(Ok(None));
         let configuration = Configuration {
+            launch_gate: None,
             executable_paths: BTreeMap::new(),
             global_environment: vec!["HTTP_PROXY".into()],
             environment: BTreeMap::from([(
