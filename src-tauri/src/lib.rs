@@ -89,6 +89,7 @@ mod headless_bots;
 
 pub use usage_keychain::handle_usage_keychain_helper;
 pub use cloud_agents::handle_cloud_bridge;
+pub use providers::mcp_bridge::handle_mcp_bridge;
 pub use headless::handle as handle_serve;
 pub use voice::local::handle_speech_worker;
 
@@ -2768,6 +2769,7 @@ pub(crate) async fn local_providers(force: bool) -> Vec<providers::ProviderInfo>
         providers::acp_catalog::invalidate("devin");
         providers::acp_catalog::invalidate("zcode");
         providers::acp_catalog::invalidate("hermes");
+        providers::acp_catalog::invalidate("cursor");
     }
     tauri::async_runtime::spawn_blocking(providers::discover)
         .await

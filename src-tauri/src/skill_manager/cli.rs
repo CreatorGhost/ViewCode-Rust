@@ -157,6 +157,7 @@ pub(super) fn agent_id(harness: &str) -> Option<&'static str> {
         "github-copilot" => "github-copilot",
         "commandcode" => "command-code",
         "devin" => "devin",
+        "cursor" => "cursor",
         "grok" => "grok",
         "hermes" => "hermes-agent",
         "zcode" => "zcode",
