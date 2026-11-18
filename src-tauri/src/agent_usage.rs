@@ -700,6 +700,11 @@ async fn bounded(provider: &str, env: &[(String, String)]) -> Usage {
 }
 
 async fn fetch_provider(provider: &str, env: &[(String, String)]) -> Usage {
+    // Limits are read by running the CLI or with its saved login: neither for a harness
+    // that is not enabled.
+    if let Err(refused) = crate::launch_gate::allow(provider) {
+        return Usage::empty(provider, "unavailable", &refused);
+    }
     let effective = crate::account_config::environment(provider, env);
     let mut result = match provider {
         "codex" => fetch_codex(&effective).await,

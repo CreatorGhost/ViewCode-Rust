@@ -24,6 +24,7 @@ mod host_tools;
 mod mcp_host;
 mod warm;
 pub use warm::{discard as discard_warm_agent, epoch as warm_epoch, prewarm as prewarm_agent, supported as warms};
+pub(crate) use warm::discard_disabled as discard_disabled_warm_agents;
 use host_tools::apply_step;
 pub use host_tools::ToolHost;
 /// Whether the harness side would accept this host's catalog (names, schemas, size).
@@ -62,9 +63,11 @@ mod zcode;
 mod diagnostics;
 pub(crate) mod claude_auth;
 pub(crate) mod privacy;
-pub(crate) use launch::{command, pty_command, external_path, executable_path, widen_process_path};
+pub(crate) use launch::{command, pty_command, tool_command, external_path, executable_path, widen_process_path};
 #[cfg(test)]
 mod kimi_stream_tests;
+#[cfg(test)]
+mod launch_gate_tests;
 #[cfg(test)]
 mod slash_command_tests;
 mod limits;
@@ -522,7 +525,15 @@ impl Coalescer {
 pub struct ProviderInfo {
     pub id: String,
     pub name: String,
+    /// Usable now: found on disk and enabled. Every client that offers a harness reads
+    /// this, so one that is not enabled is not offered, by older clients too.
     pub installed: bool,
+    /// Found on disk, by a file lookup alone. With `enabled` false this is "not enabled",
+    /// as distinct from "not installed".
+    pub present: bool,
+    /// The launch gate lets this harness start. A harness that is not enabled is never
+    /// run, not even for its version (docs/managed-mode.md).
+    pub enabled: bool,
     pub path: Option<String>,
     pub version: String,
     pub models: Vec<ModelInfo>,
@@ -604,7 +615,21 @@ impl ModelInfo {
     }
 }
 
+/// The executable to start for a harness, or None when it may not be started. The launch
+/// gate is asked first, before a saved executable override is even read, so every caller
+/// skips a harness that is off or blocked and an override cannot turn one back on
+/// (docs/managed-mode.md). Only harness ids belong here; other tools use `tool_path`.
 pub(crate) fn executable(name: &str) -> Option<PathBuf> {
+    if !crate::launch_gate::enabled(name) {
+        return None;
+    }
+    locate(name)
+}
+
+/// Where a harness's binary is, from files alone and whether or not it may be started.
+/// For showing "found at …" only: never start what this returns
+/// (`launch_gate/scan_tests.rs` lists the callers).
+pub(crate) fn locate(name: &str) -> Option<PathBuf> {
     if let Some(path) = crate::provider_settings::executable_override(name) {
         return Some(path);
     }
@@ -616,9 +641,15 @@ pub(crate) fn executable(name: &str) -> Option<PathBuf> {
 /// Everything else a launch adds (credentials, endpoints, a named connection)
 /// is applied later and wins.
 pub(crate) fn provider_command(provider: &str, path: &Path) -> Result<Command, String> {
-    let mut command = command(path)?;
+    let mut command = command(provider, path)?;
     crate::provider_settings::apply_environment(provider, &mut command);
     Ok(command)
+}
+
+/// The executable name a harness runs, for the launch gate: blocking a binary by name
+/// also blocks every harness that runs it.
+pub(crate) fn binary_name(harness: &str) -> &str {
+    executable_name(harness)
 }
 
 fn executable_name(name: &str) -> &str {
@@ -693,9 +724,16 @@ pub(crate) fn mimo_endpoints() -> &'static [(&'static str, &'static str, &'stati
     &mimo::ENDPOINTS
 }
 
-fn version(path: &Path) -> Option<String> {
-    capture(launch::std_command(path).ok()?, &["--version"], Duration::from_secs(2))
+fn version(harness: &str, path: &Path) -> Option<String> {
+    capture(launch::std_command(harness, path).ok()?, &["--version"], Duration::from_secs(2))
         .map(|text| text.chars().take(150).collect())
+}
+
+/// Whether Claude Code may be handed this app's MCP server. Not where its administrator
+/// lists the servers: the CLI refuses a client's server there and exits, so the turn runs
+/// without the app's tools rather than not at all.
+fn claude_takes_mcp() -> bool {
+    !crate::launch_gate::claude::mcp_managed()
 }
 
 /// Whether this Claude CLI takes `--include-hook-events` (absent in 2.1.0, present by 2.1.100):
@@ -751,7 +789,7 @@ fn hook_events_answer(key: PathBuf, help: impl FnOnce() -> Option<String>) -> bo
 /// provider is not installed or the command failed or stalled past `timeout`. Runs with the
 /// provider's saved environment, so a custom data dir reads the same store as its runs.
 pub(crate) fn run_provider(id: &str, args: &[&str], timeout: Duration) -> Option<String> {
-    let mut command = launch::std_command(&executable(id)?).ok()?;
+    let mut command = launch::std_command(id, &executable(id)?).ok()?;
     crate::provider_settings::apply_environment(id, &mut command);
     capture(command, args, timeout)
 }
@@ -800,19 +838,26 @@ fn capture(mut command: std::process::Command, args: &[&str], timeout: Duration)
     Some(String::from_utf8_lossy(&bytes).trim().to_owned())
 }
 
-/// Blocking discovery; invoke on a worker thread, not the UI event loop.
+/// Blocking discovery; invoke on a worker thread, not the UI event loop. A harness the
+/// launch gate refuses is looked up on disk (`present`, `path`) and never run: "not enabled"
+/// is `enabled: false`, distinct from "not installed" (`present: false`).
 pub fn discover() -> Vec<ProviderInfo> {
     PROVIDERS.into_iter()
     .map(|(id, name)| {
-        let path = executable(id);
+        let path = locate(id);
+        let enabled = crate::launch_gate::enabled(id);
         ProviderInfo {
             id: id.into(),
             name: name.into(),
-            installed: path.is_some(),
+            installed: path.is_some() && enabled,
+            present: path.is_some(),
+            enabled,
             version: if id == "antigravity" {
                 "ACP".into()
+            } else if enabled {
+                path.as_deref().and_then(|path| version(id, path)).unwrap_or_default()
             } else {
-                path.as_deref().and_then(version).unwrap_or_default()
+                String::new()
             },
             path: path.map(|p| p.to_string_lossy().into_owned()),
             models: if id == "glm" {
@@ -893,7 +938,7 @@ async fn opencode_catalog(path: &Path) -> Result<Vec<ModelInfo>, String> {
     let owned = path.to_owned();
     // Longer than `version()`'s 2 s: OpenCode's cold start can pass that, and a missed
     // answer here would cost a v2 install its efforts.
-    let major = tokio::task::spawn_blocking(move || capture(launch::std_command(&owned).ok()?, &["--version"], Duration::from_secs(5)))
+    let major = tokio::task::spawn_blocking(move || capture(launch::std_command("opencode", &owned).ok()?, &["--version"], Duration::from_secs(5)))
         .await
         .ok()
         .flatten()
@@ -922,7 +967,7 @@ async fn opencode_v2_catalog(path: &Path) -> Result<Vec<ModelInfo>, String> {
 
 async fn opencode_v2_catalog_in(path: &Path, app_data: Option<&Path>) -> Result<Vec<ModelInfo>, String> {
     const OUTPUT_LIMIT: usize = 16 * 1024 * 1024;
-    let mut command = launch::std_command(path)?;
+    let mut command = launch::std_command("opencode", path)?;
     crate::provider_settings::apply_environment("opencode", &mut command);
     // OpenCode reads config from its directory, and anyone can plant one in a shared temp folder.
     let folder = app_data
@@ -993,6 +1038,7 @@ fn parse_opencode_v2_models(bytes: &[u8]) -> Result<Vec<ModelInfo>, String> {
 
 pub(crate) async fn list_model_catalog(provider: &str) -> Result<Vec<ModelInfo>, String> {
     let index = model_discovery_index(provider).ok_or("Unknown provider")?;
+    crate::launch_gate::allow(provider)?;
     let semaphore = &model_discovery_semaphores()[index];
     let _permit = if matches!(
         provider,
@@ -1256,12 +1302,11 @@ async fn claude_models(path: &Path) -> Result<Vec<ModelInfo>, String> {
             "--permission-prompt-tool",
             "stdio",
             "--no-session-persistence",
-            "--strict-mcp-config",
-            "--mcp-config",
-            r#"{"mcpServers":{}}"#,
-            "--settings",
-            r#"{"disableAllHooks":true}"#,
         ])
+        // The probe loads no MCP servers. Claude Code refuses both flags when its
+        // administrator lists the servers (`managed-mcp.json`), so they are left out there.
+        .args(if crate::launch_gate::claude::mcp_managed() { &[][..] } else { &["--strict-mcp-config", "--mcp-config", r#"{"mcpServers":{}}"#][..] })
+        .args(["--settings", r#"{"disableAllHooks":true}"#])
         .current_dir(std::env::temp_dir())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -3207,10 +3252,14 @@ pub async fn run_with_tools(
     sink(identity.event("status", "Starting agent", None));
     // A goal operation is acknowledged by its own turn, so it is never continued elsewhere.
     let pooled = config.goal.is_none() && crate::account_pool::enabled(&config.provider) && !crate::cloud_agents::transport::is_cloud(&config.session_id);
-    let result = if pooled {
-        HARNESS.scope(harness, pool::run(config, sink.clone(), input, host)).await
+    // Asked before anything is prepared: a harness that is not enabled starts nowhere, a
+    // cloud machine included. The command builders ask again at the launch itself.
+    let result = if let Err(refused) = crate::launch_gate::allow(&config.provider) {
+        Err(refused)
     } else {
-        HARNESS.scope(harness, run_inner(config, sink.clone(), input, host)).await
+        // Held until this turn is over, however it ends (docs/managed-mode.md#keep-awake).
+        let _awake = crate::keep_awake::turn(&config.session_id);
+        run_gated(config, sink.clone(), input, host, harness, pooled).await
     };
     if let Err(error) = &result {
         sink(identity.event("error", error.clone(), None));
@@ -3221,6 +3270,22 @@ pub async fn run_with_tools(
         None,
     ));
     result
+}
+
+/// The turn itself, once the launch gate has allowed its harness.
+async fn run_gated(
+    config: RunConfig,
+    sink: Sink,
+    input: UnboundedReceiver<RunInput>,
+    host: Option<ToolHost>,
+    harness: Arc<std::sync::atomic::AtomicBool>,
+    pooled: bool,
+) -> Result<(), String> {
+    if pooled {
+        HARNESS.scope(harness, pool::run(config, sink, input, host)).await
+    } else {
+        HARNESS.scope(harness, run_inner(config, sink, input, host)).await
+    }
 }
 
 /// Codex refuses subagents past this (`AgentLimitReached`, no row, no report); a task's children have no cap of ours.
@@ -3305,18 +3370,12 @@ fn configure_command_with_agents(
             if claude_lists_hook_events(command) {
                 command.arg("--include-hook-events");
             }
-            let permission_mode = match config.mode.as_str() {
-                "auto" => "acceptEdits",
-                // Claude Code's auto mode: its safety reviewer approves routine actions.
-                "review" => "auto",
-                "plan" => "plan",
-                "full" => "bypassPermissions",
-                _ => "default",
-            };
+            // Full access is accept-edits where the administrator turned bypass off.
+            let permission_mode = crate::launch_gate::claude::permission_mode(&config.mode);
             // Always override the resumed session's mode, including when the
             // user has moved from full access back to standard approvals.
             command.args(["--permission-mode", permission_mode]);
-            if config.mode == "full" {
+            if crate::launch_gate::claude::allows_bypass(&config.mode) {
                 command.arg("--allow-dangerously-skip-permissions");
             }
             // These wait on a live session; PandaCode's process ends with the turn.
@@ -3337,8 +3396,12 @@ fn configure_command_with_agents(
             if let Some(id) = &config.resume_id {
                 command.arg(format!("--resume={id}"));
             }
-            if !config.instructions.is_empty() {
-                command.args(["--append-system-prompt", &config.instructions]);
+            // Under an administrator's MCP list the app's tool server is not passed
+            // (`claude_takes_mcp`), and the agent is told so instead of guessing.
+            let notice = if crate::launch_gate::claude::mcp_managed() { crate::launch_gate::claude::MCP_NOTICE } else { "" };
+            let instructions = [config.instructions.as_str(), notice].into_iter().filter(|text| !text.is_empty()).collect::<Vec<_>>().join("\n\n");
+            if !instructions.is_empty() {
+                command.args(["--append-system-prompt", &instructions]);
             }
             command.env_remove("CLAUDECODE");
         }
@@ -3701,7 +3764,7 @@ async fn run_process_with_tools(
             end_lingering(&config.session_id).await;
             agent_temp = AgentTemp::redirect(&mut command);
         }
-        if matches!(config.provider.as_str(), "claude" | "glm" | "mimo") {
+        if matches!(config.provider.as_str(), "claude" | "glm" | "mimo") && claude_takes_mcp() {
             if let Some(server) = &mcp {
                 command.args(["--mcp-config", &server.claude_config().to_string()]);
             }
@@ -4012,7 +4075,7 @@ mod tests {
         let path = super::executable("opencode").expect("Install OpenCode first");
         let models = super::opencode_catalog(&path).await.unwrap();
         let with_efforts = models.iter().filter(|model| !model.reasoning_efforts.is_empty()).count();
-        println!("{:?}: {} models, {with_efforts} with efforts", super::version(&path), models.len() - 1);
+        println!("{:?}: {} models, {with_efforts} with efforts", super::version("opencode", &path), models.len() - 1);
         assert!(with_efforts > 0);
     }
 

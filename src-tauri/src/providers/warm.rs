@@ -12,6 +12,8 @@ const LIMIT: usize = 2;
 
 pub(super) struct Spare {
     key: String,
+    /// The harness this process belongs to, so turning it off can end the process.
+    provider: String,
     pub(super) child: Child,
     pub(super) group: ProcessGroup,
     pub(super) server: Option<mcp_host::Server>,
@@ -123,6 +125,12 @@ pub fn discard(session_id: &str) {
     spares().remove(session_id);
 }
 
+/// Ends every warm agent whose harness the launch gate no longer allows. Dropping a spare
+/// kills its process group, which this app started and recorded.
+pub(crate) fn discard_disabled() {
+    spares().retain(|_, spare| crate::launch_gate::enabled(&spare.provider));
+}
+
 /// Start the next turn's agent for a task. `tools` is the catalog its last turn used; the
 /// placeholder server answers the agent's startup listing and is rebound on adoption.
 pub async fn prewarm(config: RunConfig, tools: Vec<Value>, approval_tools: HashSet<String>, launch: u64) -> Result<(), String> {
@@ -137,6 +145,8 @@ async fn start(mut config: RunConfig, tools: Vec<Value>, approval_tools: HashSet
     if !supported(&config) {
         return Ok(());
     }
+    // A harness that is not enabled gets no process in waiting either.
+    crate::launch_gate::allow(&config.provider)?;
     let connection = crate::connections::for_task(&config.session_id, &config.provider)
         .map(|connection| crate::connections::launch(&connection))
         .transpose()?;
@@ -160,7 +170,7 @@ async fn start(mut config: RunConfig, tools: Vec<Value>, approval_tools: HashSet
         Ok((config, key, disabled))
     })
     .await?;
-    let mut command = command(&path)?;
+    let mut command = command(&config.provider, &path)?;
     crate::provider_settings::apply_environment(&config.provider, &mut command);
     configure_command_with_skills(&mut command, &config, &disabled);
     if let Some(connection) = &connection {
@@ -176,7 +186,9 @@ async fn start(mut config: RunConfig, tools: Vec<Value>, approval_tools: HashSet
         };
         let sink: Sink = Arc::new(|_| {});
         let server = mcp_host::Server::start_with_approvals(placeholder, config.session_id.clone(), sink, &config.mode).await?;
-        command.args(["--mcp-config", &server.claude_config().to_string()]);
+        if claude_takes_mcp() {
+            command.args(["--mcp-config", &server.claude_config().to_string()]);
+        }
         Some(server)
     };
     command
@@ -195,10 +207,11 @@ async fn start(mut config: RunConfig, tools: Vec<Value>, approval_tools: HashSet
         let mut spares = spares();
         // The next turn already started (a team review, a queued message): this spare would
         // carry an outdated conversation. Dropping it kills its process.
-        if epoch(&session_id) != launch {
+        // Turned off while this one was starting: dropping it kills its process.
+        if epoch(&session_id) != launch || !crate::launch_gate::enabled(&config.provider) {
             return Ok(());
         }
-        spares.insert(session_id.clone(), Spare { key, child, group, server, born });
+        spares.insert(session_id.clone(), Spare { key, provider: config.provider.clone(), child, group, server, born });
         // Keep only the newest few; dropping a spare kills its process.
         while spares.len() > LIMIT {
             let Some(oldest) = spares.iter().min_by_key(|(_, spare)| spare.born).map(|(id, _)| id.clone()) else { break };
@@ -320,17 +333,17 @@ mod tests {
             (child, group)
         };
         let (child, group) = spawn();
-        spares().insert("warm-test".into(), Spare { key: "launch-a".into(), child, group, server: None, born: std::time::Instant::now() });
+        spares().insert("warm-test".into(), Spare { key: "launch-a".into(), provider: "claude".into(), child, group, server: None, born: std::time::Instant::now() });
         assert!(take("warm-test", "launch-b").is_none(), "a different launch starts cold");
         assert!(!waiting("warm-test"), "and the stale agent is gone");
         let (child, group) = spawn();
-        spares().insert("warm-test".into(), Spare { key: "launch-a".into(), child, group, server: None, born: std::time::Instant::now() });
+        spares().insert("warm-test".into(), Spare { key: "launch-a".into(), provider: "claude".into(), child, group, server: None, born: std::time::Instant::now() });
         let mut adopted = take("warm-test", "launch-a").expect("the matching agent is adopted");
         adopted.child.kill().await.unwrap();
         let (mut child, group) = spawn();
         child.kill().await.unwrap();
         child.wait().await.unwrap();
-        spares().insert("warm-test".into(), Spare { key: "launch-a".into(), child, group, server: None, born: std::time::Instant::now() });
+        spares().insert("warm-test".into(), Spare { key: "launch-a".into(), provider: "claude".into(), child, group, server: None, born: std::time::Instant::now() });
         assert!(take("warm-test", "launch-a").is_none(), "an agent that exited is never adopted");
         discard("warm-test");
     }
