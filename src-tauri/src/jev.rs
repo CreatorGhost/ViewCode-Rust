@@ -806,7 +806,7 @@ pub async fn jev_install_runtime(app: tauri::AppHandle) -> Result<Doctor> {
         (state.dir.clone(), state.saved.settings.clone())
     };
     let _guard = InstallGuard;
-    let uv = crate::providers::executable("uv");
+    let uv = crate::providers::tool_path("uv");
     let python = venv_python(&dir);
     let _ = app.emit(
         "jev-install",
@@ -825,9 +825,9 @@ pub async fn jev_install_runtime(app: tauri::AppHandle) -> Result<Doctor> {
             command
         } else {
             let executable = if settings.python_path.is_empty() {
-                crate::providers::executable("python3.12")
-                    .or_else(|| crate::providers::executable("python3"))
-                    .or_else(|| crate::providers::executable("python"))
+                crate::providers::tool_path("python3.12")
+                    .or_else(|| crate::providers::tool_path("python3"))
+                    .or_else(|| crate::providers::tool_path("python"))
             } else {
                 Some(PathBuf::from(&settings.python_path))
             }

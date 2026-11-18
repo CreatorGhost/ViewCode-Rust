@@ -333,7 +333,23 @@ fn harness_name(path: &Path) -> String {
     path.file_stem().map(|stem| stem.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
-pub(crate) fn command(path: &Path) -> Result<tokio::process::Command, String> {
+/// The three builders below are the only way to get a command for a harness binary, and
+/// each asks the launch gate first (docs/managed-mode.md): a harness the user has not
+/// turned on, or that the organization forbids, yields an error instead of a command, so
+/// it cannot be run for a turn, a version, a model list or anything else. `harness` is
+/// the id the launch is for, which need not be the binary's own name (GLM runs `claude`).
+pub(crate) fn command(harness: &str, path: &Path) -> Result<tokio::process::Command, String> {
+    crate::launch_gate::allow(harness)?;
+    ungated_command(path)
+}
+
+/// A command for a tool that is not an agent (`npx`, a deploy CLI), with the same Windows
+/// shim handling. Never pass a harness binary: `launch_gate/scan_tests.rs` lists the callers.
+pub(crate) fn tool_command(path: &Path) -> Result<tokio::process::Command, String> {
+    ungated_command(path)
+}
+
+fn ungated_command(path: &Path) -> Result<tokio::process::Command, String> {
     let launch = resolve(path, cfg!(windows))?;
     let mut command = tokio::process::Command::new(launch.program);
     command.args(launch.args);
@@ -350,7 +366,8 @@ pub(crate) fn command(path: &Path) -> Result<tokio::process::Command, String> {
     Ok(command)
 }
 
-pub(super) fn std_command(path: &Path) -> Result<std::process::Command, String> {
+pub(super) fn std_command(harness: &str, path: &Path) -> Result<std::process::Command, String> {
+    crate::launch_gate::allow(harness)?;
     let launch = resolve(path, cfg!(windows))?;
     let mut command = std::process::Command::new(launch.program);
     command.args(launch.args);
@@ -370,7 +387,8 @@ pub(super) fn std_command(path: &Path) -> Result<std::process::Command, String> 
     Ok(command)
 }
 
-pub(crate) fn pty_command(path: &Path) -> Result<portable_pty::CommandBuilder, String> {
+pub(crate) fn pty_command(harness: &str, path: &Path) -> Result<portable_pty::CommandBuilder, String> {
+    crate::launch_gate::allow(harness)?;
     let launch = resolve(path, cfg!(windows))?;
     let mut command = portable_pty::CommandBuilder::new(launch.program);
     command.args(launch.args);
@@ -1092,14 +1110,14 @@ mod tests {
         for on in [false, true] {
             super::super::privacy::FORCE.with(|force| force.set(Some(on)));
             let codex_args = if on { vec!["-c", "analytics.enabled=false", "-c", "feedback.enabled=false"] } else { vec![] };
-            for command in [command(&codex).unwrap().as_std(), &std_command(&codex).unwrap()] {
+            for command in [command("codex", &codex).unwrap().as_std(), &std_command("codex", &codex).unwrap()] {
                 assert_eq!(flags(command), codex_args);
                 assert_eq!(tracked(command), on);
             }
-            let claude_command = std_command(&claude).unwrap();
+            let claude_command = std_command("claude", &claude).unwrap();
             assert!(flags(&claude_command).is_empty(), "only Codex and Muse take -c");
             assert_eq!(tracked(&claude_command), on);
-            let pty = pty_command(&codex).unwrap();
+            let pty = pty_command("codex", &codex).unwrap();
             assert_eq!(pty.get_argv().len(), 1 + codex_args.len());
             assert_eq!(pty.get_env("DO_NOT_TRACK").is_some(), on);
         }
