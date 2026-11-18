@@ -1,7 +1,7 @@
 # Provider integrations
 
 PandaCode launches each installed CLI directly. Claude, Codex, Kimi, OpenCode,
-Antigravity, Grok Build, Devin CLI, ZCode, and Hermes Agent own their authentication; sign in using their official
+Antigravity, Grok Build, Devin CLI, Cursor, ZCode, and Hermes Agent own their authentication; sign in using their official
 CLI or extension.
 The optional Z.AI Coding Plan and MiMo Token Plan API keys are stored as separate
 entries in PandaCode's secrets store (see [secret storage](#secret-storage)) and injected only into their isolated Claude subprocesses. The app discovers executable paths
@@ -1000,6 +1000,144 @@ command, a Plan turn and a live steer). The recorded frames back the unit tests 
 `providers/devin.rs`, and an ignored smoke test
 (`installed_devin_lists_models_with_efforts`) reads the real catalog and command list
 without sending a prompt.
+
+## Cursor
+
+The Cursor CLI (`cursor-agent`; install with `curl https://cursor.com/install -fsS | bash`,
+see [cursor.com/docs/cli/installation](https://cursor.com/docs/cli/installation)) serves ACP
+with `cursor-agent acp`, so PandaCode drives it with the shared ACP adapter
+(`providers/cursor.rs` holds its quirks). This is ViewCode's `cursor-agent` runtime,
+ported: the same launch, sign-in step, model list, modes and extension requests. Cursor's
+own tools (`rg`, its sandbox helper) run as children of the CLI, never of PandaCode.
+ViewCode's second runtime, the `@cursor/sdk` package inside a Node server, has no
+counterpart here: PandaCode has no Node process to host it.
+
+**Finding it.** PandaCode looks for `cursor-agent` on PATH and in the usual per-user
+folders, or uses the location saved in Settings → Providers → Cursor. The version in
+Settings is `cursor-agent --version`. A CLI from before `cursor-agent acp` does not
+answer as an ACP server; the turn (or the model list) then says “The Cursor CLI did not
+start its ACP server. It is probably too old: update it with `cursor-agent update`…”.
+There is no version number to compare against: ViewCode does not gate on one either.
+
+**Sign-in.** The CLI keeps its own sign-in (`cursor-agent login`; the token is in the
+macOS Keychain). PandaCode never reads it. Right after `initialize` it sends ACP
+`authenticate` with `cursor_login`, as ViewCode does, because an auth-required answer
+to a later session call is not reliable. A refused `authenticate`, or ACP `-32000`,
+stops the turn with “The Cursor CLI is not signed in. Run `cursor-agent login` in a
+terminal, then send again.” After sleep or a network change the CLI can fail for other
+reasons, which are told apart by its own error text:
+
+- Keychain errors (`keychain`, `SecItem…`, `-25308`, “User interaction is not allowed”):
+  “could not read its saved sign-in… Unlock the Mac and send the message again.”
+- Network errors (`ENOTFOUND`, `ECONNRESET`, `fetch failed`…): “could not reach
+  Cursor… Send the message again once you are online.”
+- Anything that says not logged in: check `cursor-agent status`, and log in only if
+  that says you are signed out.
+
+ViewCode keeps one `cursor-agent` per thread and replaces it after such a failure.
+PandaCode starts a new process for every message, so the next message always reads the
+saved sign-in again.
+
+The Usage dialog shows the Cursor account: it runs `cursor-agent about --format json`
+(falling back to plain `about` on a CLI without `--format`) and reads `cliVersion`,
+`userEmail` and `subscriptionTier`. “Not logged in” there is also what the CLI prints
+when it cannot read the Keychain or reach Cursor, so it counts as signed out only when
+`~/.cursor/cli-config.json` names no account (`authInfo.authId`; nothing else in that
+file is read) and the output gives no Keychain or network reason. Otherwise the card
+says the sign-in could not be confirmed.
+
+**Models, options and effort.** PandaCode declares the `parameterizedModelPicker` client
+capability, so Cursor lists base models through its `cursor/list_available_models`
+extension, each with its own config options. Discovery opens one empty session in an
+empty folder (`initialize`, `authenticate`, `session/new`, the extension call), sends no
+prompt, and caches the result for five minutes. The mapping:
+
+- `default` is Cursor's **Auto** and is the first choice.
+- The option in the `thought_level` category (`reasoning`) becomes the effort slider,
+  with Cursor's own values and names (`none`, `low`, `medium`, `high`, `extra-high`).
+- Every other option (`context`, `fast`, `thinking`) makes variants. A model is listed
+  once per combination, and each entry names **every** option:
+  `gpt-5.4[context=1m,fast=true]` is “GPT-5.4 · 1M · Fast”,
+  `claude-opus-4-6[thinking=false]` is “Opus 4.6 · Thinking off”. Spelling every option
+  out means a pick never depends on what an earlier turn left set on the session. Past
+  8 combinations only the default and each single change from it are listed; an option
+  with more than 6 values is left as the session has it. A `context` value such as
+  `272k` or `1m` also sets the model's context window.
+
+At the start of a turn PandaCode sets the base model (`session/set_config_option`
+`model`, or `session/set_model` on a session that lists `models` instead), then each
+option in turn, then the effort, and only then sends the prompt. A value the session
+already has is not sent again. `default` is set too, so a task that goes back to Auto
+leaves the model an earlier turn chose. A model or option Cursor does not offer stops
+the turn with a message naming it.
+
+**Modes and approvals.** Cursor has three session modes: `agent`, `plan` and `ask`
+(read-only). Its approval behaviour is fixed when the CLI starts.
+
+| PandaCode mode | Launch | Session mode | Permission requests |
+| --- | --- | --- | --- |
+| Standard | `cursor-agent acp` | `agent` | Each one is shown to you |
+| Accept edits | `cursor-agent acp` | `agent` | Requests of kind `edit` are allowed; the rest are shown |
+| Plan mode | `cursor-agent acp` | `plan` | Reads, searches and fetches are allowed; anything else is declined |
+| Full access | `cursor-agent --force acp` | `agent` | Cursor does not ask; a request that still arrives is allowed |
+
+Approving a request picks `allow_once` and declining picks `reject_once`; “allow
+always” is never chosen. In Plan mode Cursor ends with a `cursor/create_plan` request:
+PandaCode shows the plan as the turn's answer and acknowledges it. Implementing the plan
+is your next message in a mode that allows changes. `cursor/ask_question` opens the
+question form; the answer goes back keyed by question id (one label, or a list where
+the question allows several), and Stop answers an open question with no answers.
+
+**PandaCode tools.** The per-run MCP host is passed in `session/new` (and
+`session/load`) as a **stdio** MCP server, the way ViewCode passes its tools to every
+ACP agent: stdio is the one transport every ACP agent must support, while an HTTP
+server is optional and often dropped. The server is PandaCode's own executable started
+with `--pandacode-mcp-bridge` (`providers/mcp_bridge.rs`); it gets the run's loopback
+address and token in its environment, forwards each JSON-RPC line to the MCP host as
+one HTTP request, prints the answer, dials 127.0.0.1 only and exits when its input
+closes. A cloud run, whose harness is on another machine, keeps the HTTP form. A Cursor
+team policy can block servers a client supplies: Cursor then accepts the server and
+ignores it, so the tools are simply missing in that workspace.
+
+**Resume, stop, steering.** The session id is saved with the task and reopened with
+`session/load` (Cursor advertises `loadSession`); history the CLI replays while loading
+is not shown twice. Stop sends `session/cancel`. A message sent while a turn runs waits
+and goes out as the next prompt on the same session. Switching a task to or from Cursor
+uses the ordinary handoff: the new harness starts a fresh session with the recent
+conversation as context.
+
+**A turn that never answers.** After the computer sleeps, a `cursor-agent` whose
+connection died can leave the prompt unanswered while the process stays alive. If the
+CLI writes nothing for ten minutes, with no tool running and no request waiting on you,
+PandaCode sends `session/cancel` and ends the turn with “Cursor stopped responding;
+send it again.” The prompt is never resent. The ten minutes are counted on the
+monotonic clock, which does not advance while the computer sleeps. ViewCode also ends a
+turn 90 seconds after a wake; PandaCode has no wake signal in the run loop and does not.
+
+**Usage.** Context use during a turn comes from ACP `usage_update`. Plan usage is not
+shown: ViewCode reads it from Cursor's dashboard API with the CLI's token from the
+Keychain, behind an opt-in, and PandaCode does not read other apps' Keychain items. The
+Usage card links to the Cursor dashboard instead.
+
+**Not offered.** The harness console (the CLI keeps ACP sessions apart from its own
+chats, so a task has nothing to resume there), Cursor's `-e` API endpoint flag, the
+todo list and `task` subagents as rows of their own (ViewCode's CLI runtime does not
+show them either), and import of Cursor chats.
+
+**Skills.** Cursor reads skills from `.cursor/skills`, `.agents/skills`, `.codex/skills`
+and `.claude/skills`, in your home folder and in the project. The Skills page lists
+those roots; a switched-off skill is named in the prompt, since the CLI has no flag to
+deny one.
+
+**Testing.** No recording of `cursor-agent acp` exists in ViewCode, so the protocol
+tests in `providers/cursor_stream_tests.rs` say which values come from ViewCode's tests
+(the `about` outputs and the CLI's error strings) and which frames are built from the
+ACP schema and ViewCode's mock agent. With the CLI installed and signed in, run the
+live check, which lists models and negotiates one without sending a prompt:
+
+```sh
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib installed_cursor -- --ignored --nocapture
+```
 
 ## ZCode
 

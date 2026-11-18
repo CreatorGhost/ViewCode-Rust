@@ -6,6 +6,10 @@ fn main() {
     if pandacode_lib::handle_speech_worker() {
         return;
     }
+    // An agent's stdio bridge to its run's tools (providers/mcp_bridge.rs): no app, exits with its pipe.
+    if pandacode_lib::handle_mcp_bridge() {
+        return;
+    }
     // Before anything spawns: Finder starts apps with room for only about 45 workers.
     pandacode_lib::raise_open_file_limit();
     // Before any GTK/WebKit init (Linux emoji freeze, issue #179).
