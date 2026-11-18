@@ -359,6 +359,10 @@ fn harness_arguments(context: &HarnessContext<'_>) -> Result<Vec<String>, String
     if provider == "antigravity" {
         return Err("Antigravity's ACP server does not have an interactive console. Use its synced commands in the composer, or open the agy CLI separately.".into());
     }
+    if provider == "cursor" {
+        // The CLI keeps ACP sessions apart from its own chats, so a task has nothing to resume there.
+        return Err("Cursor's console cannot open a task that runs over ACP. Continue the task here, or run `cursor-agent` in a terminal for a separate chat.".into());
+    }
     if provider == "hermes" {
         if let Some(exe) = crate::providers::executable("hermes") {
             if exe.file_stem().is_some_and(|s| s == "hermes-acp") {

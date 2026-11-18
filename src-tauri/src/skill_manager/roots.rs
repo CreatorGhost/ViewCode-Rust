@@ -254,7 +254,7 @@ pub(crate) fn skill_roots(
                 }
             }
         }
-        "zcode" | "github-copilot" | "commandcode" | "grok" | "hermes" => {
+        "zcode" | "github-copilot" | "commandcode" | "grok" | "hermes" | "cursor" => {
             let (user, display, local) = match harness {
                 "zcode" => (".zcode/skills", "~/.zcode/skills", ".zcode/skills"),
                 "github-copilot" => (".copilot/skills", "~/.copilot/skills", ".github/skills"),
@@ -264,6 +264,7 @@ pub(crate) fn skill_roots(
                     ".commandcode/skills",
                 ),
                 "grok" => (".grok/skills", "~/.grok/skills", ".grok/skills"),
+                "cursor" => (".cursor/skills", "~/.cursor/skills", ".cursor/skills"),
                 _ => (".hermes/skills", "~/.hermes/skills", ".hermes/skills"),
             };
             let custom = match harness {
@@ -303,6 +304,7 @@ pub(crate) fn skill_roots(
             | "github-copilot"
             | "antigravity"
             | "muse"
+            | "cursor"
     ) {
         roots.push((home.join(".agents/skills"), "~/.agents/skills"));
     }
@@ -317,12 +319,20 @@ pub(crate) fn skill_roots(
             | "github-copilot"
             | "antigravity"
             | "muse"
+            | "cursor"
     ) {
         if let Some(project) = project {
             roots.push((project.join(".agents/skills"), ".agents/skills"));
         }
     }
-    if harness == "opencode" {
+    if harness == "cursor" {
+        // Cursor also reads Codex's and Claude Code's skill folders.
+        roots.push((home.join(".codex/skills"), "~/.codex/skills"));
+        if let Some(project) = project {
+            roots.push((project.join(".codex/skills"), ".codex/skills"));
+        }
+    }
+    if matches!(harness, "opencode" | "cursor") {
         roots.push((home.join(".claude/skills"), "~/.claude/skills"));
         if let Some(project) = project {
             roots.push((project.join(".claude/skills"), ".claude/skills"));

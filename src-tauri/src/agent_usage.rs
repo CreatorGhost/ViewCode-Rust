@@ -365,6 +365,7 @@ fn cache() -> &'static HashMap<&'static str, CacheSlot> {
             "devin",
             "zcode",
             "hermes",
+            "cursor",
         ]
         .into_iter()
         .map(|id| (id, CacheSlot::default()))
@@ -725,6 +726,17 @@ async fn fetch_provider(provider: &str, env: &[(String, String)]) -> Usage {
         "devin" => Usage::empty(provider, "unsupported", "Devin does not expose plan limits through its ACP server. Check usage in your Devin account settings."),
         "zcode" => Usage::empty(provider, "unsupported", "ZCode does not expose plan usage. Check usage in ZCode itself."),
         "hermes" => Usage::empty(provider, "unsupported", "Hermes Agent does not expose usage limits through its ACP server. Check your LLM provider's dashboard."),
+        "cursor" => {
+            // `cursor-agent about` names the account and plan; limits stay on Cursor's dashboard.
+            let account = tokio::task::spawn_blocking(crate::providers::cursor::account_status).await.unwrap_or_else(|_| {
+                crate::providers::cursor::Account { status: "error", message: "The Cursor CLI check did not finish.".into(), ..Default::default() }
+            });
+            let mut usage = Usage::empty(provider, account.status, &account.message);
+            usage.email = account.email;
+            usage.plan = account.plan;
+            usage.source = account.version.map(|version| format!("Cursor CLI {version}"));
+            usage
+        }
         _ => Usage::empty(provider, "unsupported", "Usage limits are not available for this agent."),
     };
     if provider == "claude" && result.status != "signedOut" {
@@ -742,6 +754,7 @@ async fn fetch_provider(provider: &str, env: &[(String, String)]) -> Usage {
             "commandcode" => Some("https://commandcode.ai/studio"),
             "cline" => Some("https://app.cline.bot"),
             "kilo" => Some("https://app.kilo.ai"),
+            "cursor" => Some("https://cursor.com/dashboard"),
             _ => None,
         }
         .map(str::to_owned);
